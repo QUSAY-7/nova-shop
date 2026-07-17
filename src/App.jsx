@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import {
   ShoppingBag, X, Plus, Minus, Check, Phone, User, MapPin, ChevronLeft,
   Watch, BatteryCharging, Lamp, Bluetooth, CreditCard, Headphones,
-  Truck, ShieldCheck, MessageCircle, Search, Facebook, Instagram,
+  Truck, ShieldCheck, MessageCircle, Search,
 } from "lucide-react";
 import img1 from "./assets/product1-1.jpg";
 import img2 from "./assets/product1-2.jpg";
@@ -35,6 +35,29 @@ function TikTokIcon({ size = 18, color = "currentColor" }) {
         strokeWidth="1.6"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function FacebookIcon({ size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M14 9h2.5V6H14c-1.9 0-3.5 1.6-3.5 3.5V11H8v3h2.5v6h3v-6h2.4l.6-3h-3V9.6c0-.35.15-.6.5-.6Z"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function InstagramIcon({ size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="4" y="4" width="16" height="16" rx="4.5" stroke={color} strokeWidth="1.6" />
+      <circle cx="12" cy="12" r="3.6" stroke={color} strokeWidth="1.6" />
+      <circle cx="16.6" cy="7.4" r="0.9" fill={color} />
     </svg>
   );
 }
@@ -483,10 +506,10 @@ export default function App() {
             </div>
             <div className="flex items-center gap-3 mt-3">
               <a href={FACEBOOK_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center rounded-full" style={{ width: 34, height: 34, background: C.panelSoft, border: `1px solid ${C.border}`, color: C.tealB }}>
-                <Facebook size={16} />
+                <FacebookIcon size={16} color={C.tealB} />
               </a>
               <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center rounded-full" style={{ width: 34, height: 34, background: C.panelSoft, border: `1px solid ${C.border}`, color: C.tealB }}>
-                <Instagram size={16} />
+                <InstagramIcon size={16} color={C.tealB} />
               </a>
               <a href={TIKTOK_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center rounded-full" style={{ width: 34, height: 34, background: C.panelSoft, border: `1px solid ${C.border}`, color: C.tealB }}>
                 <TikTokIcon size={16} color={C.tealB} />
