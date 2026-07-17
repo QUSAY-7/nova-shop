@@ -74,12 +74,12 @@ const CITIES = ["طرابلس", "بنغازي", "مصراتة", "الزاوية"
 const CATEGORIES = ["الكل", "إلكترونيات", "إكسسوارات", "إضاءة", "طاقة"];
 
 const PRODUCTS = [
-  { id: "p1", sku: "NV-0104", name: "سوار حماية RFID", category: "إكسسوارات", tag: "حماية البطاقات", price: 45, icon: CreditCard, images: [img1], desc: "يمنع نسخ بيانات بطاقتك المصرفية عن بُعد أثناء التنقل اليومي." },
-  { id: "p2", sku: "NV-0091", name: "جهاز تتبع بلوتوث", category: "إلكترونيات", tag: "لا مزيد من الضياع", price: 60, icon: Bluetooth, images: [img2], desc: "علّقه على مفاتيحك أو حقيبتك وتتبّعها لحظيًا من هاتفك." },
-  { id: "p3", sku: "NV-0057", name: "ساعة ذكية S11", category: "إلكترونيات", tag: "الأكثر طلبًا", price: 150, icon: Watch, images: [img3], desc: "مكالمات، إشعارات، وقياس صحي كامل — بطارية تدوم أيامًا." },
-  { id: "p4", sku: "NV-0132", name: "باور بانك شمسي", category: "طاقة", tag: "طاقة أينما كنت", price: 85, icon: BatteryCharging, images: [img4], desc: "شحن سريع بالطاقة الشمسية، مقاوم للماء والغبار." },
-  { id: "p5", sku: "NV-0078", name: "مصباح ذكي G", category: "إضاءة", tag: "إضاءة أجواء", price: 70, icon: Lamp, images: [img5], desc: "تحكم كامل بالألوان والسطوع من التطبيق، يضيف لمسة فاخرة لأي غرفة." },
-  { id: "p6", sku: "NV-0145", name: "سماعة بلوتوث رياضية", category: "إلكترونيات", tag: "صوت نقي", price: 55, icon: Headphones, images: [img6], desc: "مقاومة للعرق، اتصال مستقر، وعزل ضوضاء خفيف." },
+  { id: "p1", sku: "NV-0104", name: "محفظة بطاقات مصرفية", category: "إكسسوارات", tag: "حماية البطاقات", price: 45, icon: CreditCard, images: [img1, img2, img3, img4, img5, img6], desc: "يمنع نسخ بيانات بطاقتك المصرفية عن بُعد أثناء التنقل اليومي." },
+  { id: "p2", sku: "NV-0091", name: "جهاز تتبع بلوتوث", category: "إلكترونيات", tag: "لا مزيد من الضياع", price: 60, icon: Bluetooth, desc: "علّقه على مفاتيحك أو حقيبتك وتتبّعها لحظيًا من هاتفك." },
+  { id: "p3", sku: "NV-0057", name: "ساعة ذكية S11", category: "إلكترونيات", tag: "الأكثر طلبًا", price: 150, icon: Watch, desc: "مكالمات، إشعارات، وقياس صحي كامل — بطارية تدوم أيامًا." },
+  { id: "p4", sku: "NV-0132", name: "باور بانك شمسي", category: "طاقة", tag: "طاقة أينما كنت", price: 85, icon: BatteryCharging, desc: "شحن سريع بالطاقة الشمسية، مقاوم للماء والغبار." },
+  { id: "p5", sku: "NV-0078", name: "مصباح ذكي G", category: "إضاءة", tag: "إضاءة أجواء", price: 70, icon: Lamp, desc: "تحكم كامل بالألوان والسطوع من التطبيق، يضيف لمسة فاخرة لأي غرفة." },
+  { id: "p6", sku: "NV-0145", name: "سماعة بلوتوث رياضية", category: "إلكترونيات", tag: "صوت نقي", price: 55, icon: Headphones, desc: "مقاومة للعرق، اتصال مستقر، وعزل ضوضاء خفيف." },
 ];
 
 export default function App() {
@@ -405,10 +405,17 @@ export default function App() {
 
       {/* Quick view modal */}
       {qvProduct && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-5" style={{ background: "rgba(20,30,40,0.5)" }} onClick={() => setQuickView(null)}>
-          <div className="rounded-2xl p-6 w-full" style={{ maxWidth: 480, background: "#fff", border: `1px solid ${C.border}` }} onClick={(e) => e.stopPropagation()}>
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 40, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "rgba(20,30,40,0.55)" }}
+          onClick={() => setQuickView(null)}
+        >
+          <div
+            style={{ borderRadius: 20, padding: 24, width: "100%", maxWidth: 460, background: "#fff", border: `1px solid ${C.border}` }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-end"><button onClick={() => setQuickView(null)} style={{ color: C.muted }}><X size={20} /></button></div>
-            <div className="rounded-xl mb-4" style={{ height: 220, background: C.panelSoft, overflow: "hidden", position: "relative" }}>
+
+            <div style={{ borderRadius: 14, marginBottom: 16, height: 220, background: C.panelSoft, overflow: "hidden", position: "relative" }}>
               {qvProduct.images?.length ? (
                 <>
                   <img src={qvProduct.images[activeImage]} alt={qvProduct.name} style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
@@ -428,18 +435,19 @@ export default function App() {
                       >
                         <ChevronLeft size={18} />
                       </button>
-                      <div className="flex items-center justify-center gap-1.5" style={{ position: "absolute", bottom: 10, left: 0, right: 0 }}>
+                      <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                         {qvProduct.images.map((_, idx) => (
-                          <button key={idx} onClick={(e) => { e.stopPropagation(); setActiveImage(idx); }} className="rounded-full" style={{ width: idx === activeImage ? 18 : 6, height: 6, background: idx === activeImage ? "#fff" : "rgba(255,255,255,0.6)", transition: "all .2s" }} />
+                          <button key={idx} onClick={(e) => { e.stopPropagation(); setActiveImage(idx); }} style={{ borderRadius: 999, width: idx === activeImage ? 18 : 6, height: 6, background: idx === activeImage ? "#fff" : "rgba(255,255,255,0.6)", transition: "all .2s" }} />
                         ))}
                       </div>
                     </>
                   )}
                 </>
               ) : (
-                <div className="flex items-center justify-center w-full h-full"><qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} /></div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}><qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} /></div>
               )}
             </div>
+
             <div style={{ fontSize: 11, color: C.mutedLight, fontFamily: "'IBM Plex Mono', monospace", marginBottom: 6 }}>{qvProduct.sku} · {qvProduct.category}</div>
             <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 19 }}>{qvProduct.name}</h3>
             <p style={{ color: C.muted, fontSize: 13.5, lineHeight: 1.9, margin: "10px 0 16px" }}>{qvProduct.desc}</p>
