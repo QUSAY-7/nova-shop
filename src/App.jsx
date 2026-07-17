@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import {
   ShoppingBag, X, Plus, Minus, Check, Phone, User, MapPin, ChevronLeft,
   Watch, BatteryCharging, Lamp, Bluetooth, CreditCard, Headphones,
-  Truck, ShieldCheck, MessageCircle, Search,
+  Truck, ShieldCheck, MessageCircle, Search, Facebook, Instagram,
 } from "lucide-react";
 import img1 from "./assets/product1-1.jpg";
 import img2 from "./assets/product1-2.jpg";
@@ -10,6 +10,7 @@ import img3 from "./assets/product1-3.jpg";
 import img4 from "./assets/product1-4.jpg";
 import img5 from "./assets/product1-5.jpg";
 import img6 from "./assets/product1-6.jpg";
+
 const C = {
   bg: "#FFFFFF",
   panel: "#FFFFFF",
@@ -25,19 +26,37 @@ const C = {
 };
 const gradient = `linear-gradient(135deg, ${C.tealA}, ${C.tealB})`;
 
+function TikTokIcon({ size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M16.5 2h-3v13.2a2.8 2.8 0 1 1-2.2-2.74V9.4a5.8 5.8 0 1 0 5.2 5.77V8.6a6.9 6.9 0 0 0 4 1.28V6.9a3.9 3.9 0 0 1-4-3.9V2Z"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 // غيّر هذا الرقم بأي وقت — بالصيغة الدولية بدون + وبدون صفر البداية (مثال ليبيا: 218 + الرقم بدون 0)
 const WHATSAPP_NUMBER = "218912345678";
+
+// غيّر هذي الروابط بروابط حساباتك الحقيقية
+const FACEBOOK_URL = "https://www.facebook.com/share/18y4PR69R1/";
+const INSTAGRAM_URL = "https://instagram.com/novashop";
+const TIKTOK_URL = "https://tiktok.com/@novashop";
 
 const CITIES = ["طرابلس", "بنغازي", "مصراتة", "الزاوية", "زليتن", "سبها", "البيضاء", "درنة", "الخمس", "صبراتة", "غريان", "مدينة أخرى"];
 const CATEGORIES = ["الكل", "إلكترونيات", "إكسسوارات", "إضاءة", "طاقة"];
 
 const PRODUCTS = [
-  { id: "p1", sku: "NV-0104", name: "سوار حماية RFID", category: "إكسسوارات", tag: "حماية البطاقات", price: 45, icon: CreditCard, desc: "يمنع نسخ بيانات بطاقتك المصرفية عن بُعد أثناء التنقل اليومي." },
-  { id: "p2", sku: "NV-0091", name: "جهاز تتبع بلوتوث", category: "إلكترونيات", tag: "لا مزيد من الضياع", price: 60, icon: Bluetooth, desc: "علّقه على مفاتيحك أو حقيبتك وتتبّعها لحظيًا من هاتفك." },
-  { id: "p3", sku: "NV-0057", name: "ساعة ذكية S11", category: "إلكترونيات", tag: "الأكثر طلبًا", price: 150, icon: Watch, desc: "مكالمات، إشعارات، وقياس صحي كامل — بطارية تدوم أيامًا." },
-  { id: "p4", sku: "NV-0132", name: "باور بانك شمسي", category: "طاقة", tag: "طاقة أينما كنت", price: 85, icon: BatteryCharging, desc: "شحن سريع بالطاقة الشمسية، مقاوم للماء والغبار." },
-  { id: "p5", sku: "NV-0078", name: "مصباح ذكي G", category: "إضاءة", tag: "إضاءة أجواء", price: 70, icon: Lamp, desc: "تحكم كامل بالألوان والسطوع من التطبيق، يضيف لمسة فاخرة لأي غرفة." },
-  { id: "p6", sku: "NV-0145", name: "سماعة بلوتوث رياضية", category: "إلكترونيات", tag: "صوت نقي", price: 55, icon: Headphones, desc: "مقاومة للعرق، اتصال مستقر، وعزل ضوضاء خفيف." },
+  { id: "p1", sku: "NV-0104", name: "سوار حماية RFID", category: "إكسسوارات", tag: "حماية البطاقات", price: 45, icon: CreditCard, image: img1, desc: "يمنع نسخ بيانات بطاقتك المصرفية عن بُعد أثناء التنقل اليومي." },
+  { id: "p2", sku: "NV-0091", name: "جهاز تتبع بلوتوث", category: "إلكترونيات", tag: "لا مزيد من الضياع", price: 60, icon: Bluetooth, image: img2, desc: "علّقه على مفاتيحك أو حقيبتك وتتبّعها لحظيًا من هاتفك." },
+  { id: "p3", sku: "NV-0057", name: "ساعة ذكية S11", category: "إلكترونيات", tag: "الأكثر طلبًا", price: 150, icon: Watch, image: img3, desc: "مكالمات، إشعارات، وقياس صحي كامل — بطارية تدوم أيامًا." },
+  { id: "p4", sku: "NV-0132", name: "باور بانك شمسي", category: "طاقة", tag: "طاقة أينما كنت", price: 85, icon: BatteryCharging, image: img4, desc: "شحن سريع بالطاقة الشمسية، مقاوم للماء والغبار." },
+  { id: "p5", sku: "NV-0078", name: "مصباح ذكي G", category: "إضاءة", tag: "إضاءة أجواء", price: 70, icon: Lamp, image: img5, desc: "تحكم كامل بالألوان والسطوع من التطبيق، يضيف لمسة فاخرة لأي غرفة." },
+  { id: "p6", sku: "NV-0145", name: "سماعة بلوتوث رياضية", category: "إلكترونيات", tag: "صوت نقي", price: 55, icon: Headphones, image: img6, desc: "مقاومة للعرق، اتصال مستقر، وعزل ضوضاء خفيف." },
 ];
 
 export default function App() {
@@ -112,7 +131,7 @@ export default function App() {
   return (
     <div dir="rtl" className="min-h-screen w-full" style={{ background: C.bg, color: C.text, fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Dancing+Script:wght@700&display=swap');
         * { box-sizing: border-box; }
         input:focus, textarea:focus, select:focus, button:focus-visible { outline: 2px solid ${C.tealB}; outline-offset: 2px; }
         .pcard { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
@@ -145,7 +164,7 @@ export default function App() {
             )}
           </button>
 
-          <div style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 21, letterSpacing: 1 }}>NOVA SHOP</div>
+          <div style={{ fontFamily: "'Dancing Script', cursive", fontWeight: 700, fontSize: 30 }}>Nova Shop</div>
 
           <div
             className="hidden sm:flex items-center gap-2 rounded-full px-4 py-2"
@@ -154,6 +173,10 @@ export default function App() {
             <Search size={15} color={C.muted} />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث عن منتج..." className="bg-transparent w-full" style={{ color: C.text, fontSize: 13, outline: "none", border: "none" }} />
           </div>
+        </div>
+        <div className="flex justify-center gap-6 mt-2">
+          <button onClick={() => setView("store")} style={{ fontSize: 13.5, fontWeight: view === "store" || view === "checkout" || view === "success" ? 700 : 500, color: view === "store" || view === "checkout" || view === "success" ? C.tealB : C.muted, borderBottom: view === "store" || view === "checkout" || view === "success" ? `2px solid ${C.tealB}` : "2px solid transparent", paddingBottom: 4 }}>الرئيسية</button>
+          <button onClick={() => setView("about")} style={{ fontSize: 13.5, fontWeight: view === "about" ? 700 : 500, color: view === "about" ? C.tealB : C.muted, borderBottom: view === "about" ? `2px solid ${C.tealB}` : "2px solid transparent", paddingBottom: 4 }}>حول المتجر</button>
         </div>
       </header>
 
@@ -167,13 +190,13 @@ export default function App() {
 
             <h1
               style={{
-                fontFamily: "'Tajawal', sans-serif", fontWeight: 800,
-                fontSize: "clamp(38px, 8vw, 64px)", letterSpacing: 1,
+                fontFamily: "'Dancing Script', cursive", fontWeight: 700,
+                fontSize: "clamp(48px, 10vw, 80px)",
                 backgroundImage: `linear-gradient(90deg, ${C.tealA}, ${C.tealB}, #3B6FE0)`,
                 WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
               }}
             >
-              NOVA SHOP
+              Nova Shop
             </h1>
             <div className="mx-auto mt-2 mb-5 rounded-full" style={{ width: 90, height: 4, background: gradient }} />
             <p style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>توصيل لكل مدن ليبيا، بثقة من أول طلب</p>
@@ -217,8 +240,12 @@ export default function App() {
                   const qty = cart[p.id] || 0;
                   return (
                     <div key={p.id} className="pcard product-card rounded-2xl p-5 flex flex-col cursor-pointer" style={{ background: C.panel, border: `1.5px solid ${C.border}` }} onClick={() => setQuickView(p.id)}>
-                      <div className="flex items-center justify-center rounded-xl mb-4" style={{ height: 110, background: C.panelSoft }}>
-                        <Icon size={38} color={C.tealB} strokeWidth={1.5} />
+                      <div className="flex items-center justify-center rounded-xl mb-4 overflow-hidden" style={{ height: 110, background: C.panelSoft }}>
+                        {p.image ? (
+                          <img src={p.image} alt={p.name} className="w-full h-full" style={{ objectFit: "cover" }} />
+                        ) : (
+                          <Icon size={38} color={C.tealB} strokeWidth={1.5} />
+                        )}
                       </div>
                       <div className="flex items-center justify-between" style={{ fontSize: 10.5, color: C.mutedLight, marginBottom: 6, fontFamily: "'IBM Plex Mono', monospace" }}>
                         <span>{p.sku}</span>
@@ -246,6 +273,27 @@ export default function App() {
             )}
           </section>
         </>
+      )}
+
+      {view === "about" && (
+        <section className="px-5 py-12" style={{ maxWidth: 720, margin: "0 auto" }}>
+          <h2 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 26, textAlign: "center", marginBottom: 30 }}>حول المتجر</h2>
+
+          <div className="rounded-2xl p-5 mb-4" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
+            <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 700, fontSize: 17, color: C.tealB, marginBottom: 8 }}>من نحن</h3>
+            <p style={{ fontSize: 14, color: C.text, lineHeight: 1.9 }}>Nova Shop متجر ليبي يقدّم منتجات ذكية مختارة بعناية، مع التزام كامل بالدفع عند الاستلام وثقة العميل من أول طلب.</p>
+          </div>
+
+          <div className="rounded-2xl p-5 mb-4" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
+            <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 700, fontSize: 17, color: C.tealB, marginBottom: 8 }}>سياسة الاسترجاع</h3>
+            <p style={{ fontSize: 14, color: C.text, lineHeight: 1.9 }}>يحق للعميل فحص المنتج قبل الدفع عند الاستلام. في حال وجود عيب مصنعي، يمكن الاسترجاع أو الاستبدال خلال 48 ساعة من الاستلام.</p>
+          </div>
+
+          <div className="rounded-2xl p-5" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
+            <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 700, fontSize: 17, color: C.tealB, marginBottom: 8 }}>الدعم الفني</h3>
+            <p style={{ fontSize: 14, color: C.text, lineHeight: 1.9 }}>لأي استفسار أو مشكلة بالطلب، تواصل معنا مباشرة عبر واتساب وسنرد عليك في أقرب وقت.</p>
+          </div>
+        </section>
       )}
 
       {view === "checkout" && (
@@ -336,8 +384,12 @@ export default function App() {
         <div className="fixed inset-0 z-40 flex items-center justify-center p-5" style={{ background: "rgba(20,30,40,0.5)" }} onClick={() => setQuickView(null)}>
           <div className="rounded-2xl p-6 w-full" style={{ maxWidth: 480, background: "#fff", border: `1px solid ${C.border}` }} onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-end"><button onClick={() => setQuickView(null)} style={{ color: C.muted }}><X size={20} /></button></div>
-            <div className="flex items-center justify-center rounded-xl mb-4" style={{ height: 140, background: C.panelSoft }}>
-              <qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} />
+            <div className="flex items-center justify-center rounded-xl mb-4 overflow-hidden" style={{ height: 140, background: C.panelSoft }}>
+              {qvProduct.image ? (
+                <img src={qvProduct.image} alt={qvProduct.name} className="w-full h-full" style={{ objectFit: "cover" }} />
+              ) : (
+                <qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} />
+              )}
             </div>
             <div style={{ fontSize: 11, color: C.mutedLight, fontFamily: "'IBM Plex Mono', monospace", marginBottom: 6 }}>{qvProduct.sku} · {qvProduct.category}</div>
             <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 19 }}>{qvProduct.name}</h3>
@@ -366,8 +418,12 @@ export default function App() {
               <div className="flex-1 overflow-y-auto flex flex-col gap-4">
                 {cartItems.map((i) => (
                   <div key={i.id} className="flex items-center gap-3 pb-4" style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <div className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 48, height: 48, background: C.panelSoft }}>
-                      <i.icon size={22} color={C.tealB} />
+                    <div className="flex items-center justify-center rounded-lg shrink-0 overflow-hidden" style={{ width: 48, height: 48, background: C.panelSoft }}>
+                      {i.image ? (
+                        <img src={i.image} alt={i.name} className="w-full h-full" style={{ objectFit: "cover" }} />
+                      ) : (
+                        <i.icon size={22} color={C.tealB} />
+                      )}
                     </div>
                     <div className="flex-1">
                       <div style={{ fontSize: 13.5, fontWeight: 600 }}>{i.name}</div>
@@ -397,6 +453,17 @@ export default function App() {
         </div>
       )}
 
+      {/* Floating WhatsApp button */}
+      <a
+        href={`https://wa.me/${WHATSAPP_NUMBER}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center rounded-full"
+        style={{ position: "fixed", bottom: 24, right: 24, width: 56, height: 56, background: "#25D366", boxShadow: "0 8px 20px -6px rgba(37,211,102,0.6)", zIndex: 50 }}
+      >
+        <MessageCircle size={26} color="#fff" fill="#fff" />
+      </a>
+
       <footer className="px-5 py-10" style={{ borderTop: `1px solid ${C.border}`, marginTop: 30 }}>
         <div className="grid gap-8" style={{ maxWidth: 1120, margin: "0 auto", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
           <div>
@@ -413,6 +480,17 @@ export default function App() {
             <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>تواصل</div>
             <div className="flex flex-col gap-2" style={{ fontSize: 12.5, color: C.muted }}>
               <span>واتساب: 09xxxxxxxx</span><span>طرابلس، ليبيا</span>
+            </div>
+            <div className="flex items-center gap-3 mt-3">
+              <a href={FACEBOOK_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center rounded-full" style={{ width: 34, height: 34, background: C.panelSoft, border: `1px solid ${C.border}`, color: C.tealB }}>
+                <Facebook size={16} />
+              </a>
+              <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center rounded-full" style={{ width: 34, height: 34, background: C.panelSoft, border: `1px solid ${C.border}`, color: C.tealB }}>
+                <Instagram size={16} />
+              </a>
+              <a href={TIKTOK_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center rounded-full" style={{ width: 34, height: 34, background: C.panelSoft, border: `1px solid ${C.border}`, color: C.tealB }}>
+                <TikTokIcon size={16} color={C.tealB} />
+              </a>
             </div>
           </div>
         </div>
