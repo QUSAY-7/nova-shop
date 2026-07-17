@@ -187,7 +187,7 @@ export default function App() {
             )}
           </button>
 
-          <div style={{ fontFamily: "'Dancing Script', cursive", fontWeight: 700, fontSize: 30 }}>Nova Shop</div>
+          <div style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 21, letterSpacing: 1 }}>NOVA SHOP</div>
 
           <div
             className="hidden sm:flex items-center gap-2 rounded-full px-4 py-2"
@@ -213,13 +213,13 @@ export default function App() {
 
             <h1
               style={{
-                fontFamily: "'Dancing Script', cursive", fontWeight: 700,
-                fontSize: "clamp(48px, 10vw, 80px)",
+                fontFamily: "'Tajawal', sans-serif", fontWeight: 800,
+                fontSize: "clamp(38px, 8vw, 64px)", letterSpacing: 1,
                 backgroundImage: `linear-gradient(90deg, ${C.tealA}, ${C.tealB}, #3B6FE0)`,
                 WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
               }}
             >
-              Nova Shop
+              NOVA SHOP
             </h1>
             <div className="mx-auto mt-2 mb-5 rounded-full" style={{ width: 90, height: 4, background: gradient }} />
             <p style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>توصيل لكل مدن ليبيا، بثقة من أول طلب</p>
@@ -263,11 +263,11 @@ export default function App() {
                   const qty = cart[p.id] || 0;
                   return (
                     <div key={p.id} className="pcard product-card rounded-2xl p-5 flex flex-col cursor-pointer" style={{ background: C.panel, border: `1.5px solid ${C.border}` }} onClick={() => setQuickView(p.id)}>
-                      <div className="flex items-center justify-center rounded-xl mb-4 overflow-hidden" style={{ height: 110, background: C.panelSoft }}>
+                      <div className="rounded-xl mb-4" style={{ height: 110, background: C.panelSoft, overflow: "hidden", position: "relative" }}>
                         {p.image ? (
-                          <img src={p.image} alt={p.name} className="w-full h-full" style={{ objectFit: "cover" }} />
+                          <img src={p.image} alt={p.name} style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
                         ) : (
-                          <Icon size={38} color={C.tealB} strokeWidth={1.5} />
+                          <div className="flex items-center justify-center w-full h-full"><Icon size={38} color={C.tealB} strokeWidth={1.5} /></div>
                         )}
                       </div>
                       <div className="flex items-center justify-between" style={{ fontSize: 10.5, color: C.mutedLight, marginBottom: 6, fontFamily: "'IBM Plex Mono', monospace" }}>
@@ -407,11 +407,11 @@ export default function App() {
         <div className="fixed inset-0 z-40 flex items-center justify-center p-5" style={{ background: "rgba(20,30,40,0.5)" }} onClick={() => setQuickView(null)}>
           <div className="rounded-2xl p-6 w-full" style={{ maxWidth: 480, background: "#fff", border: `1px solid ${C.border}` }} onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-end"><button onClick={() => setQuickView(null)} style={{ color: C.muted }}><X size={20} /></button></div>
-            <div className="flex items-center justify-center rounded-xl mb-4 overflow-hidden" style={{ height: 140, background: C.panelSoft }}>
+            <div className="rounded-xl mb-4" style={{ height: 140, background: C.panelSoft, overflow: "hidden", position: "relative" }}>
               {qvProduct.image ? (
-                <img src={qvProduct.image} alt={qvProduct.name} className="w-full h-full" style={{ objectFit: "cover" }} />
+                <img src={qvProduct.image} alt={qvProduct.name} style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
               ) : (
-                <qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} />
+                <div className="flex items-center justify-center w-full h-full"><qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} /></div>
               )}
             </div>
             <div style={{ fontSize: 11, color: C.mutedLight, fontFamily: "'IBM Plex Mono', monospace", marginBottom: 6 }}>{qvProduct.sku} · {qvProduct.category}</div>
@@ -441,11 +441,11 @@ export default function App() {
               <div className="flex-1 overflow-y-auto flex flex-col gap-4">
                 {cartItems.map((i) => (
                   <div key={i.id} className="flex items-center gap-3 pb-4" style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <div className="flex items-center justify-center rounded-lg shrink-0 overflow-hidden" style={{ width: 48, height: 48, background: C.panelSoft }}>
+                    <div className="rounded-lg shrink-0" style={{ width: 48, height: 48, background: C.panelSoft, overflow: "hidden", position: "relative" }}>
                       {i.image ? (
-                        <img src={i.image} alt={i.name} className="w-full h-full" style={{ objectFit: "cover" }} />
+                        <img src={i.image} alt={i.name} style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
                       ) : (
-                        <i.icon size={22} color={C.tealB} />
+                        <div className="flex items-center justify-center w-full h-full"><i.icon size={22} color={C.tealB} /></div>
                       )}
                     </div>
                     <div className="flex-1">
