@@ -4,7 +4,12 @@ import {
   Watch, BatteryCharging, Lamp, Bluetooth, CreditCard, Headphones,
   Truck, ShieldCheck, MessageCircle, Search,
 } from "lucide-react";
-
+import img1 from "./assets/product1-1.jpg";
+import img2 from "./assets/product1-2.jpg";
+import img3 from "./assets/product1-3.jpg";
+import img4 from "./assets/product1-4.jpg";
+import img5 from "./assets/product1-5.jpg";
+import img6 from "./assets/product1-6.jpg";
 const C = {
   bg: "#FFFFFF",
   panel: "#FFFFFF",
