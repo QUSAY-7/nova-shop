@@ -21,7 +21,7 @@ const C = {
 const gradient = `linear-gradient(135deg, ${C.tealA}, ${C.tealB})`;
 
 // غيّر هذا الرقم بأي وقت — بالصيغة الدولية بدون + وبدون صفر البداية (مثال ليبيا: 218 + الرقم بدون 0)
-const WHATSAPP_NUMBER = "218931739453";
+const WHATSAPP_NUMBER = "218912345678";
 
 const CITIES = ["طرابلس", "بنغازي", "مصراتة", "الزاوية", "زليتن", "سبها", "البيضاء", "درنة", "الخمس", "صبراتة", "غريان", "مدينة أخرى"];
 const CATEGORIES = ["الكل", "إلكترونيات", "إكسسوارات", "إضاءة", "طاقة"];
@@ -42,7 +42,7 @@ export default function App() {
   const [quickView, setQuickView] = useState(null);
   const [category, setCategory] = useState("الكل");
   const [query, setQuery] = useState("");
-  const [form, setForm] = useState({ name: "", phone: "", city: CITIES[0], address: "", note: "" });
+  const [form, setForm] = useState({ name: "", phone: "", city: CITIES[0], area: "", address: "", note: "" });
   const [errors, setErrors] = useState({});
   const [orderNo, setOrderNo] = useState(null);
 
@@ -80,6 +80,7 @@ export default function App() {
       `الاسم: ${form.name}`,
       `الهاتف: ${form.phone}`,
       `المدينة: ${form.city}`,
+      `المنطقة: ${form.area}`,
       `العنوان: ${form.address}`,
       form.note ? `ملاحظات: ${form.note}` : null,
       ``,
@@ -97,7 +98,7 @@ export default function App() {
   };
 
   const resetAll = () => {
-    setCart({}); setForm({ name: "", phone: "", city: CITIES[0], address: "", note: "" });
+    setCart({}); setForm({ name: "", phone: "", city: CITIES[0], area: "", address: "", note: "" });
     setErrors({}); setOrderNo(null); setView("store");
   };
 
@@ -115,31 +116,45 @@ export default function App() {
         .quickadd { opacity: 0; transform: translateY(6px); transition: all .2s ease; }
         ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 8px; }
         .dot { position:absolute; border-radius:50%; }
+        .product-row { display: flex; flex-direction: row; gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 12px; }
+        .product-card { width: 230px; flex-shrink: 0; scroll-snap-align: start; }
       `}</style>
 
+      {/* Announcement bar */}
       <div className="text-center py-2 px-4" style={{ background: gradient, fontSize: 12.5, color: "#fff", fontWeight: 600 }}>
         منتجات ذكية مختارة بعناية · توصيلاً لباب بيتك في كل ربوع ليبيا
       </div>
 
+      {/* Header */}
       <header className="sticky top-0 z-30 px-5 py-3" style={{ background: "rgba(255,255,255,0.92)", borderBottom: `1px solid ${C.border}`, backdropFilter: "blur(8px)" }}>
-        <div className="flex items-center justify-between gap-4 flex-wrap" style={{ maxWidth: 1120, margin: "0 auto" }}>
-          <div style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 17 }}>NOVA SHOP</div>
-          <div className="flex items-center gap-2 flex-1 min-w-[180px] max-w-[380px] rounded-full px-4 py-2" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
-            <Search size={15} color={C.muted} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث عن منتج..." className="bg-transparent w-full" style={{ color: C.text, fontSize: 13, outline: "none", border: "none" }} />
-          </div>
-          <button onClick={() => setCartOpen(true)} className="relative flex items-center gap-2 rounded-full px-4 py-2" style={{ border: `1.5px solid ${C.tealB}`, color: C.tealB }}>
+        <div className="relative flex items-center justify-center" style={{ maxWidth: 1120, margin: "0 auto", height: 46 }}>
+          <button
+            onClick={() => setCartOpen(true)}
+            className="flex items-center gap-2 rounded-full px-4 py-2"
+            style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", border: `1.5px solid ${C.tealB}`, color: C.tealB }}
+          >
             <ShoppingBag size={17} />
             <span style={{ fontSize: 13, fontWeight: 600 }}>السلة</span>
             {cartCount > 0 && (
-              <span className="absolute -top-2 -left-2 flex items-center justify-center rounded-full" style={{ width: 19, height: 19, background: gradient, color: "#fff", fontSize: 10.5, fontWeight: 700 }}>{cartCount}</span>
+              <span className="flex items-center justify-center rounded-full" style={{ position: "absolute", top: -8, left: -8, width: 19, height: 19, background: gradient, color: "#fff", fontSize: 10.5, fontWeight: 700 }}>{cartCount}</span>
             )}
           </button>
+
+          <div style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 21, letterSpacing: 1 }}>NOVA SHOP</div>
+
+          <div
+            className="hidden sm:flex items-center gap-2 rounded-full px-4 py-2"
+            style={{ position: "absolute", right: 0, top: "50%", transform: "translateY(-50%)", width: 220, background: C.panelSoft, border: `1px solid ${C.border}` }}
+          >
+            <Search size={15} color={C.muted} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث عن منتج..." className="bg-transparent w-full" style={{ color: C.text, fontSize: 13, outline: "none", border: "none" }} />
+          </div>
         </div>
       </header>
 
       {view === "store" && (
         <>
+          {/* Hero */}
           <section className="relative px-5 pt-16 pb-10 text-center overflow-hidden" style={{ maxWidth: 1120, margin: "0 auto" }}>
             <div className="dot" style={{ top: 20, right: "22%", width: 14, height: 14, background: C.tealA, opacity: 0.5 }} />
             <div className="dot" style={{ top: 60, left: "18%", width: 10, height: 10, background: C.tealB, opacity: 0.45 }} />
@@ -169,11 +184,13 @@ export default function App() {
             </div>
           </section>
 
+          {/* Section heading */}
           <div className="text-center px-5 mt-6" style={{ maxWidth: 1120, margin: "24px auto 0" }}>
             <h2 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 21 }}>منتجات مختارة بعناية</h2>
             <div className="mx-auto mt-2 rounded-full" style={{ width: 60, height: 3, background: gradient }} />
           </div>
 
+          {/* Category tabs */}
           <section className="px-5 mt-6" style={{ maxWidth: 1120, margin: "24px auto 0" }}>
             <div className="flex gap-2 flex-wrap justify-center pb-4">
               {CATEGORIES.map((c) => (
@@ -184,16 +201,17 @@ export default function App() {
             </div>
           </section>
 
+          {/* Products */}
           <section className="px-5 py-6" style={{ maxWidth: 1120, margin: "0 auto" }}>
             {filtered.length === 0 ? (
               <p style={{ color: C.muted, fontSize: 14, textAlign: "center", padding: "40px 0" }}>لا توجد منتجات مطابقة لبحثك.</p>
             ) : (
-              <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" }}>
+              <div className="product-row">
                 {filtered.map((p) => {
                   const Icon = p.icon;
                   const qty = cart[p.id] || 0;
                   return (
-                    <div key={p.id} className="pcard rounded-2xl p-5 flex flex-col cursor-pointer" style={{ background: C.panel, border: `1.5px solid ${C.border}` }} onClick={() => setQuickView(p.id)}>
+                    <div key={p.id} className="pcard product-card rounded-2xl p-5 flex flex-col cursor-pointer" style={{ background: C.panel, border: `1.5px solid ${C.border}` }} onClick={() => setQuickView(p.id)}>
                       <div className="flex items-center justify-center rounded-xl mb-4" style={{ height: 110, background: C.panelSoft }}>
                         <Icon size={38} color={C.tealB} strokeWidth={1.5} />
                       </div>
@@ -252,6 +270,9 @@ export default function App() {
                 {CITIES.map((c) => (<option key={c} value={c}>{c}</option>))}
               </select>
             </Field>
+            <Field label="المنطقة / الحي">
+              <input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} placeholder="مثال: عين زارة" style={inputStyle} />
+            </Field>
             <Field label="العنوان بالتفصيل" icon={MapPin} error={errors.address}>
               <textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="الحي، أقرب معلم، رقم المنزل..." rows={3} style={{ ...inputStyle, resize: "none" }} />
             </Field>
@@ -305,6 +326,7 @@ export default function App() {
         </section>
       )}
 
+      {/* Quick view modal */}
       {qvProduct && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-5" style={{ background: "rgba(20,30,40,0.5)" }} onClick={() => setQuickView(null)}>
           <div className="rounded-2xl p-6 w-full" style={{ maxWidth: 480, background: "#fff", border: `1px solid ${C.border}` }} onClick={(e) => e.stopPropagation()}>
@@ -325,6 +347,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Cart Drawer */}
       {cartOpen && (
         <div className="fixed inset-0 z-40 flex justify-end" style={{ background: "rgba(20,30,40,0.5)" }} onClick={() => setCartOpen(false)}>
           <div className="h-full w-full flex flex-col p-5" style={{ maxWidth: 380, background: "#fff", borderInlineStart: `1px solid ${C.border}` }} onClick={(e) => e.stopPropagation()}>
