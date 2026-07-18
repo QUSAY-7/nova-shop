@@ -1,8 +1,7 @@
 import { useState, useMemo, useRef } from "react";
 import {
   ShoppingBag, X, Plus, Minus, Check, Phone, User, MapPin, ChevronLeft,
-  Watch, BatteryCharging, Lamp, Bluetooth, CreditCard, Headphones,
-  Truck, ShieldCheck, MessageCircle, Search, ChevronRight,
+  CreditCard, Truck, ShieldCheck, MessageCircle, ChevronRight, Menu,
 } from "lucide-react";
 import img1 from "./assets/product1-1.jpg";
 import img2 from "./assets/product1-2.jpg";
@@ -62,8 +61,11 @@ function InstagramIcon({ size = 18, color = "currentColor" }) {
   );
 }
 
-// غيّر هذا الرقم بأي وقت — بالصيغة الدولية بدون + وبدون صفر البداية (مثال ليبيا: 218 + الرقم بدون 0)
-const WHATSAPP_NUMBER = "218912345678";
+// رقم الواتساب — بالصيغة الدولية بدون + وبدون صفر البداية (218 + رقمك)
+const WHATSAPP_NUMBER = "218931739453";
+
+// رقم الحساب المصرفي لخيار التحويل المصرفي
+const BANK_ACCOUNT = "LY25025010113475443410011";
 
 // غيّر هذي الروابط بروابط حساباتك الحقيقية
 const FACEBOOK_URL = "https://www.facebook.com/share/18y4PR69R1/";
@@ -71,26 +73,33 @@ const INSTAGRAM_URL = "https://instagram.com/novashop";
 const TIKTOK_URL = "https://tiktok.com/@novashop";
 
 const CITIES = ["طرابلس", "بنغازي", "مصراتة", "الزاوية", "زليتن", "سبها", "البيضاء", "درنة", "الخمس", "صبراتة", "غريان", "مدينة أخرى"];
-const CATEGORIES = ["الكل", "إلكترونيات", "إكسسوارات", "إضاءة", "طاقة"];
 
-const PRODUCTS = [
-  { id: "p1", sku: "NV-0104", name: "محفظة بطاقات مصرفية", category: "إكسسوارات", tag: "حماية البطاقات", price: 45, icon: CreditCard, images: [img1, img2, img3, img4, img5, img6], desc: "يمنع نسخ بيانات بطاقتك المصرفية عن بُعد أثناء التنقل اليومي." },
-  { id: "p2", sku: "NV-0091", name: "جهاز تتبع بلوتوث", category: "إلكترونيات", tag: "لا مزيد من الضياع", price: 60, icon: Bluetooth, desc: "علّقه على مفاتيحك أو حقيبتك وتتبّعها لحظيًا من هاتفك." },
-  { id: "p3", sku: "NV-0057", name: "ساعة ذكية S11", category: "إلكترونيات", tag: "الأكثر طلبًا", price: 150, icon: Watch, desc: "مكالمات، إشعارات، وقياس صحي كامل — بطارية تدوم أيامًا." },
-  { id: "p4", sku: "NV-0132", name: "باور بانك شمسي", category: "طاقة", tag: "طاقة أينما كنت", price: 85, icon: BatteryCharging, desc: "شحن سريع بالطاقة الشمسية، مقاوم للماء والغبار." },
-  { id: "p5", sku: "NV-0078", name: "مصباح ذكي G", category: "إضاءة", tag: "إضاءة أجواء", price: 70, icon: Lamp, desc: "تحكم كامل بالألوان والسطوع من التطبيق، يضيف لمسة فاخرة لأي غرفة." },
-  { id: "p6", sku: "NV-0145", name: "سماعة بلوتوث رياضية", category: "إلكترونيات", tag: "صوت نقي", price: 55, icon: Headphones, desc: "مقاومة للعرق، اتصال مستقر، وعزل ضوضاء خفيف." },
+// المنتج الوحيد المعروض حاليًا بالمتجر
+const PRODUCT = {
+  id: "p1",
+  sku: "NV-0104",
+  name: "محفظة بطاقات مصرفية",
+  category: "إكسسوارات",
+  tag: "حماية البطاقات",
+  price: 45,
+  icon: CreditCard,
+  images: [img1, img2, img3, img4, img5, img6],
+  desc: "يمنع نسخ بيانات بطاقتك المصرفية عن بُعد أثناء التنقل اليومي.",
+};
+
+// عناصر القائمة الجانبية — أضف عنصر جديد هنا بأي وقت مستقبلاً
+const MENU_ITEMS = [
+  { id: "store", label: "الرئيسية" },
+  { id: "about", label: "حول المتجر" },
 ];
 
 export default function App() {
   const [cart, setCart] = useState({});
   const [view, setView] = useState("store");
   const [cartOpen, setCartOpen] = useState(false);
-  const [quickView, setQuickView] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
-  const [category, setCategory] = useState("الكل");
-  const [query, setQuery] = useState("");
-  const [form, setForm] = useState({ name: "", phone: "", city: CITIES[0], area: "", address: "", note: "" });
+  const [form, setForm] = useState({ name: "", phone: "", city: CITIES[0], area: "", address: "", note: "", paymentMethod: "cash" });
   const [errors, setErrors] = useState({});
   const [orderNo, setOrderNo] = useState(null);
 
@@ -100,19 +109,14 @@ export default function App() {
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
-  const addToCart = (id) => setCart((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
-  const decFromCart = (id) => setCart((c) => { const n = { ...c }; if (!n[id]) return n; n[id] -= 1; if (n[id] <= 0) delete n[id]; return n; });
-  const removeFromCart = (id) => setCart((c) => { const n = { ...c }; delete n[id]; return n; });
+  const addToCart = () => setCart((c) => ({ ...c, [PRODUCT.id]: (c[PRODUCT.id] || 0) + 1 }));
+  const decFromCart = () => setCart((c) => { const n = { ...c }; if (!n[PRODUCT.id]) return n; n[PRODUCT.id] -= 1; if (n[PRODUCT.id] <= 0) delete n[PRODUCT.id]; return n; });
+  const removeFromCart = () => setCart((c) => { const n = { ...c }; delete n[PRODUCT.id]; return n; });
 
-  const cartItems = Object.entries(cart).map(([id, qty]) => ({ ...PRODUCTS.find((p) => p.id === id), qty })).filter(Boolean);
-  const cartCount = cartItems.reduce((s, i) => s + i.qty, 0);
-  const cartTotal = cartItems.reduce((s, i) => s + i.qty * i.price, 0);
-
-  const filtered = useMemo(() => PRODUCTS.filter((p) => {
-    const inCat = category === "الكل" || p.category === category;
-    const inQuery = query.trim() === "" || (p.name + p.tag + p.category).includes(query.trim());
-    return inCat && inQuery;
-  }), [category, query]);
+  const qty = cart[PRODUCT.id] || 0;
+  const cartItems = qty > 0 ? [{ ...PRODUCT, qty }] : [];
+  const cartCount = qty;
+  const cartTotal = qty * PRODUCT.price;
 
   const validate = () => {
     const e = {};
@@ -142,7 +146,8 @@ export default function App() {
       ...cartItems.map((i) => `- ${i.name} × ${i.qty} = ${i.qty * i.price} د.ل`),
       ``,
       `الإجمالي: ${cartTotal} د.ل`,
-      `طريقة الدفع: نقدًا عند الاستلام`,
+      `طريقة الدفع: ${form.paymentMethod === "bank" ? "تحويل مصرفي" : "نقدًا (كاش)"}`,
+      form.paymentMethod === "bank" ? `رقم الحساب المصرفي: ${BANK_ACCOUNT}` : null,
     ].filter(Boolean).join("\n");
 
     const waUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(lines)}`;
@@ -152,11 +157,9 @@ export default function App() {
   };
 
   const resetAll = () => {
-    setCart({}); setForm({ name: "", phone: "", city: CITIES[0], area: "", address: "", note: "" });
+    setCart({}); setForm({ name: "", phone: "", city: CITIES[0], area: "", address: "", note: "", paymentMethod: "cash" });
     setErrors({}); setOrderNo(null); setView("store");
   };
-
-  const qvProduct = quickView ? PRODUCTS.find((p) => p.id === quickView) : null;
 
   // ===== أحداث اللمس للسلايدر =====
   const handleTouchStart = (e) => {
@@ -168,15 +171,15 @@ export default function App() {
     setDragOffset(e.touches[0].clientX - touchStartXRef.current);
   };
   const handleTouchEnd = () => {
-    if (!isDragging || !qvProduct?.images?.length) { setIsDragging(false); setDragOffset(0); return; }
+    if (!isDragging) { setIsDragging(false); setDragOffset(0); return; }
     setIsDragging(false);
     const width = imgWrapRef.current?.offsetWidth || 300;
     const threshold = width * 0.15;
-    if (qvProduct.images.length > 1) {
+    if (PRODUCT.images.length > 1) {
       if (dragOffset > threshold) {
-        setActiveImage((i) => (i - 1 + qvProduct.images.length) % qvProduct.images.length);
+        setActiveImage((i) => (i - 1 + PRODUCT.images.length) % PRODUCT.images.length);
       } else if (dragOffset < -threshold) {
-        setActiveImage((i) => (i + 1) % qvProduct.images.length);
+        setActiveImage((i) => (i + 1) % PRODUCT.images.length);
       }
     }
     setDragOffset(0);
@@ -185,17 +188,11 @@ export default function App() {
   return (
     <div dir="rtl" className="min-h-screen w-full" style={{ background: C.bg, color: C.text, fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Dancing+Script:wght@700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap');
         * { box-sizing: border-box; }
         input:focus, textarea:focus, select:focus, button:focus-visible { outline: 2px solid ${C.tealB}; outline-offset: 2px; }
-        .pcard { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
-        .pcard:hover { transform: translateY(-4px); border-color: ${C.tealB}; box-shadow: 0 16px 32px -16px rgba(20,153,199,0.28); }
-        .pcard:hover .quickadd { opacity: 1; transform: translateY(0); }
-        .quickadd { opacity: 0; transform: translateY(6px); transition: all .2s ease; }
         ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 8px; }
         .dot { position:absolute; border-radius:50%; }
-        .product-row { display: flex; flex-direction: row; gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 12px; }
-        .product-card { width: 230px; flex-shrink: 0; scroll-snap-align: start; }
       `}</style>
 
       {/* Announcement bar */}
@@ -220,109 +217,16 @@ export default function App() {
 
           <div style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 21, letterSpacing: 1 }}>NOVA SHOP</div>
 
-          <div
-            className="hidden sm:flex items-center gap-2 rounded-full px-4 py-2"
-            style={{ position: "absolute", right: 0, top: "50%", transform: "translateY(-50%)", width: 220, background: C.panelSoft, border: `1px solid ${C.border}` }}
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="flex items-center justify-center rounded-full"
+            style={{ position: "absolute", right: 0, top: "50%", transform: "translateY(-50%)", width: 40, height: 40, border: `1.5px solid ${C.tealB}`, color: C.tealB }}
+            aria-label="القائمة"
           >
-            <Search size={15} color={C.muted} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث عن منتج..." className="bg-transparent w-full" style={{ color: C.text, fontSize: 13, outline: "none", border: "none" }} />
-          </div>
-        </div>
-        <div className="flex justify-center gap-6 mt-2">
-          <button onClick={() => setView("store")} style={{ fontSize: 13.5, fontWeight: view === "store" || view === "checkout" || view === "success" ? 700 : 500, color: view === "store" || view === "checkout" || view === "success" ? C.tealB : C.muted, borderBottom: view === "store" || view === "checkout" || view === "success" ? `2px solid ${C.tealB}` : "2px solid transparent", paddingBottom: 4 }}>الرئيسية</button>
-          <button onClick={() => setView("about")} style={{ fontSize: 13.5, fontWeight: view === "about" ? 700 : 500, color: view === "about" ? C.tealB : C.muted, borderBottom: view === "about" ? `2px solid ${C.tealB}` : "2px solid transparent", paddingBottom: 4 }}>حول المتجر</button>
+            <Menu size={19} />
+          </button>
         </div>
       </header>
-
-      {/* ===== لوحة العرض السريع (Quick View) — تنزل تحت القائمة الرئيسية بدل تغطيتها ===== */}
-      <div
-        style={{
-          maxHeight: qvProduct ? 900 : 0,
-          overflow: "hidden",
-          transition: "max-height 0.4s ease",
-          background: C.panelSoft,
-          borderBottom: qvProduct ? `1px solid ${C.border}` : "none",
-        }}
-      >
-        {qvProduct && (
-          <div style={{ maxWidth: 560, margin: "0 auto", padding: "18px 20px 26px" }}>
-            <div className="flex justify-end mb-2">
-              <button onClick={() => setQuickView(null)} style={{ color: C.muted }}><X size={20} /></button>
-            </div>
-
-            <div
-              ref={imgWrapRef}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-              style={{ position: "relative", width: "100%", height: 240, borderRadius: 14, overflow: "hidden", background: "#fff", touchAction: "pan-y" }}
-            >
-              {qvProduct.images?.length ? (
-                <>
-                  <div
-                    style={{
-                      display: "flex",
-                      height: "100%",
-                      direction: "ltr",
-                      transform: `translateX(calc(${-activeImage * 100}% + ${isDragging ? dragOffset : 0}px))`,
-                      transition: isDragging ? "none" : "transform 0.35s cubic-bezier(.22,.61,.36,1)",
-                    }}
-                  >
-                    {qvProduct.images.map((src, idx) => (
-                      <img
-                        key={idx}
-                        src={src}
-                        alt={qvProduct.name}
-                        draggable={false}
-                        style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", flexShrink: 0, userSelect: "none" }}
-                      />
-                    ))}
-                  </div>
-                  {qvProduct.images.length > 1 && (
-                    <>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setActiveImage((i) => (i - 1 + qvProduct.images.length) % qvProduct.images.length); }}
-                        className="flex items-center justify-center rounded-full"
-                        style={{ position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)", width: 32, height: 32, background: "rgba(255,255,255,0.9)", color: C.tealB }}
-                      >
-                        <ChevronRight size={18} />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setActiveImage((i) => (i + 1) % qvProduct.images.length); }}
-                        className="flex items-center justify-center rounded-full"
-                        style={{ position: "absolute", top: "50%", left: 8, transform: "translateY(-50%)", width: 32, height: 32, background: "rgba(255,255,255,0.9)", color: C.tealB }}
-                      >
-                        <ChevronLeft size={18} />
-                      </button>
-                      <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                        {qvProduct.images.map((_, idx) => (
-                          <button
-                            key={idx}
-                            onClick={(e) => { e.stopPropagation(); setActiveImage(idx); }}
-                            style={{ borderRadius: 999, width: idx === activeImage ? 18 : 6, height: 6, background: idx === activeImage ? C.tealB : "rgba(20,30,40,0.25)", transition: "all .2s" }}
-                          />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              ) : (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}><qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} /></div>
-              )}
-            </div>
-
-            <div style={{ fontSize: 11, color: C.mutedLight, fontFamily: "'IBM Plex Mono', monospace", margin: "14px 0 6px" }}>{qvProduct.sku} · {qvProduct.category}</div>
-            <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 19 }}>{qvProduct.name}</h3>
-            <p style={{ color: C.muted, fontSize: 13.5, lineHeight: 1.9, margin: "10px 0 16px" }}>{qvProduct.desc}</p>
-            <div className="flex items-center justify-between">
-              <span style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 20, color: C.tealB }}>{qvProduct.price} د.ل</span>
-              <button onClick={() => { addToCart(qvProduct.id); setQuickView(null); setCartOpen(true); }} className="rounded-full px-5 py-2.5" style={{ background: gradient, color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
-                أضف إلى السلة
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
 
       {view === "store" && (
         <>
@@ -345,10 +249,6 @@ export default function App() {
             <div className="mx-auto mt-2 mb-5 rounded-full" style={{ width: 90, height: 4, background: gradient }} />
             <p style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>توصيل لكل مدن ليبيا، بثقة من أول طلب</p>
 
-            <button onClick={() => setView("store")} className="rounded-full px-8 py-3 mt-6" style={{ background: gradient, color: "#fff", fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 15 }}>
-              تسوّق الآن
-            </button>
-
             <div className="flex flex-wrap justify-center gap-6 mt-8" style={{ fontSize: 13, color: C.muted }}>
               <div className="flex items-center gap-2"><Truck size={16} color={C.tealB} /> شحن لكل المدن</div>
               <div className="flex items-center gap-2"><ShieldCheck size={16} color={C.tealB} /> فحص قبل الدفع</div>
@@ -356,65 +256,86 @@ export default function App() {
             </div>
           </section>
 
-          {/* Section heading */}
-          <div className="text-center px-5 mt-6" style={{ maxWidth: 1120, margin: "24px auto 0" }}>
-            <h2 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 21 }}>منتجات مختارة بعناية</h2>
-            <div className="mx-auto mt-2 rounded-full" style={{ width: 60, height: 3, background: gradient }} />
-          </div>
-
-          {/* Category tabs */}
-          <section className="px-5 mt-6" style={{ maxWidth: 1120, margin: "24px auto 0" }}>
-            <div className="flex gap-2 flex-wrap justify-center pb-4">
-              {CATEGORIES.map((c) => (
-                <button key={c} onClick={() => setCategory(c)} className="rounded-full px-4 py-2" style={{ fontSize: 13, background: category === c ? undefined : "transparent", backgroundImage: category === c ? gradient : "none", color: category === c ? "#fff" : C.muted, fontWeight: category === c ? 700 : 500, border: `1px solid ${category === c ? "transparent" : C.border}` }}>
-                  {c}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {/* Products */}
-          <section className="px-5 py-6" style={{ maxWidth: 1120, margin: "0 auto" }}>
-            {filtered.length === 0 ? (
-              <p style={{ color: C.muted, fontSize: 14, textAlign: "center", padding: "40px 0" }}>لا توجد منتجات مطابقة لبحثك.</p>
-            ) : (
-              <div className="product-row">
-                {filtered.map((p) => {
-                  const Icon = p.icon;
-                  const qty = cart[p.id] || 0;
-                  return (
-                    <div key={p.id} className="pcard product-card rounded-2xl p-5 flex flex-col cursor-pointer" style={{ background: C.panel, border: `1.5px solid ${C.border}` }} onClick={() => { setQuickView(p.id); setActiveImage(0); }}>
-                      <div className="rounded-xl mb-4" style={{ height: 110, background: C.panelSoft, overflow: "hidden", position: "relative" }}>
-                        {p.images?.[0] ? (
-                          <img src={p.images[0]} alt={p.name} style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
-                        ) : (
-                          <div className="flex items-center justify-center w-full h-full"><Icon size={38} color={C.tealB} strokeWidth={1.5} /></div>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between" style={{ fontSize: 10.5, color: C.mutedLight, marginBottom: 6, fontFamily: "'IBM Plex Mono', monospace" }}>
-                        <span>{p.sku}</span>
-                        <span className="rounded-full px-2 py-0.5" style={{ background: C.badgeBg, color: C.badgeText, fontFamily: "'IBM Plex Sans Arabic', sans-serif", fontWeight: 700 }}>{p.tag}</span>
-                      </div>
-                      <div style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 700, fontSize: 15.5 }}>{p.name}</div>
-                      <div className="mt-auto pt-4 flex items-center justify-between">
-                        <span style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 17, color: C.tealB }}>{p.price} د.ل</span>
-                        {qty === 0 ? (
-                          <button onClick={(e) => { e.stopPropagation(); addToCart(p.id); }} className="quickadd rounded-full px-3.5 py-2 flex items-center gap-1" style={{ background: gradient, color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
-                            <Plus size={13} /> أضف
-                          </button>
-                        ) : (
-                          <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-3 rounded-full px-2 py-1" style={{ border: `1px solid ${C.border}` }}>
-                            <button onClick={() => addToCart(p.id)} style={{ color: C.tealB }}><Plus size={14} /></button>
-                            <span style={{ fontSize: 12.5 }}>{qty}</span>
-                            <button onClick={() => decFromCart(p.id)} style={{ color: C.muted }}><Minus size={14} /></button>
-                          </div>
-                        )}
-                      </div>
+          {/* Product */}
+          <section className="px-5 py-6" style={{ maxWidth: 560, margin: "0 auto" }}>
+            <div className="rounded-2xl p-5" style={{ background: C.panel, border: `1.5px solid ${C.border}` }}>
+              <div
+                ref={imgWrapRef}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                style={{ position: "relative", width: "100%", height: 280, borderRadius: 14, overflow: "hidden", background: C.panelSoft, touchAction: "pan-y" }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    height: "100%",
+                    direction: "ltr",
+                    transform: `translateX(calc(${-activeImage * 100}% + ${isDragging ? dragOffset : 0}px))`,
+                    transition: isDragging ? "none" : "transform 0.35s cubic-bezier(.22,.61,.36,1)",
+                  }}
+                >
+                  {PRODUCT.images.map((src, idx) => (
+                    <img
+                      key={idx}
+                      src={src}
+                      alt={PRODUCT.name}
+                      draggable={false}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", flexShrink: 0, userSelect: "none" }}
+                    />
+                  ))}
+                </div>
+                {PRODUCT.images.length > 1 && (
+                  <>
+                    <button
+                      onClick={() => setActiveImage((i) => (i - 1 + PRODUCT.images.length) % PRODUCT.images.length)}
+                      className="flex items-center justify-center rounded-full"
+                      style={{ position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)", width: 32, height: 32, background: "rgba(255,255,255,0.9)", color: C.tealB }}
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                    <button
+                      onClick={() => setActiveImage((i) => (i + 1) % PRODUCT.images.length)}
+                      className="flex items-center justify-center rounded-full"
+                      style={{ position: "absolute", top: "50%", left: 8, transform: "translateY(-50%)", width: 32, height: 32, background: "rgba(255,255,255,0.9)", color: C.tealB }}
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                      {PRODUCT.images.map((_, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setActiveImage(idx)}
+                          style={{ borderRadius: 999, width: idx === activeImage ? 18 : 6, height: 6, background: idx === activeImage ? C.tealB : "rgba(20,30,40,0.25)", transition: "all .2s" }}
+                        />
+                      ))}
                     </div>
-                  );
-                })}
+                  </>
+                )}
               </div>
-            )}
+
+              <div className="flex items-center justify-between" style={{ fontSize: 10.5, color: C.mutedLight, margin: "14px 0 6px", fontFamily: "'IBM Plex Mono', monospace" }}>
+                <span>{PRODUCT.sku}</span>
+                <span className="rounded-full px-2 py-0.5" style={{ background: C.badgeBg, color: C.badgeText, fontFamily: "'IBM Plex Sans Arabic', sans-serif", fontWeight: 700 }}>{PRODUCT.tag}</span>
+              </div>
+              <h2 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 20 }}>{PRODUCT.name}</h2>
+              <p style={{ color: C.muted, fontSize: 13.5, lineHeight: 1.9, margin: "10px 0 18px" }}>{PRODUCT.desc}</p>
+
+              <div className="flex items-center justify-between">
+                <span style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 20, color: C.tealB }}>{PRODUCT.price} د.ل</span>
+                {qty === 0 ? (
+                  <button onClick={addToCart} className="rounded-full px-5 py-2.5 flex items-center gap-1.5" style={{ background: gradient, color: "#fff", fontSize: 13.5, fontWeight: 700 }}>
+                    <Plus size={14} /> أضف إلى السلة
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-4 rounded-full px-3 py-2" style={{ border: `1px solid ${C.border}` }}>
+                    <button onClick={addToCart} style={{ color: C.tealB }}><Plus size={16} /></button>
+                    <span style={{ fontSize: 14 }}>{qty}</span>
+                    <button onClick={decFromCart} style={{ color: C.muted }}><Minus size={16} /></button>
+                  </div>
+                )}
+              </div>
+            </div>
           </section>
         </>
       )}
@@ -425,12 +346,12 @@ export default function App() {
 
           <div className="rounded-2xl p-5 mb-4" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
             <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 700, fontSize: 17, color: C.tealB, marginBottom: 8 }}>من نحن</h3>
-            <p style={{ fontSize: 14, color: C.text, lineHeight: 1.9 }}>Nova Shop متجر ليبي يقدّم منتجات ذكية مختارة بعناية، مع التزام كامل بالدفع عند الاستلام وثقة العميل من أول طلب.</p>
+            <p style={{ fontSize: 14, color: C.text, lineHeight: 1.9 }}>Nova Shop متجر ليبي يقدّم منتجات ذكية مختارة بعناية، مع التزام كامل بثقة العميل من أول طلب.</p>
           </div>
 
           <div className="rounded-2xl p-5 mb-4" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
             <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 700, fontSize: 17, color: C.tealB, marginBottom: 8 }}>سياسة الاسترجاع</h3>
-            <p style={{ fontSize: 14, color: C.text, lineHeight: 1.9 }}>يحق للعميل فحص المنتج قبل الدفع عند الاستلام. في حال وجود عيب مصنعي، يمكن الاسترجاع أو الاستبدال خلال 48 ساعة من الاستلام.</p>
+            <p style={{ fontSize: 14, color: C.text, lineHeight: 1.9 }}>يحق للعميل فحص المنتج قبل استلامه. في حال وجود عيب مصنعي، يمكن الاسترجاع أو الاستبدال خلال 48 ساعة من الاستلام.</p>
           </div>
 
           <div className="rounded-2xl p-5" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
@@ -453,7 +374,7 @@ export default function App() {
             <span>التأكيد</span>
           </div>
           <h2 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 22 }}>بيانات التوصيل</h2>
-          <p style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>الدفع نقدًا عند استلام الطلب — لا حاجة لبطاقة أو تحويل.</p>
+          <p style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>الدفع متوفر بجميع الطرق: كاش أو تحويل مصرفي.</p>
 
           <div className="mt-6 flex flex-col gap-4">
             <Field label="الاسم الكامل" icon={User} error={errors.name}>
@@ -476,6 +397,38 @@ export default function App() {
             <Field label="ملاحظات (اختياري)">
               <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="مثال: التوصيل بعد الساعة 4" style={inputStyle} />
             </Field>
+
+            {/* طريقة الدفع */}
+            <label className="flex flex-col gap-1.5">
+              <span style={{ fontSize: 12.5, color: "#6B7684" }}>طريقة الدفع</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, paymentMethod: "cash" })}
+                  className="flex-1 rounded-xl py-2.5"
+                  style={{ fontSize: 13.5, fontWeight: 700, background: form.paymentMethod === "cash" ? undefined : "transparent", backgroundImage: form.paymentMethod === "cash" ? gradient : "none", color: form.paymentMethod === "cash" ? "#fff" : C.muted, border: `1px solid ${form.paymentMethod === "cash" ? "transparent" : C.border}` }}
+                >
+                  كاش عند الاستلام
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, paymentMethod: "bank" })}
+                  className="flex-1 rounded-xl py-2.5"
+                  style={{ fontSize: 13.5, fontWeight: 700, background: form.paymentMethod === "bank" ? undefined : "transparent", backgroundImage: form.paymentMethod === "bank" ? gradient : "none", color: form.paymentMethod === "bank" ? "#fff" : C.muted, border: `1px solid ${form.paymentMethod === "bank" ? "transparent" : C.border}` }}
+                >
+                  تحويل مصرفي
+                </button>
+              </div>
+            </label>
+
+            {form.paymentMethod === "bank" && (
+              <div className="rounded-xl p-4" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 6 }}>حوّل المبلغ إلى الحساب التالي، ثم أرسل لنا إيصال التحويل عبر واتساب:</div>
+                <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "#fff", border: `1px solid ${C.border}` }}>
+                  <span dir="ltr" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, letterSpacing: 0.5 }}>{BANK_ACCOUNT}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-8 rounded-2xl p-5" style={{ background: C.panelSoft, border: `1px solid ${C.border}` }}>
@@ -491,7 +444,7 @@ export default function App() {
           </div>
 
           <button onClick={submitOrder} className="w-full rounded-full py-3 mt-6" style={{ background: gradient, color: "#fff", fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 15 }}>
-            تأكيد الطلب — الدفع عند الاستلام
+            تأكيد الطلب
           </button>
         </section>
       )}
@@ -538,22 +491,18 @@ export default function App() {
                 {cartItems.map((i) => (
                   <div key={i.id} className="flex items-center gap-3 pb-4" style={{ borderBottom: `1px solid ${C.border}` }}>
                     <div className="rounded-lg shrink-0" style={{ width: 48, height: 48, background: C.panelSoft, overflow: "hidden", position: "relative" }}>
-                      {i.images?.[0] ? (
-                        <img src={i.images[0]} alt={i.name} style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
-                      ) : (
-                        <div className="flex items-center justify-center w-full h-full"><i.icon size={22} color={C.tealB} /></div>
-                      )}
+                      <img src={i.images[0]} alt={i.name} style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
                     </div>
                     <div className="flex-1">
                       <div style={{ fontSize: 13.5, fontWeight: 600 }}>{i.name}</div>
                       <div style={{ fontSize: 11.5, color: C.mutedLight, marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>{i.sku} · {i.price} د.ل</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => addToCart(i.id)} style={{ color: C.tealB }}><Plus size={15} /></button>
+                      <button onClick={addToCart} style={{ color: C.tealB }}><Plus size={15} /></button>
                       <span style={{ fontSize: 13 }}>{i.qty}</span>
-                      <button onClick={() => decFromCart(i.id)} style={{ color: C.muted }}><Minus size={15} /></button>
+                      <button onClick={decFromCart} style={{ color: C.muted }}><Minus size={15} /></button>
                     </div>
-                    <button onClick={() => removeFromCart(i.id)} style={{ color: C.mutedLight }}><X size={16} /></button>
+                    <button onClick={removeFromCart} style={{ color: C.mutedLight }}><X size={16} /></button>
                   </div>
                 ))}
               </div>
@@ -568,6 +517,35 @@ export default function App() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* القائمة الجانبية — عمودية وقابلة للتوسعة */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-40 flex justify-start" style={{ background: "rgba(20,30,40,0.5)" }} onClick={() => setMenuOpen(false)}>
+          <div className="h-full w-full flex flex-col p-5" style={{ maxWidth: 300, background: "#fff", borderInlineEnd: `1px solid ${C.border}` }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 18 }}>القائمة</h3>
+              <button onClick={() => setMenuOpen(false)} style={{ color: C.muted }}><X size={22} /></button>
+            </div>
+            <div className="flex flex-col gap-1">
+              {MENU_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => { setView(item.id); setMenuOpen(false); }}
+                  className="text-right rounded-xl px-4 py-3"
+                  style={{
+                    fontSize: 14.5,
+                    fontWeight: view === item.id ? 700 : 500,
+                    color: view === item.id ? C.tealB : C.text,
+                    background: view === item.id ? C.badgeBg : "transparent",
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -587,7 +565,7 @@ export default function App() {
         <div className="grid gap-8" style={{ maxWidth: 1120, margin: "0 auto", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
           <div>
             <div style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, marginBottom: 8 }}>NOVA SHOP</div>
-            <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.8 }}>منتجات مختارة بعناية، بضمان الدفع عند الاستلام.</p>
+            <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.8 }}>منتجات مختارة بعناية، والدفع متوفر بجميع الطرق.</p>
           </div>
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>روابط</div>
@@ -598,7 +576,7 @@ export default function App() {
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>تواصل</div>
             <div className="flex flex-col gap-2" style={{ fontSize: 12.5, color: C.muted }}>
-              <span>واتساب: 09xxxxxxxx</span><span>طرابلس، ليبيا</span>
+              <span dir="ltr" style={{ textAlign: "right" }}>واتساب: {WHATSAPP_NUMBER.replace("218", "0")}</span><span>طرابلس، ليبيا</span>
             </div>
             <div className="flex items-center gap-3 mt-3">
               <a href={FACEBOOK_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center rounded-full" style={{ width: 34, height: 34, background: C.panelSoft, border: `1px solid ${C.border}`, color: C.tealB }}>
