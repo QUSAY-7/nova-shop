@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import {
   ShoppingBag, X, Plus, Minus, Check, Phone, User, MapPin, ChevronLeft,
   Watch, BatteryCharging, Lamp, Bluetooth, CreditCard, Headphones,
@@ -94,6 +94,12 @@ export default function App() {
   const [errors, setErrors] = useState({});
   const [orderNo, setOrderNo] = useState(null);
 
+  // ===== سلايدر الصور: حالة اللمس/السحب =====
+  const imgWrapRef = useRef(null);
+  const touchStartXRef = useRef(0);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
   const addToCart = (id) => setCart((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
   const decFromCart = (id) => setCart((c) => { const n = { ...c }; if (!n[id]) return n; n[id] -= 1; if (n[id] <= 0) delete n[id]; return n; });
   const removeFromCart = (id) => setCart((c) => { const n = { ...c }; delete n[id]; return n; });
@@ -152,6 +158,30 @@ export default function App() {
 
   const qvProduct = quickView ? PRODUCTS.find((p) => p.id === quickView) : null;
 
+  // ===== أحداث اللمس للسلايدر =====
+  const handleTouchStart = (e) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    setIsDragging(true);
+  };
+  const handleTouchMove = (e) => {
+    if (!isDragging) return;
+    setDragOffset(e.touches[0].clientX - touchStartXRef.current);
+  };
+  const handleTouchEnd = () => {
+    if (!isDragging || !qvProduct?.images?.length) { setIsDragging(false); setDragOffset(0); return; }
+    setIsDragging(false);
+    const width = imgWrapRef.current?.offsetWidth || 300;
+    const threshold = width * 0.15;
+    if (qvProduct.images.length > 1) {
+      if (dragOffset > threshold) {
+        setActiveImage((i) => (i - 1 + qvProduct.images.length) % qvProduct.images.length);
+      } else if (dragOffset < -threshold) {
+        setActiveImage((i) => (i + 1) % qvProduct.images.length);
+      }
+    }
+    setDragOffset(0);
+  };
+
   return (
     <div dir="rtl" className="min-h-screen w-full" style={{ background: C.bg, color: C.text, fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
       <style>{`
@@ -203,6 +233,96 @@ export default function App() {
           <button onClick={() => setView("about")} style={{ fontSize: 13.5, fontWeight: view === "about" ? 700 : 500, color: view === "about" ? C.tealB : C.muted, borderBottom: view === "about" ? `2px solid ${C.tealB}` : "2px solid transparent", paddingBottom: 4 }}>حول المتجر</button>
         </div>
       </header>
+
+      {/* ===== لوحة العرض السريع (Quick View) — تنزل تحت القائمة الرئيسية بدل تغطيتها ===== */}
+      <div
+        style={{
+          maxHeight: qvProduct ? 900 : 0,
+          overflow: "hidden",
+          transition: "max-height 0.4s ease",
+          background: C.panelSoft,
+          borderBottom: qvProduct ? `1px solid ${C.border}` : "none",
+        }}
+      >
+        {qvProduct && (
+          <div style={{ maxWidth: 560, margin: "0 auto", padding: "18px 20px 26px" }}>
+            <div className="flex justify-end mb-2">
+              <button onClick={() => setQuickView(null)} style={{ color: C.muted }}><X size={20} /></button>
+            </div>
+
+            <div
+              ref={imgWrapRef}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              style={{ position: "relative", width: "100%", height: 240, borderRadius: 14, overflow: "hidden", background: "#fff", touchAction: "pan-y" }}
+            >
+              {qvProduct.images?.length ? (
+                <>
+                  <div
+                    style={{
+                      display: "flex",
+                      height: "100%",
+                      direction: "ltr",
+                      transform: `translateX(calc(${-activeImage * 100}% + ${isDragging ? dragOffset : 0}px))`,
+                      transition: isDragging ? "none" : "transform 0.35s cubic-bezier(.22,.61,.36,1)",
+                    }}
+                  >
+                    {qvProduct.images.map((src, idx) => (
+                      <img
+                        key={idx}
+                        src={src}
+                        alt={qvProduct.name}
+                        draggable={false}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", flexShrink: 0, userSelect: "none" }}
+                      />
+                    ))}
+                  </div>
+                  {qvProduct.images.length > 1 && (
+                    <>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setActiveImage((i) => (i - 1 + qvProduct.images.length) % qvProduct.images.length); }}
+                        className="flex items-center justify-center rounded-full"
+                        style={{ position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)", width: 32, height: 32, background: "rgba(255,255,255,0.9)", color: C.tealB }}
+                      >
+                        <ChevronRight size={18} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setActiveImage((i) => (i + 1) % qvProduct.images.length); }}
+                        className="flex items-center justify-center rounded-full"
+                        style={{ position: "absolute", top: "50%", left: 8, transform: "translateY(-50%)", width: 32, height: 32, background: "rgba(255,255,255,0.9)", color: C.tealB }}
+                      >
+                        <ChevronLeft size={18} />
+                      </button>
+                      <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                        {qvProduct.images.map((_, idx) => (
+                          <button
+                            key={idx}
+                            onClick={(e) => { e.stopPropagation(); setActiveImage(idx); }}
+                            style={{ borderRadius: 999, width: idx === activeImage ? 18 : 6, height: 6, background: idx === activeImage ? C.tealB : "rgba(20,30,40,0.25)", transition: "all .2s" }}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}><qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} /></div>
+              )}
+            </div>
+
+            <div style={{ fontSize: 11, color: C.mutedLight, fontFamily: "'IBM Plex Mono', monospace", margin: "14px 0 6px" }}>{qvProduct.sku} · {qvProduct.category}</div>
+            <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 19 }}>{qvProduct.name}</h3>
+            <p style={{ color: C.muted, fontSize: 13.5, lineHeight: 1.9, margin: "10px 0 16px" }}>{qvProduct.desc}</p>
+            <div className="flex items-center justify-between">
+              <span style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 20, color: C.tealB }}>{qvProduct.price} د.ل</span>
+              <button onClick={() => { addToCart(qvProduct.id); setQuickView(null); setCartOpen(true); }} className="rounded-full px-5 py-2.5" style={{ background: gradient, color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+                أضف إلى السلة
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {view === "store" && (
         <>
@@ -401,64 +521,6 @@ export default function App() {
             <button onClick={resetAll} className="rounded-full px-6 py-3 mt-4" style={{ border: `1.5px solid ${C.tealB}`, color: C.tealB, fontSize: 14 }}>متابعة التسوق</button>
           </div>
         </section>
-      )}
-
-      {/* Quick view modal */}
-      {qvProduct && (
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 40, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "rgba(20,30,40,0.55)" }}
-          onClick={() => setQuickView(null)}
-        >
-          <div
-            style={{ borderRadius: 20, padding: 24, width: "100%", maxWidth: 460, background: "#fff", border: `1px solid ${C.border}` }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-end"><button onClick={() => setQuickView(null)} style={{ color: C.muted }}><X size={20} /></button></div>
-
-            <div style={{ borderRadius: 14, marginBottom: 16, height: 220, background: C.panelSoft, overflow: "hidden", position: "relative" }}>
-              {qvProduct.images?.length ? (
-                <>
-                  <img src={qvProduct.images[activeImage]} alt={qvProduct.name} style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
-                  {qvProduct.images.length > 1 && (
-                    <>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setActiveImage((i) => (i - 1 + qvProduct.images.length) % qvProduct.images.length); }}
-                        className="flex items-center justify-center rounded-full"
-                        style={{ position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)", width: 32, height: 32, background: "rgba(255,255,255,0.9)", color: C.tealB }}
-                      >
-                        <ChevronRight size={18} />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setActiveImage((i) => (i + 1) % qvProduct.images.length); }}
-                        className="flex items-center justify-center rounded-full"
-                        style={{ position: "absolute", top: "50%", left: 8, transform: "translateY(-50%)", width: 32, height: 32, background: "rgba(255,255,255,0.9)", color: C.tealB }}
-                      >
-                        <ChevronLeft size={18} />
-                      </button>
-                      <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                        {qvProduct.images.map((_, idx) => (
-                          <button key={idx} onClick={(e) => { e.stopPropagation(); setActiveImage(idx); }} style={{ borderRadius: 999, width: idx === activeImage ? 18 : 6, height: 6, background: idx === activeImage ? "#fff" : "rgba(255,255,255,0.6)", transition: "all .2s" }} />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              ) : (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}><qvProduct.icon size={52} color={C.tealB} strokeWidth={1.3} /></div>
-              )}
-            </div>
-
-            <div style={{ fontSize: 11, color: C.mutedLight, fontFamily: "'IBM Plex Mono', monospace", marginBottom: 6 }}>{qvProduct.sku} · {qvProduct.category}</div>
-            <h3 style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 19 }}>{qvProduct.name}</h3>
-            <p style={{ color: C.muted, fontSize: 13.5, lineHeight: 1.9, margin: "10px 0 16px" }}>{qvProduct.desc}</p>
-            <div className="flex items-center justify-between">
-              <span style={{ fontFamily: "'Tajawal', sans-serif", fontWeight: 800, fontSize: 20, color: C.tealB }}>{qvProduct.price} د.ل</span>
-              <button onClick={() => { addToCart(qvProduct.id); setQuickView(null); setCartOpen(true); }} className="rounded-full px-5 py-2.5" style={{ background: gradient, color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
-                أضف إلى السلة
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Cart Drawer */}
