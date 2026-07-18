@@ -22,7 +22,7 @@ import {
   LayoutGrid,
   Trash2,
 } from "lucide-react";
-
+import { Wallet, CreditCard, WalletMinimal } from "lucide-react";
 /* ---------------------------------------------------------
    إعدادات المتجر — عدّل هذه القيم فقط عند الحاجة
 --------------------------------------------------------- */
@@ -65,7 +65,7 @@ const PRODUCTS = [
     id: "nv-0305",
     code: "NV-0305",
     category: "إضاءة",
-    icon: Lightbulb,
+    icon: <Wallet className="w-16 h-16 text-teal-700" />,
     name: "مصباح LED قابل للطي",
     desc: "إضاءة مكتبية بثلاث درجات، شحن USB وتصميم يوفر مساحة.",
     price: 35,
