@@ -17,7 +17,6 @@ import {
   Headphones,
   Lightbulb,
   Watch,
-  CreditCard,
   Smartphone,
   LayoutGrid,
   Trash2,
