@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   ShoppingBag,
   Menu,
@@ -21,10 +21,13 @@ import {
   Smartphone,
   LayoutGrid,
   Trash2,
+  Wallet,
+  WalletMinimal,
 } from "lucide-react";
-import { Wallet, CreditCard, WalletMinimal } from "lucide-react";
+import { supabase } from "./supabaseClient";
+
 /* ---------------------------------------------------------
-   إعدادات المتجر — عدّل هذه القيم فقط عند الحاجة
+  إعدادات المتجر — عدّل هذه القيم فقط عند الحاجة
 --------------------------------------------------------- */
 const WHATSAPP_NUMBER = "218931739453"; // بصيغة دولية بدون + أو أصفار زائدة
 const BANK_ACCOUNT = "LY25025010113475443410011";
@@ -37,61 +40,13 @@ const MENU_ITEMS = [
   { label: "تواصل معنا", href: "#contact" },
 ];
 
-const CATEGORIES = ["الكل", "إلكترونيات", "إكسسوارات", "إضاءة"];
-
-/* أضف/عدّل منتجاتك هنا — كل عنصر مستقل بالكامل */
-const PRODUCTS = [
-  {
-    id: "nv-0104",
-    code: "NV-0104",
-    category: "إكسسوارات",
-    icon: CreditCard,
-    name: "محفظة بطاقات مصرفية",
-    desc: "تمنع نسخ بيانات بطاقتك عن بُعد أثناء تنقلك اليومي.",
-    price: 45,
-    compareAt: 65,
-  },
-  {
-    id: "nv-0211",
-    code: "NV-0211",
-    category: "إلكترونيات",
-    icon: Headphones,
-    name: "سماعات بلوتوث لاسلكية",
-    desc: "صوت نقي وعزل ضوضاء مع بطارية تدوم طوال اليوم.",
-    price: 120,
-    compareAt: 150,
-  },
-  {
-    id: "nv-0305",
-    code: "NV-0305",
-    category: "إضاءة",
-    icon: <Wallet className="w-16 h-16 text-teal-700" />,
-    name: "مصباح LED قابل للطي",
-    desc: "إضاءة مكتبية بثلاث درجات، شحن USB وتصميم يوفر مساحة.",
-    price: 35,
-    compareAt: null,
-  },
-  {
-    id: "nv-0158",
-    code: "NV-0158",
-    category: "إلكترونيات",
-    icon: Watch,
-    name: "ساعة ذكية رياضية",
-    desc: "تتبع الخطوات والنبض والنوم، متوافقة مع أندرويد وآيفون.",
-    price: 180,
-    compareAt: 220,
-  },
-  {
-    id: "nv-0072",
-    code: "NV-0072",
-    category: "إكسسوارات",
-    icon: Smartphone,
-    name: "حامل هاتف مغناطيسي للسيارة",
-    desc: "تثبيت قوي على فتحة التهوية، تركيب دون أدوات.",
-    price: 25,
-    compareAt: null,
-  },
-];
+/* أيقونة افتراضية حسب التصنيف — تُستخدم فقط إذا المنتج بدون صورة */
+const CATEGORY_ICONS = {
+  "إلكترونيات": Headphones,
+  "إكسسوارات": CreditCard,
+  "إضاءة": Lightbulb,
+};
+const getCategoryIcon = (category) => CATEGORY_ICONS[category] || LayoutGrid;
 
 const FEATURES = [
   { icon: ShieldCheck, title: "فحص قبل الشحن", body: "كل طلب يُراجع ويُفحص قبل إرساله لك، مهما كان المنتج." },
@@ -115,17 +70,53 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
 
+  // ---- بيانات المنتجات من Supabase ----
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchProducts = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (!isMounted) return;
+
+      if (error) {
+        setLoadError(error.message);
+      } else {
+        setProducts(data || []);
+      }
+      setLoading(false);
+    };
+
+    fetchProducts();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const CATEGORIES = useMemo(() => {
+    const unique = Array.from(new Set(products.map((p) => p.category).filter(Boolean)));
+    return ["الكل", ...unique];
+  }, [products]);
+
   const filteredProducts = useMemo(
-    () => (activeCategory === "الكل" ? PRODUCTS : PRODUCTS.filter((p) => p.category === activeCategory)),
-    [activeCategory]
+    () => (activeCategory === "الكل" ? products : products.filter((p) => p.category === activeCategory)),
+    [activeCategory, products]
   );
 
   const cartItems = useMemo(
     () =>
       Object.entries(cart)
-        .map(([id, qty]) => ({ product: PRODUCTS.find((p) => p.id === id), qty }))
+        .map(([id, qty]) => ({ product: products.find((p) => p.id === id), qty }))
         .filter((line) => line.product && line.qty > 0),
-    [cart]
+    [cart, products]
   );
 
   const totalQty = cartItems.reduce((sum, l) => sum + l.qty, 0);
@@ -146,7 +137,8 @@ export default function App() {
   const orderMessage = () => {
     const lines = ["طلب جديد من NOVA SHOP", ""];
     cartItems.forEach((l) => {
-      lines.push(`${l.product.name} (${l.product.code}) × ${l.qty} — ${l.product.price * l.qty} د.ل`);
+      const code = l.product.code || l.product.id;
+      lines.push(`${l.product.name} (${code}) × ${l.qty} — ${l.product.price * l.qty} د.ل`);
     });
     lines.push("");
     lines.push(`الإجمالي: ${totalPrice} د.ل`);
@@ -165,6 +157,35 @@ export default function App() {
     } catch (e) {
       /* noop */
     }
+  };
+
+  // يعرض صورة المنتج إن وجدت، وإلا أيقونة افتراضية حسب التصنيف
+  const ProductThumb = ({ product }) => {
+    if (product.image) {
+      return (
+        <img
+          src={product.image}
+          alt={product.name}
+          style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "14px" }}
+        />
+      );
+    }
+    const Icon = getCategoryIcon(product.category);
+    return <Icon />;
+  };
+
+  const CartThumb = ({ product }) => {
+    if (product.image) {
+      return (
+        <img
+          src={product.image}
+          alt={product.name}
+          style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "12px" }}
+        />
+      );
+    }
+    const Icon = getCategoryIcon(product.category);
+    return <Icon />;
   };
 
   return (
@@ -216,7 +237,7 @@ export default function App() {
         .cart-empty span{ font-size:13px; }
 
         .cart-line{ display:flex; gap:10px; padding:10px; border-radius:16px; background:var(--teal-light); }
-        .cart-thumb{ width:48px; height:48px; border-radius:12px; flex-shrink:0; background:var(--surface); display:flex; align-items:center; justify-content:center; }
+        .cart-thumb{ width:48px; height:48px; border-radius:12px; flex-shrink:0; background:var(--surface); display:flex; align-items:center; justify-content:center; overflow:hidden; }
         .cart-thumb svg{ width:20px; height:20px; color:var(--teal-dark); }
         .cart-info{ flex:1; min-width:0; }
         .cart-name{ font-size:13px; font-weight:700; }
@@ -291,9 +312,9 @@ export default function App() {
         /* ---------- Product grid ---------- */
         .product-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
         .product-card{ border-radius:20px; background:var(--surface); border:1px solid var(--line); padding:14px; display:flex; flex-direction:column; }
-        .product-thumb{ width:100%; aspect-ratio:1/1; border-radius:14px; background:var(--teal-light); display:flex; align-items:center; justify-content:center; margin-bottom:10px; position:relative; }
+        .product-thumb{ width:100%; aspect-ratio:1/1; border-radius:14px; background:var(--teal-light); display:flex; align-items:center; justify-content:center; margin-bottom:10px; position:relative; overflow:hidden; }
         .product-thumb svg{ width:30px; height:30px; color:var(--teal-dark); }
-        .product-cat-pill{ position:absolute; top:8px; right:8px; font-size:9px; font-weight:700; padding:3px 8px; border-radius:999px; background:rgba(255,255,255,.85); color:var(--teal-dark); }
+        .product-cat-pill{ position:absolute; top:8px; right:8px; font-size:9px; font-weight:700; padding:3px 8px; border-radius:999px; background:rgba(255,255,255,.85); color:var(--teal-dark); z-index:1; }
         .product-name{ font-size:13px; font-weight:700; line-height:1.4; min-height:36px; }
         .product-desc-sm{ font-size:11px; color:var(--muted); line-height:1.5; margin-top:3px; min-height:32px; }
         .product-price-row{ display:flex; align-items:baseline; gap:6px; margin-top:8px; }
@@ -303,6 +324,9 @@ export default function App() {
         .add-btn{ width:100%; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:var(--teal-light); color:var(--teal-dark); font-size:12.5px; font-weight:700; transition: background .15s; }
         .add-btn:active{ transform: scale(.97); }
         .product-action .qty-control{ width:100%; justify-content:space-between; background:var(--teal-light); }
+
+        /* ---------- Loading / empty states ---------- */
+        .state-box{ text-align:center; padding:40px 16px; color:var(--muted); font-size:13px; }
 
         /* ---------- Payment (in cart) ---------- */
         .field-block{ margin-top:16px; flex-shrink:0; }
@@ -342,7 +366,7 @@ export default function App() {
         .sticky-cta svg{ width:18px; height:18px; }
 
         /* =====================================================
-           التابلت — من 640px
+          التابلت — من 640px
         ===================================================== */
         @media (min-width: 640px){
           :root{ --container: 720px; }
@@ -353,7 +377,7 @@ export default function App() {
         }
 
         /* =====================================================
-           اللابتوب / الشاشات الكبيرة — من 1024px
+          اللابتوب / الشاشات الكبيرة — من 1024px
         ===================================================== */
         @media (min-width: 1024px){
           :root{ --container: 1120px; }
@@ -440,35 +464,32 @@ export default function App() {
               </div>
             ) : (
               <div className="cart-scroll">
-                {cartItems.map(({ product, qty }) => {
-                  const Icon = product.icon;
-                  return (
-                    <div key={product.id} className="cart-line">
-                      <div className="cart-thumb">
-                        <Icon />
-                      </div>
-                      <div className="cart-info">
-                        <p className="cart-name">{product.name}</p>
-                        <p className="cart-code">{product.code}</p>
-                        <div className="cart-line-bottom">
-                          <span className="cart-price">{product.price * qty} د.ل</span>
-                          <div className="qty-control sm">
-                            <button className="qty-btn" onClick={() => dec(product.id)}>
-                              <Minus />
-                            </button>
-                            <span className="qty-val">{qty}</span>
-                            <button className="qty-btn" onClick={() => inc(product.id)}>
-                              <Plus />
-                            </button>
-                          </div>
+                {cartItems.map(({ product, qty }) => (
+                  <div key={product.id} className="cart-line">
+                    <div className="cart-thumb">
+                      <CartThumb product={product} />
+                    </div>
+                    <div className="cart-info">
+                      <p className="cart-name">{product.name}</p>
+                      <p className="cart-code">{product.code || product.id}</p>
+                      <div className="cart-line-bottom">
+                        <span className="cart-price">{product.price * qty} د.ل</span>
+                        <div className="qty-control sm">
+                          <button className="qty-btn" onClick={() => dec(product.id)}>
+                            <Minus />
+                          </button>
+                          <span className="qty-val">{qty}</span>
+                          <button className="qty-btn" onClick={() => inc(product.id)}>
+                            <Plus />
+                          </button>
                         </div>
                       </div>
-                      <button className="cart-remove" onClick={() => setQty(product.id, 0)} aria-label="إزالة">
-                        <Trash2 />
-                      </button>
                     </div>
-                  );
-                })}
+                    <button className="cart-remove" onClick={() => setQty(product.id, 0)} aria-label="إزالة">
+                      <Trash2 />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -578,55 +599,65 @@ export default function App() {
         <div className="container">
           <h2 className="section-title">منتجاتنا</h2>
 
-          <div className="cat-tabs">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`cat-tab ${activeCategory === cat ? "active" : ""}`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          {loading ? (
+            <div className="state-box">جاري تحميل المنتجات...</div>
+          ) : loadError ? (
+            <div className="state-box">تعذّر تحميل المنتجات: {loadError}</div>
+          ) : products.length === 0 ? (
+            <div className="state-box">لا توجد منتجات حالياً</div>
+          ) : (
+            <>
+              <div className="cat-tabs">
+                {CATEGORIES.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`cat-tab ${activeCategory === cat ? "active" : ""}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
 
-          <div className="product-grid">
-            {filteredProducts.map((product) => {
-              const Icon = product.icon;
-              const qty = cart[product.id] || 0;
-              return (
-                <div key={product.id} className="product-card">
-                  <div className="product-thumb">
-                    <span className="product-cat-pill">{product.category}</span>
-                    <Icon />
-                  </div>
-                  <p className="product-name">{product.name}</p>
-                  <p className="product-desc-sm">{product.desc}</p>
-                  <div className="product-price-row">
-                    <span className="product-price">{product.price} د.ل</span>
-                    {product.compareAt && <span className="product-compare">{product.compareAt} د.ل</span>}
-                  </div>
-                  <div className="product-action">
-                    {qty === 0 ? (
-                      <button className="add-btn" onClick={() => addToCart(product.id)}>
-                        <Plus size={14} /> أضف للسلة
-                      </button>
-                    ) : (
-                      <div className="qty-control">
-                        <button className="qty-btn" onClick={() => dec(product.id)}>
-                          <Minus />
-                        </button>
-                        <span className="qty-val">{qty}</span>
-                        <button className="qty-btn" onClick={() => inc(product.id)}>
-                          <Plus />
-                        </button>
+              <div className="product-grid">
+                {filteredProducts.map((product) => {
+                  const qty = cart[product.id] || 0;
+                  const compareAt = product.compare_at ?? product.compareAt ?? null;
+                  return (
+                    <div key={product.id} className="product-card">
+                      <div className="product-thumb">
+                        <span className="product-cat-pill">{product.category}</span>
+                        <ProductThumb product={product} />
                       </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      <p className="product-name">{product.name}</p>
+                      <p className="product-desc-sm">{product.description || product.desc}</p>
+                      <div className="product-price-row">
+                        <span className="product-price">{product.price} د.ل</span>
+                        {compareAt && <span className="product-compare">{compareAt} د.ل</span>}
+                      </div>
+                      <div className="product-action">
+                        {qty === 0 ? (
+                          <button className="add-btn" onClick={() => addToCart(product.id)}>
+                            <Plus size={14} /> أضف للسلة
+                          </button>
+                        ) : (
+                          <div className="qty-control">
+                            <button className="qty-btn" onClick={() => dec(product.id)}>
+                              <Minus />
+                            </button>
+                            <span className="qty-val">{qty}</span>
+                            <button className="qty-btn" onClick={() => inc(product.id)}>
+                              <Plus />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       </section>
 
@@ -663,7 +694,7 @@ export default function App() {
           <div className="sticky-card">
             <div style={{ padding: "0 4px" }}>
               <p className="sticky-total-label">{totalQty > 0 ? "الإجمالي" : "تصفّح المنتجات"}</p>
-              <p className="sticky-total-amount">{totalQty > 0 ? `${totalPrice} د.ل` : `${PRODUCTS.length} منتج`}</p>
+              <p className="sticky-total-amount">{totalQty > 0 ? `${totalPrice} د.ل` : `${products.length} منتج`}</p>
             </div>
             {totalQty > 0 ? (
               <a href={waLink} target="_blank" rel="noreferrer" className="sticky-cta">
