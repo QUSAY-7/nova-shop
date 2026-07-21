@@ -114,7 +114,7 @@ export default function App() {
   const cartItems = useMemo(
     () =>
       Object.entries(cart)
-        .map(([id, qty]) => ({ product: products.find((p) => string(p.id) === string(id)), qty }))
+        .map(([id, qty]) => ({ product: products.find((p) => String(p.id) === String (id)), qty }))
         .filter((line) => line.product && line.qty > 0),
     [cart, products]
   );
