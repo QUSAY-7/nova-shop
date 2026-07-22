@@ -138,7 +138,7 @@ export default function App() {
     const lines = ["طلب جديد من NOVA SHOP", ""];
     cartItems.forEach((l) => {
       const code = l.product.code || l.product.id;
-      lines.push(`${l.product.name} (${code}) × ${l.qty} — ${l.product.price * l.qty} د.ل`);
+      lines.push(`${l.product.title} (${code}) × ${l.qty} — ${l.product.price * l.qty} د.ل`);
     });
     lines.push("");
     lines.push(`الإجمالي: ${totalPrice} د.ل`);
@@ -165,7 +165,7 @@ export default function App() {
       return (
         <img
           src={product.image}
-          alt={product.name}
+          alt={product.title}
           style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "14px" }}
         />
       );
@@ -179,7 +179,7 @@ export default function App() {
       return (
         <img
           src={product.image}
-          alt={product.name}
+          alt={product.title}
           style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "12px" }}
         />
       );
@@ -470,7 +470,7 @@ export default function App() {
                       <CartThumb product={product} />
                     </div>
                     <div className="cart-info">
-                      <p className="cart-name">{product.name}</p>
+                      <p className="cart-name">{product.title}</p>
                       <p className="cart-code">{product.code || product.id}</p>
                       <div className="cart-line-bottom">
                         <span className="cart-price">{product.price * qty} د.ل</span>
@@ -629,7 +629,7 @@ export default function App() {
                         <span className="product-cat-pill">{product.category}</span>
                         <ProductThumb product={product} />
                       </div>
-                      <p className="product-name">{product.name}</p>
+                      <p className="product-name">{product.title}</p>
                       <p className="product-desc-sm">{product.description || product.desc}</p>
                       <div className="product-price-row">
                         <span className="product-price">{product.price} د.ل</span>
