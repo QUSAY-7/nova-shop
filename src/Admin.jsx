@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
-// ⚠️ غيّر كلمة المرور هذي لأي شي تحبه
-const ADMIN_PASSWORD = "غيرني123";
-
 export default function Admin() {
-  const [authed, setAuthed] = useState(
-    sessionStorage.getItem("admin_authed") === "true"
-  );
+  const [session, setSession] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [emailInput, setEmailInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  const authed = !!session;
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +46,24 @@ export default function Admin() {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const ORDER_STATUSES = ["جديد", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
+
+  // تحقق من وجود جلسة دخول حالية، وتابع أي تغيير بحالة الدخول
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthChecking(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        setSession(newSession);
+      }
+    );
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (authed) {
@@ -128,19 +147,22 @@ export default function Admin() {
     );
   }
 
-  function handleLogin(e) {
+  async function handleLogin(e) {
     e.preventDefault();
-    if (passwordInput === ADMIN_PASSWORD) {
-      sessionStorage.setItem("admin_authed", "true");
-      setAuthed(true);
-    } else {
-      alert("كلمة المرور غلط");
+    setLoginError("");
+    setLoggingIn(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: emailInput,
+      password: passwordInput,
+    });
+    setLoggingIn(false);
+    if (error) {
+      setLoginError("البريد الإلكتروني أو كلمة المرور غير صحيحة");
     }
   }
 
-  function handleLogout() {
-    sessionStorage.removeItem("admin_authed");
-    setAuthed(false);
+  async function handleLogout() {
+    await supabase.auth.signOut();
   }
 
   async function uploadImageIfNeeded() {
@@ -250,6 +272,15 @@ export default function Admin() {
     fetchProducts();
   }
 
+  // أثناء التحقق من وجود جلسة دخول سابقة
+  if (authChecking) {
+    return (
+      <div style={styles.loginWrap}>
+        <p>جارٍ التحقق...</p>
+      </div>
+    );
+  }
+
   // شاشة تسجيل الدخول
   if (!authed) {
     return (
@@ -257,15 +288,25 @@ export default function Admin() {
         <form onSubmit={handleLogin} style={styles.loginBox}>
           <h2>لوحة التحكم</h2>
           <input
+            type="email"
+            placeholder="البريد الإلكتروني"
+            value={emailInput}
+            onChange={(e) => setEmailInput(e.target.value)}
+            style={styles.input}
+            autoFocus
+          />
+          <input
             type="password"
             placeholder="كلمة المرور"
             value={passwordInput}
             onChange={(e) => setPasswordInput(e.target.value)}
             style={styles.input}
-            autoFocus
           />
-          <button type="submit" style={styles.primaryBtn}>
-            دخول
+          {loginError && (
+            <span style={{ color: "#c00", fontSize: 13 }}>{loginError}</span>
+          )}
+          <button type="submit" disabled={loggingIn} style={styles.primaryBtn}>
+            {loggingIn ? "جارٍ الدخول..." : "دخول"}
           </button>
         </form>
       </div>
