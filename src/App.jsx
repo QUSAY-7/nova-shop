@@ -157,6 +157,27 @@ export default function App() {
   const inc = (id) => setQty(id, (cart[id] || 0) + 1);
   const dec = (id) => setQty(id, (cart[id] || 0) - 1);
 
+  const saveOrder = async () => {
+    const items = cartItems.map((l) => ({
+      product_id: l.product.id,
+      title: l.product.title,
+      qty: l.qty,
+      price: l.product.price,
+    }));
+
+    const { error } = await supabase.from("orders").insert([
+      {
+        items,
+        total_price: totalPrice,
+        payment_method: payment === "cash" ? "كاش" : "تحويل بنكي",
+      },
+    ]);
+
+    if (error) {
+      console.error("فشل حفظ الطلب:", error.message);
+    }
+  };
+
   const orderMessage = () => {
     const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
     cartItems.forEach((l) => {
@@ -544,7 +565,13 @@ export default function App() {
                     <span className="qty-label">الإجمالي</span>
                     <span className="total-amount">{totalPrice} د.ل</span>
                   </div>
-                  <a href={waLink} target="_blank" rel="noreferrer" className="cta-button">
+                  <a
+                    href={waLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="cta-button"
+                    onClick={saveOrder}
+                  >
                     <MessageCircle size={18} /> إتمام الطلب عبر واتساب
                   </a>
                 </div>
@@ -721,7 +748,13 @@ export default function App() {
               <p className="sticky-total-amount">{totalQty > 0 ? `${totalPrice} د.ل` : `${products.length} منتج`}</p>
             </div>
             {totalQty > 0 ? (
-              <a href={waLink} target="_blank" rel="noreferrer" className="sticky-cta">
+              <a
+                href={waLink}
+                target="_blank"
+                rel="noreferrer"
+                className="sticky-cta"
+                onClick={saveOrder}
+              >
                 <MessageCircle /> اطلب الآن
               </a>
             ) : (
