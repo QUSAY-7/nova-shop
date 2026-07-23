@@ -41,10 +41,16 @@ export default function Admin() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
+  // ---- الطلبات ----
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const ORDER_STATUSES = ["جديد", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
+
   useEffect(() => {
     if (authed) {
       fetchProducts();
       fetchSettings();
+      fetchOrders();
     }
   }, [authed]);
 
@@ -96,6 +102,30 @@ export default function Admin() {
 
     setSettingsSaved(true);
     setTimeout(() => setSettingsSaved(false), 2500);
+  }
+
+  async function fetchOrders() {
+    setOrdersLoading(true);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (!error) setOrders(data);
+    setOrdersLoading(false);
+  }
+
+  async function updateOrderStatus(id, status) {
+    const { error } = await supabase
+      .from("orders")
+      .update({ status })
+      .eq("id", id);
+    if (error) {
+      alert("فشل تحديث الحالة: " + error.message);
+      return;
+    }
+    setOrders((prev) =>
+      prev.map((o) => (o.id === id ? { ...o, status } : o))
+    );
   }
 
   function handleLogin(e) {
@@ -316,6 +346,51 @@ export default function Admin() {
         )}
       </form>
 
+      {/* الطلبات */}
+      <h3>الطلبات ({orders.length})</h3>
+      {ordersLoading ? (
+        <p>جارٍ تحميل الطلبات...</p>
+      ) : orders.length === 0 ? (
+        <p style={{ color: "#888" }}>لا توجد طلبات حتى الآن</p>
+      ) : (
+        <div style={{ ...styles.list, marginBottom: 30 }}>
+          {orders.map((o) => (
+            <div key={o.id} style={styles.orderCard}>
+              <div style={styles.orderHeadRow}>
+                <strong>طلب #{o.id}</strong>
+                <span style={{ color: "#888", fontSize: 13 }}>
+                  {new Date(o.created_at).toLocaleString("ar-LY")}
+                </span>
+              </div>
+              <div style={{ fontSize: 14, margin: "6px 0" }}>
+                {(o.items || []).map((it, i) => (
+                  <div key={i}>
+                    {it.title} × {it.qty} — {it.price * it.qty} د.ل
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: "bold" }}>
+                الإجمالي: {o.total_price} د.ل — {o.payment_method}
+              </div>
+              <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 13 }}>الحالة:</span>
+                <select
+                  value={o.status || "جديد"}
+                  onChange={(e) => updateOrderStatus(o.id, e.target.value)}
+                  style={styles.select}
+                >
+                  {ORDER_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* نموذج إضافة / تعديل منتج */}
       <form onSubmit={handleSubmit} style={styles.form}>
         <h3>{editingId ? "تعديل منتج" : "إضافة منتج جديد"}</h3>
@@ -461,6 +536,9 @@ const styles = {
   logoutBtn: { padding: "6px 12px", background: "#eee", border: "none", borderRadius: 6, cursor: "pointer" },
   list: { display: "flex", flexDirection: "column", gap: 10 },
   card: { display: "flex", alignItems: "center", gap: 12, border: "1px solid #eee", padding: 10, borderRadius: 8 },
+  orderCard: { border: "1px solid #eee", padding: 12, borderRadius: 8 },
+  orderHeadRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  select: { padding: 8, borderRadius: 6, border: "1px solid #ccc" },
   thumb: { width: 50, height: 50, objectFit: "cover", borderRadius: 6 },
   cardActions: { display: "flex", gap: 6 },
   preview: { width: 100, height: 100, objectFit: "cover", borderRadius: 6 },
