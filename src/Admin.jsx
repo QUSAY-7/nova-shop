@@ -28,8 +28,24 @@ export default function Admin() {
   const [imageFile, setImageFile] = useState(null);
   const [editingId, setEditingId] = useState(null);
 
+  // ---- إعدادات المتجر ----
+  const emptySettingsForm = {
+    store_name: "",
+    whatsapp_number: "",
+    bank_account: "",
+    facebook_url: "",
+    instagram_url: "",
+  };
+  const [settingsForm, setSettingsForm] = useState(emptySettingsForm);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
   useEffect(() => {
-    if (authed) fetchProducts();
+    if (authed) {
+      fetchProducts();
+      fetchSettings();
+    }
   }, [authed]);
 
   async function fetchProducts() {
@@ -40,6 +56,46 @@ export default function Admin() {
       .order("id", { ascending: false });
     if (!error) setProducts(data);
     setLoading(false);
+  }
+
+  async function fetchSettings() {
+    setSettingsLoading(true);
+    const { data, error } = await supabase
+      .from("store_settings")
+      .select("*")
+      .eq("id", 1)
+      .single();
+    if (!error && data) {
+      setSettingsForm({
+        store_name: data.store_name || "",
+        whatsapp_number: data.whatsapp_number || "",
+        bank_account: data.bank_account || "",
+        facebook_url: data.facebook_url || "",
+        instagram_url: data.instagram_url || "",
+      });
+    }
+    setSettingsLoading(false);
+  }
+
+  async function handleSettingsSubmit(e) {
+    e.preventDefault();
+    setSettingsSaving(true);
+    setSettingsSaved(false);
+
+    const { error } = await supabase
+      .from("store_settings")
+      .update(settingsForm)
+      .eq("id", 1);
+
+    setSettingsSaving(false);
+
+    if (error) {
+      alert("صار خطأ أثناء حفظ الإعدادات: " + error.message);
+      return;
+    }
+
+    setSettingsSaved(true);
+    setTimeout(() => setSettingsSaved(false), 2500);
   }
 
   function handleLogin(e) {
@@ -195,7 +251,72 @@ export default function Admin() {
         </button>
       </div>
 
-      {/* نموذج إضافة / تعديل */}
+      {/* إعدادات المتجر */}
+      <form onSubmit={handleSettingsSubmit} style={styles.form}>
+        <h3>إعدادات المتجر</h3>
+
+        {settingsLoading ? (
+          <p>جارٍ تحميل الإعدادات...</p>
+        ) : (
+          <>
+            <input
+              style={styles.input}
+              placeholder="اسم المتجر"
+              value={settingsForm.store_name}
+              onChange={(e) =>
+                setSettingsForm({ ...settingsForm, store_name: e.target.value })
+              }
+            />
+            <input
+              style={styles.input}
+              placeholder="رقم الواتساب (بصيغة دولية، مثال 218912345678)"
+              value={settingsForm.whatsapp_number}
+              onChange={(e) =>
+                setSettingsForm({ ...settingsForm, whatsapp_number: e.target.value })
+              }
+            />
+            <input
+              style={styles.input}
+              placeholder="رقم الحساب البنكي"
+              value={settingsForm.bank_account}
+              onChange={(e) =>
+                setSettingsForm({ ...settingsForm, bank_account: e.target.value })
+              }
+            />
+            <div style={styles.row}>
+              <input
+                style={styles.input}
+                placeholder="رابط فيسبوك (اختياري)"
+                value={settingsForm.facebook_url}
+                onChange={(e) =>
+                  setSettingsForm({ ...settingsForm, facebook_url: e.target.value })
+                }
+              />
+              <input
+                style={styles.input}
+                placeholder="رابط إنستقرام (اختياري)"
+                value={settingsForm.instagram_url}
+                onChange={(e) =>
+                  setSettingsForm({ ...settingsForm, instagram_url: e.target.value })
+                }
+              />
+            </div>
+
+            <div style={styles.row}>
+              <button type="submit" disabled={settingsSaving} style={styles.primaryBtn}>
+                {settingsSaving ? "جارٍ الحفظ..." : "حفظ الإعدادات"}
+              </button>
+              {settingsSaved && (
+                <span style={{ color: "#1c9963", alignSelf: "center" }}>
+                  ✓ تم الحفظ بنجاح
+                </span>
+              )}
+            </div>
+          </>
+        )}
+      </form>
+
+      {/* نموذج إضافة / تعديل منتج */}
       <form onSubmit={handleSubmit} style={styles.form}>
         <h3>{editingId ? "تعديل منتج" : "إضافة منتج جديد"}</h3>
 
