@@ -75,6 +75,10 @@ export default function App() {
   // ---- إعدادات المتجر من Supabase ----
   const [settings, setSettings] = useState(null);
 
+  // ---- معرض صور المنتج ----
+  const [galleryProduct, setGalleryProduct] = useState(null);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -230,6 +234,34 @@ export default function App() {
     }
     const Icon = getCategoryIcon(product.category);
     return <Icon />;
+  };
+
+  // ---- معرض الصور: مساعدين ----
+  const getProductImages = (product) => {
+    if (product.images && product.images.length > 0) return product.images;
+    if (product.image) return [product.image];
+    return [];
+  };
+
+  const openGallery = (product) => {
+    if (getProductImages(product).length === 0) return;
+    setGalleryProduct(product);
+    setGalleryIndex(0);
+  };
+
+  const closeGallery = () => {
+    setGalleryProduct(null);
+    setGalleryIndex(0);
+  };
+
+  const galleryImages = galleryProduct ? getProductImages(galleryProduct) : [];
+
+  const nextGalleryImage = () => {
+    setGalleryIndex((i) => (i + 1) % galleryImages.length);
+  };
+
+  const prevGalleryImage = () => {
+    setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
   };
 
   return (
@@ -408,6 +440,21 @@ export default function App() {
         .sticky-total-amount{ font-family:'Almarai',sans-serif; font-weight:800; color:var(--teal-dark); }
         .sticky-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px; border-radius:14px; background:var(--teal); color:#fff; font-weight:700; }
         .sticky-cta svg{ width:18px; height:18px; }
+
+        /* ---------- Product image gallery modal ---------- */
+        .gallery-overlay{ position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
+        .gallery-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.7); }
+        .gallery-box{ position:relative; width:100%; max-width:420px; background:#fff; border-radius:20px; overflow:hidden; display:flex; flex-direction:column; }
+        .gallery-close{ position:absolute; top:10px; left:10px; z-index:2; width:34px; height:34px; border-radius:999px; background:rgba(255,255,255,.9); display:flex; align-items:center; justify-content:center; }
+        .gallery-main{ position:relative; width:100%; aspect-ratio:1/1; background:var(--teal-light); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        .gallery-main img{ width:100%; height:100%; object-fit:cover; }
+        .gallery-nav{ position:absolute; top:50%; transform:translateY(-50%); width:36px; height:36px; border-radius:999px; background:rgba(255,255,255,.9); display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+        .gallery-nav.prev{ right:10px; }
+        .gallery-nav.next{ left:10px; }
+        .gallery-thumbs{ display:flex; gap:8px; padding:12px; overflow-x:auto; }
+        .gallery-thumb{ flex-shrink:0; width:56px; height:56px; border-radius:10px; overflow:hidden; border:2px solid transparent; opacity:.6; }
+        .gallery-thumb.active{ border-color:var(--teal); opacity:1; }
+        .gallery-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
 
         /* =====================================================
           التابلت — من 640px
@@ -676,7 +723,11 @@ export default function App() {
                   const compareAt = product.compare_at ?? product.compareAt ?? null;
                   return (
                     <div key={product.id} className="product-card">
-                      <div className="product-thumb">
+                      <div
+                        className="product-thumb"
+                        onClick={() => openGallery(product)}
+                        style={{ cursor: getProductImages(product).length > 0 ? "pointer" : "default" }}
+                      >
                         <span className="product-cat-pill">{product.category}</span>
                         <ProductThumb product={product} />
                       </div>
@@ -765,6 +816,44 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* ===== Product image gallery modal ===== */}
+      {galleryProduct && (
+        <div className="gallery-overlay">
+          <div className="gallery-backdrop" onClick={closeGallery} />
+          <div className="gallery-box">
+            <button className="gallery-close" onClick={closeGallery} aria-label="إغلاق">
+              <X size={16} />
+            </button>
+            <div className="gallery-main">
+              <img src={galleryImages[galleryIndex]} alt={galleryProduct.title} />
+              {galleryImages.length > 1 && (
+                <>
+                  <button className="gallery-nav prev" onClick={prevGalleryImage} aria-label="السابق">
+                    <ChevronRight />
+                  </button>
+                  <button className="gallery-nav next" onClick={nextGalleryImage} aria-label="التالي">
+                    <ChevronLeft />
+                  </button>
+                </>
+              )}
+            </div>
+            {galleryImages.length > 1 && (
+              <div className="gallery-thumbs">
+                {galleryImages.map((img, i) => (
+                  <button
+                    key={i}
+                    className={`gallery-thumb ${i === galleryIndex ? "active" : ""}`}
+                    onClick={() => setGalleryIndex(i)}
+                  >
+                    <img src={img} alt={`صورة ${i + 1}`} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
