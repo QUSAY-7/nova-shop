@@ -23,10 +23,12 @@ export default function Admin() {
     compare_at: "",
     category: "",
     code: "",
-    image: "",
+    image: "", // الصورة الرئيسية (غلاف)
+    extraImagesText: "", // روابط صور إضافية، كل رابط بسطر (وضع url)
   };
   const [form, setForm] = useState(emptyForm);
-  const [imageFile, setImageFile] = useState(null);
+  const [imageFiles, setImageFiles] = useState([]); // ملفات متعددة (وضع رفع من الجهاز)
+  const [existingImages, setExistingImages] = useState([]); // صور المنتج الحالية وقت التعديل
   const [editingId, setEditingId] = useState(null);
 
   // ---- إعدادات المتجر ----
@@ -165,35 +167,45 @@ export default function Admin() {
     await supabase.auth.signOut();
   }
 
-  async function uploadImageIfNeeded() {
-    // لو المستخدم اختار "رابط" واكتب رابط، نستخدمه مباشرة
+  async function uploadImagesIfNeeded() {
+    let urls = [];
+
     if (uploadMethod === "url") {
-      return form.image || null;
+      // رابط الصورة الرئيسية + الروابط الإضافية (كل رابط بسطر)
+      if (form.image) urls.push(form.image);
+      const extra = form.extraImagesText
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      urls = urls.concat(extra);
+    } else {
+      // وضع رفع من الجهاز: نحتفظ بالصور القديمة (وقت التعديل) ونضيف لها أي ملفات جديدة
+      urls = [...existingImages];
+
+      for (const file of imageFiles) {
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("Product-images")
+          .upload(fileName, file);
+
+        if (uploadError) {
+          alert("فشل رفع إحدى الصور: " + uploadError.message);
+          continue;
+        }
+
+        const { data } = supabase.storage
+          .from("Product-images")
+          .getPublicUrl(fileName);
+
+        urls.push(data.publicUrl);
+      }
     }
-    // لو اختار "رفع ملف" ومافيه ملف مختار، نرجع الصورة القديمة (وقت التعديل) أو null
-    if (!imageFile) {
-      return form.image || null;
-    }
 
-    const fileExt = imageFile.name.split(".").pop();
-    const fileName = `${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("Product-images")
-      .upload(fileName, imageFile);
-
-    if (uploadError) {
-      alert("فشل رفع الصورة: " + uploadError.message);
-      return null;
-    }
-
-    const { data } = supabase.storage
-      .from("Product-images")
-      .getPublicUrl(fileName);
-
-    return data.publicUrl;
+    return urls;
   }
 
   async function handleSubmit(e) {
@@ -204,7 +216,7 @@ export default function Admin() {
     }
 
     setSaving(true);
-    const imageUrl = await uploadImageIfNeeded();
+    const imageUrls = await uploadImagesIfNeeded();
 
     // ⚠️ ملاحظة مهمة: أسماء الأعمدة هنا لازم تطابق أعمدة جدول products
     // بالضبط زي ما هي بـ Supabase (title, old_price... مو name, compare_at)
@@ -215,7 +227,8 @@ export default function Admin() {
       old_price: form.compare_at ? Number(form.compare_at) : null,
       category: form.category || null,
       code: form.code || null,
-      image: imageUrl,
+      image: imageUrls[0] || null, // أول صورة تُستخدم كغلاف بشبكة المنتجات
+      images: imageUrls,
     };
 
     let error;
@@ -236,13 +249,15 @@ export default function Admin() {
     }
 
     setForm(emptyForm);
-    setImageFile(null);
+    setImageFiles([]);
+    setExistingImages([]);
     setEditingId(null);
     fetchProducts();
   }
 
   function startEdit(product) {
     setEditingId(product.id);
+    const imgs = product.images && product.images.length ? product.images : (product.image ? [product.image] : []);
     setForm({
       name: product.title || "",
       description: product.description || "",
@@ -250,8 +265,11 @@ export default function Admin() {
       compare_at: product.old_price || "",
       category: product.category || "",
       code: product.code || "",
-      image: product.image || "",
+      image: imgs[0] || "",
+      extraImagesText: imgs.slice(1).join("\n"),
     });
+    setExistingImages(imgs);
+    setImageFiles([]);
     setUploadMethod("url");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -259,7 +277,8 @@ export default function Admin() {
   function cancelEdit() {
     setEditingId(null);
     setForm(emptyForm);
-    setImageFile(null);
+    setImageFiles([]);
+    setExistingImages([]);
   }
 
   async function handleDelete(id) {
@@ -500,23 +519,54 @@ export default function Admin() {
         </div>
 
         {uploadMethod === "file" ? (
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setImageFile(e.target.files[0])}
-            style={styles.input}
-          />
+          <>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => setImageFiles(Array.from(e.target.files))}
+              style={styles.input}
+            />
+            <span style={{ fontSize: 12, color: "#888" }}>
+              تقدر تختار أكثر من صورة بنفس الوقت (Ctrl أو Shift أثناء الاختيار)
+            </span>
+            {existingImages.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {existingImages.map((url, i) => (
+                  <img key={i} src={url} alt={`صورة ${i + 1}`} style={styles.preview} />
+                ))}
+              </div>
+            )}
+          </>
         ) : (
-          <input
-            style={styles.input}
-            placeholder="https://..."
-            value={form.image}
-            onChange={(e) => setForm({ ...form, image: e.target.value })}
-          />
+          <>
+            <input
+              style={styles.input}
+              placeholder="رابط الصورة الرئيسية https://..."
+              value={form.image}
+              onChange={(e) => setForm({ ...form, image: e.target.value })}
+            />
+            <textarea
+              style={styles.input}
+              placeholder={"روابط صور إضافية (اختياري) — كل رابط بسطر منفصل"}
+              value={form.extraImagesText}
+              onChange={(e) => setForm({ ...form, extraImagesText: e.target.value })}
+              rows={3}
+            />
+          </>
         )}
 
         {form.image && uploadMethod === "url" && (
-          <img src={form.image} alt="preview" style={styles.preview} />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <img src={form.image} alt="preview" style={styles.preview} />
+            {form.extraImagesText
+              .split("\n")
+              .map((s) => s.trim())
+              .filter(Boolean)
+              .map((url, i) => (
+                <img key={i} src={url} alt={`صورة إضافية ${i + 1}`} style={styles.preview} />
+              ))}
+          </div>
         )}
 
         <div style={styles.row}>
