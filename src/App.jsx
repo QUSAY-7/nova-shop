@@ -27,11 +27,8 @@ import {
 import { supabase } from "./supabaseClient";
 
 /* ---------------------------------------------------------
-  إعدادات المتجر — عدّل هذه القيم فقط عند الحاجة
+  إعدادات المتجر — تُجلب الآن من جدول store_settings بـ Supabase
 --------------------------------------------------------- */
-const WHATSAPP_NUMBER = "218931739453"; // بصيغة دولية بدون + أو أصفار زائدة
-const BANK_ACCOUNT = "LY25025010113475443410011";
-
 const MENU_ITEMS = [
   { label: "الرئيسية", href: "#home" },
   { label: "المنتجات", href: "#products" },
@@ -75,6 +72,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
+  // ---- إعدادات المتجر من Supabase ----
+  const [settings, setSettings] = useState(null);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -96,6 +96,29 @@ export default function App() {
     };
 
     fetchProducts();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchSettings = async () => {
+      const { data, error } = await supabase
+        .from("store_settings")
+        .select("*")
+        .eq("id", 1)
+        .single();
+
+      if (!isMounted) return;
+
+      if (!error) {
+        setSettings(data);
+      }
+    };
+
+    fetchSettings();
     return () => {
       isMounted = false;
     };
@@ -135,7 +158,7 @@ export default function App() {
   const dec = (id) => setQty(id, (cart[id] || 0) - 1);
 
   const orderMessage = () => {
-    const lines = ["طلب جديد من NOVA SHOP", ""];
+    const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
     cartItems.forEach((l) => {
       const code = l.product.code || l.product.id;
       lines.push(`${l.product.title} (${code}) × ${l.qty} — ${l.product.price * l.qty} د.ل`);
@@ -143,15 +166,15 @@ export default function App() {
     lines.push("");
     lines.push(`الإجمالي: ${totalPrice} د.ل`);
     lines.push(`طريقة الدفع: ${payment === "cash" ? "كاش عند الاستلام" : "تحويل بنكي"}`);
-    if (payment === "bank") lines.push(`رقم الحساب: ${BANK_ACCOUNT}`);
+    if (payment === "bank") lines.push(`رقم الحساب: ${settings?.bank_account || ""}`);
     return encodeURIComponent(lines.join("\n"));
   };
 
-  const waLink = `https://wa.me/${WHATSAPP_NUMBER}?text=${orderMessage()}`;
+  const waLink = `https://wa.me/${settings?.whatsapp_number || ""}?text=${orderMessage()}`;
 
   const copyAccount = async () => {
     try {
-      await navigator.clipboard.writeText(BANK_ACCOUNT);
+      await navigator.clipboard.writeText(settings?.bank_account || "");
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch (e) {
@@ -408,7 +431,8 @@ export default function App() {
           </button>
 
           <a href="#home" className="logo">
-            NOVA <span className="accent">SHOP</span>
+            {(settings?.store_name || "NOVA SHOP").split(" ")[0]}{" "}
+            <span className="accent">{(settings?.store_name || "NOVA SHOP").split(" ").slice(1).join(" ")}</span>
           </a>
 
           <button onClick={() => setCartOpen(true)} className="icon-btn solid" aria-label="السلة">
@@ -437,7 +461,7 @@ export default function App() {
               ))}
             </nav>
             <div className="drawer-foot">
-              <a href={`https://wa.me/${WHATSAPP_NUMBER}`} target="_blank" rel="noreferrer" className="wa-link">
+              <a href={`https://wa.me/${settings?.whatsapp_number || ""}`} target="_blank" rel="noreferrer" className="wa-link">
                 <MessageCircle size={18} /> تواصل عبر واتساب
               </a>
             </div>
@@ -507,7 +531,7 @@ export default function App() {
                   </div>
                   {payment === "bank" && (
                     <div className="bank-box">
-                      <span className="bank-number">{BANK_ACCOUNT}</span>
+                      <span className="bank-number">{settings?.bank_account}</span>
                       <button onClick={copyAccount} className="copy-btn">
                         {copied ? <Check className="ok" /> : <Copy />}
                       </button>
@@ -681,10 +705,10 @@ export default function App() {
 
       {/* ===== Footer ===== */}
       <footer id="contact" className="footer">
-        <p className="footer-name">NOVA SHOP</p>
+        <p className="footer-name">{settings?.store_name || "NOVA SHOP"}</p>
         <p className="footer-tag">توصيل لكل مدن ليبيا، بثقة من أول طلب</p>
-        <a href={`https://wa.me/${WHATSAPP_NUMBER}`} target="_blank" rel="noreferrer" className="footer-wa">
-          <MessageCircle /> {WHATSAPP_NUMBER}
+        <a href={`https://wa.me/${settings?.whatsapp_number || ""}`} target="_blank" rel="noreferrer" className="footer-wa">
+          <MessageCircle /> {settings?.whatsapp_number}
         </a>
       </footer>
 
