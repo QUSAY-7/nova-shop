@@ -23,6 +23,7 @@ export default function Admin() {
     compare_at: "",
     category: "",
     code: "",
+    stock: "",
     image: "", // الصورة الرئيسية (غلاف)
     extraImagesText: "", // روابط صور إضافية، كل رابط بسطر (وضع url)
   };
@@ -227,6 +228,7 @@ export default function Admin() {
       old_price: form.compare_at ? Number(form.compare_at) : null,
       category: form.category || null,
       code: form.code || null,
+      stock: form.stock !== "" ? Number(form.stock) : 0,
       image: imageUrls[0] || null, // أول صورة تُستخدم كغلاف بشبكة المنتجات
       images: imageUrls,
     };
@@ -265,6 +267,7 @@ export default function Admin() {
       compare_at: product.old_price || "",
       category: product.category || "",
       code: product.code || "",
+      stock: product.stock ?? "", 
       image: imgs[0] || "",
       extraImagesText: imgs.slice(1).join("\n"),
     });
@@ -497,6 +500,13 @@ export default function Admin() {
             onChange={(e) => setForm({ ...form, code: e.target.value })}
           />
         </div>
+        <input
+          style={styles.input}
+          type="number"
+          placeholder="الكمية المتوفرة بالمخزون *"
+          value={form.stock}
+          onChange={(e) => setForm({ ...form, stock: e.target.value })}
+        />
 
         {/* اختيار طريقة الصورة */}
         <div style={styles.row}>
@@ -587,26 +597,35 @@ export default function Admin() {
         <p>جارٍ التحميل...</p>
       ) : (
         <div style={styles.list}>
-          {products.map((p) => (
-            <div key={p.id} style={styles.card}>
-              {p.image && (
-                <img src={p.image} alt={p.title} style={styles.thumb} />
-              )}
-              <div style={{ flex: 1 }}>
-                <strong>{p.title}</strong>
-                <div>{p.price} د.ك</div>
-                {p.category && <div style={{ color: "#888" }}>{p.category}</div>}
+          {products.map((p) => {
+            const stockColor =
+              p.stock === 0 ? "#c00" : p.stock <= 5 ? "#c98a00" : "#1c9963";
+            const stockLabel =
+              p.stock === 0 ? "نفد المخزون" : p.stock <= 5 ? `منخفض: ${p.stock} قطع` : `${p.stock} قطعة متوفرة`;
+            return (
+              <div key={p.id} style={styles.card}>
+                {p.image && (
+                  <img src={p.image} alt={p.title} style={styles.thumb} />
+                )}
+                <div style={{ flex: 1 }}>
+                  <strong>{p.title}</strong>
+                  <div>{p.price} د.ك</div>
+                  {p.category && <div style={{ color: "#888" }}>{p.category}</div>}
+                  <div style={{ color: stockColor, fontWeight: "bold", fontSize: 13 }}>
+                    {stockLabel}
+                  </div>
+                </div>
+                <div style={styles.cardActions}>
+                  <button onClick={() => startEdit(p)} style={styles.secondaryBtn}>
+                    تعديل
+                  </button>
+                  <button onClick={() => handleDelete(p.id)} style={styles.deleteBtn}>
+                    حذف
+                  </button>
+                </div>
               </div>
-              <div style={styles.cardActions}>
-                <button onClick={() => startEdit(p)} style={styles.secondaryBtn}>
-                  تعديل
-                </button>
-                <button onClick={() => handleDelete(p.id)} style={styles.deleteBtn}>
-                  حذف
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

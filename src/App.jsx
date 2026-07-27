@@ -158,7 +158,12 @@ export default function App() {
     });
   };
   const addToCart = (id) => setQty(id, (cart[id] || 0) + 1);
-  const inc = (id) => setQty(id, (cart[id] || 0) + 1);
+  const inc = (id) => {
+  const product = products.find((p) => p.id === id);
+  const currentQty = cart[id] || 0;
+  if (product && currentQty >= product.stock) return; // يمنع الزيادة فوق المخزون المتاح
+  setQty(id, currentQty + 1);
+};
   const dec = (id) => setQty(id, (cart[id] || 0) - 1);
 
   const saveOrder = async () => {
@@ -179,8 +184,35 @@ export default function App() {
 
     if (error) {
       console.error("فشل حفظ الطلب:", error.message);
+      return;
     }
+
+    // خصم الكمية من المخزون لكل منتج في الطلب
+    for (const line of cartItems) {
+      const newStock = Math.max(0, line.product.stock - line.qty);
+      const { error: stockError } = await supabase
+        .from("products")
+        .update({ stock: newStock })
+        .eq("id", line.product.id);
+
+      if (stockError) {
+        console.error(`فشل تحديث مخزون المنتج ${line.product.title}:`, stockError.message);
+      }
+    }
+
+    // تحديث المخزون محلياً في الواجهة فوراً دون انتظار إعادة تحميل الصفحة
+    setProducts((prev) =>
+      prev.map((p) => {
+        const line = cartItems.find((l) => l.product.id === p.id);
+        return line ? { ...p, stock: Math.max(0, p.stock - line.qty) } : p;
+      })
+    );
+
+    // إفراغ السلة بعد إتمام الطلب
+    setCart({});
   };
+
+    
 
   const orderMessage = () => {
     const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
@@ -729,16 +761,26 @@ export default function App() {
                         style={{ cursor: getProductImages(product).length > 0 ? "pointer" : "default" }}
                       >
                         <span className="product-cat-pill">{product.category}</span>
+                        {product.stock === 0 && (
+                          <span className="out-of-stock-badge">نفد المخزون</span>
+                        )}
                         <ProductThumb product={product} />
                       </div>
                       <p className="product-name">{product.title}</p>
                       <p className="product-desc-sm">{product.description || product.desc}</p>
+                      {product.stock > 0 && product.stock <= 5 && (
+                        <p className="low-stock-note">باقي {product.stock} قطع فقط!</p>
+                      )}
                       <div className="product-price-row">
                         <span className="product-price">{product.price} د.ل</span>
                         {compareAt && <span className="product-compare">{compareAt} د.ل</span>}
                       </div>
                       <div className="product-action">
-                        {qty === 0 ? (
+                        {product.stock === 0 ? (
+                          <button className="add-btn" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
+                            نفد المخزون
+                          </button>
+                        ) : qty === 0 ? (
                           <button className="add-btn" onClick={() => addToCart(product.id)}>
                             <Plus size={14} /> أضف للسلة
                           </button>
@@ -748,9 +790,14 @@ export default function App() {
                               <Minus />
                             </button>
                             <span className="qty-val">{qty}</span>
-                            <button className="qty-btn" onClick={() => inc(product.id)}>
-                              <Plus />
-                            </button>
+                            <button
+  className="qty-btn"
+  onClick={() => inc(product.id)}
+  disabled={qty >= product.stock}
+  style={qty >= product.stock ? { opacity: 0.4, cursor: "not-allowed" } : {}}
+>
+  <Plus />
+</button>
                           </div>
                         )}
                       </div>
