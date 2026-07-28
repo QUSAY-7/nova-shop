@@ -64,6 +64,9 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState("الكل");
   const [cart, setCart] = useState({}); // { [productId]: qty }
   const [payment, setPayment] = useState("cash");
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
   const [copied, setCopied] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
 
@@ -166,7 +169,13 @@ export default function App() {
 };
   const dec = (id) => setQty(id, (cart[id] || 0) - 1);
 
+ 
   const saveOrder = async () => {
+    if (!customerName.trim() || !customerPhone.trim() || !customerAddress.trim()) {
+      alert("من فضلك أكمل بياناتك (الاسم، الهاتف، العنوان) قبل إتمام الطلب");
+      return false;
+    }
+
     const items = cartItems.map((l) => ({
       product_id: l.product.id,
       title: l.product.title,
@@ -179,12 +188,15 @@ export default function App() {
         items,
         total_price: totalPrice,
         payment_method: payment === "cash" ? "كاش" : "تحويل بنكي",
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        customer_address: customerAddress,
       },
     ]);
 
     if (error) {
       console.error("فشل حفظ الطلب:", error.message);
-      return;
+      return false;
     }
 
     // خصم الكمية من المخزون لكل منتج في الطلب
@@ -208,11 +220,14 @@ export default function App() {
       })
     );
 
-    // إفراغ السلة بعد إتمام الطلب
-    setCart({});
-  };
-
     
+// إفراغ السلة وبيانات الزبون بعد إتمام الطلب
+    setCart({});
+    setCustomerName("");
+    setCustomerPhone("");
+    setCustomerAddress("");
+    return true;
+  };
 
   const orderMessage = () => {
     const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
@@ -617,8 +632,38 @@ export default function App() {
               </div>
             )}
 
-            {cartItems.length > 0 && (
+          {cartItems.length > 0 && (
               <>
+                <div className="field-block">
+                  <span className="field-label">اسمك الكامل</span>
+                  <input
+                    type="text"
+                    className="customer-input"
+                    placeholder="مثال: محمد أحمد"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                  />
+                </div>
+                <div className="field-block">
+                  <span className="field-label">رقم هاتفك</span>
+                  <input
+                    type="tel"
+                    className="customer-input"
+                    placeholder="09XXXXXXXX"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                  />
+                </div>
+                <div className="field-block">
+                  <span className="field-label">عنوان التوصيل</span>
+                  <input
+                    type="text"
+                    className="customer-input"
+                    placeholder="المدينة، الحي، أقرب نقطة دالة"
+                    value={customerAddress}
+                    onChange={(e) => setCustomerAddress(e.target.value)}
+                  />
+                </div>
                 <div className="field-block">
                   <span className="field-label">طريقة الدفع</span>
                   <div className="payment-grid">
@@ -645,11 +690,15 @@ export default function App() {
                     <span className="total-amount">{totalPrice} د.ل</span>
                   </div>
                   <a
-                    href={waLink}
+                   href={waLink}
                     target="_blank"
                     rel="noreferrer"
                     className="cta-button"
-                    onClick={saveOrder}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      const ok = await saveOrder();
+                      if (ok) window.open(waLink, "_blank", "noopener,noreferrer");
+                    }}
                   >
                     <MessageCircle size={18} /> إتمام الطلب عبر واتساب
                   </a>
@@ -851,7 +900,11 @@ export default function App() {
                 target="_blank"
                 rel="noreferrer"
                 className="sticky-cta"
-                onClick={saveOrder}
+                onClick={async (e) => {
+                  e.preventDefault();
+                  const ok = await saveOrder();
+                  if (ok) window.open(waLink, "_blank", "noopener,noreferrer");
+                }}
               >
                 <MessageCircle /> اطلب الآن
               </a>
