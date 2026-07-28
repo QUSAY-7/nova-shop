@@ -1,6 +1,24 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
+function buildStatusWhatsAppLink(order) {
+  let phone = (order.customer_phone || "").replace(/[^\d]/g, "");
+  if (!phone) return null;
+  // لو الرقم محلي (يبدأ بـ 0 أو 9 أرقام)، نضيف مقدمة ليبيا 218
+  if (phone.startsWith("0")) phone = "218" + phone.slice(1);
+  else if (!phone.startsWith("218")) phone = "218" + phone;
 
+  const name = order.customer_name || "";
+  const messages = {
+    "جديد": `مرحباً ${name}، تم استلام طلبك رقم #${order.id} وهو الآن قيد المراجعة. شكراً لتسوقك معنا 🌟`,
+    "قيد التجهيز": `مرحباً ${name}، طلبك رقم #${order.id} قيد التجهيز حالياً وسيتم شحنه قريباً 📦`,
+    "تم الشحن": `مرحباً ${name}، طلبك رقم #${order.id} تم شحنه وهو في الطريق إليك 🚚`,
+    "تم التسليم": `مرحباً ${name}، نتمنى أنك استلمت طلبك رقم #${order.id} بسلام. شكراً لثقتك بنا ❤️`,
+    "ملغي": `مرحباً ${name}، نأسف لإبلاغك أن طلبك رقم #${order.id} تم إلغاؤه. لأي استفسار تواصل معنا.`,
+  };
+
+  const text = messages[order.status] || `مرحباً، تحديث بخصوص طلبك رقم #${order.id}`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+}
 export default function Admin() {
   const [session, setSession] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
@@ -441,19 +459,26 @@ export default function Admin() {
                 <div><strong>العنوان:</strong> {o.customer_address || "غير مسجل"}</div>
               </div>
 
-              <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 13 }}>الحالة:</span>
+              
+                 <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <select
-                  value={o.status || "جديد"}
+                  value={o.status}
                   onChange={(e) => updateOrderStatus(o.id, e.target.value)}
                   style={styles.select}
                 >
                   {ORDER_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
+                    <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+                {o.customer_phone && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(buildStatusWhatsAppLink(o), "_blank")}
+                    style={styles.whatsappBtn}
+                  >
+                    إرسال إشعار واتساب
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -648,6 +673,7 @@ const styles = {
   input: { padding: 10, borderRadius: 6, border: "1px solid #ccc", width: "100%" },
   primaryBtn: { padding: "10px 16px", background: "#111", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" },
   secondaryBtn: { padding: "8px 12px", background: "#eee", border: "none", borderRadius: 6, cursor: "pointer" },
+  whatsappBtn: {  padding: "8px 12px", background: "#25D366", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: "bold" },
   deleteBtn: { padding: "8px 12px", background: "#ffe1e1", color: "#c00", border: "none", borderRadius: 6, cursor: "pointer" },
   logoutBtn: { padding: "6px 12px", background: "#eee", border: "none", borderRadius: 6, cursor: "pointer" },
   list: { display: "flex", flexDirection: "column", gap: 10 },
