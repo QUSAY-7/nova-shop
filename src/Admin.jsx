@@ -435,6 +435,12 @@ export default function Admin() {
               <div style={{ fontSize: 14, fontWeight: "bold" }}>
                 الإجمالي: {o.total_price} د.ل — {o.payment_method}
               </div>
+              <div style={{ fontSize: 13, marginTop: 8, padding: 8, background: "#f7f7f7", borderRadius: 6 }}>
+                <div><strong>الزبون:</strong> {o.customer_name || "غير مسجل"}</div>
+                <div><strong>الهاتف:</strong> {o.customer_phone || "غير مسجل"}</div>
+                <div><strong>العنوان:</strong> {o.customer_address || "غير مسجل"}</div>
+              </div>
+
               <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
                 <span style={{ fontSize: 13 }}>الحالة:</span>
                 <select
