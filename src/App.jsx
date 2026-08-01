@@ -62,6 +62,10 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState("الكل");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("default"); // default | price-asc | price-desc
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
   const [cart, setCart] = useState({}); // { [productId]: qty }
   const [payment, setPayment] = useState("cash");
   const [customerName, setCustomerName] = useState("");
@@ -136,10 +140,33 @@ export default function App() {
     return ["الكل", ...unique];
   }, [products]);
 
-  const filteredProducts = useMemo(
-    () => (activeCategory === "الكل" ? products : products.filter((p) => p.category === activeCategory)),
-    [activeCategory, products]
-  );
+  const filteredProducts = useMemo(() => {
+    let list = activeCategory === "الكل" ? products : products.filter((p) => p.category === activeCategory);
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(
+        (p) =>
+          (p.title || "").toLowerCase().includes(q) ||
+          (p.code || "").toLowerCase().includes(q)
+      );
+    }
+
+    if (minPrice !== "") {
+      list = list.filter((p) => p.price >= Number(minPrice));
+    }
+    if (maxPrice !== "") {
+      list = list.filter((p) => p.price <= Number(maxPrice));
+    }
+
+    if (sortBy === "price-asc") {
+      list = [...list].sort((a, b) => a.price - b.price);
+    } else if (sortBy === "price-desc") {
+      list = [...list].sort((a, b) => b.price - a.price);
+    }
+
+    return list;
+  }, [activeCategory, products, searchQuery, sortBy, minPrice, maxPrice]);
 
   const cartItems = useMemo(
     () =>
@@ -786,6 +813,45 @@ export default function App() {
             <div className="state-box">لا توجد منتجات حالياً</div>
           ) : (
             <>
+              <div className="search-box">
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder="ابحث عن منتج..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button className="search-clear" onClick={() => setSearchQuery("")}>
+                    ×
+                  </button>
+                )}
+              </div>
+              <div className="filters-row">
+                <select
+                  className="sort-select"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                >
+                  <option value="default">الترتيب الافتراضي</option>
+                  <option value="price-asc">السعر: من الأقل للأعلى</option>
+                  <option value="price-desc">السعر: من الأعلى للأقل</option>
+                </select>
+                <input
+                  type="number"
+                  className="price-input"
+                  placeholder="من (د.ل)"
+                  value={minPrice}
+                  onChange={(e) => setMinPrice(e.target.value)}
+                />
+                <input
+                  type="number"
+                  className="price-input"
+                  placeholder="إلى (د.ل)"
+                  value={maxPrice}
+                  onChange={(e) => setMaxPrice(e.target.value)}
+                />
+              </div>
               <div className="cat-tabs">
                 {CATEGORIES.map((cat) => (
                   <button
