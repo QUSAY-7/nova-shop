@@ -85,7 +85,6 @@ export default function Admin() {
       }
       map[phone].ordersCount += 1;
       map[phone].totalSpent += o.total_price || 0;
-      // تحديث آخر عنوان وتاريخ إن كان هذا الطلب أحدث
       if (new Date(o.created_at) > new Date(map[phone].lastOrderDate)) {
         map[phone].lastOrderDate = o.created_at;
         map[phone].address = o.customer_address || map[phone].address;
@@ -94,6 +93,32 @@ export default function Admin() {
     });
     return Object.values(map).sort((a, b) => b.ordersCount - a.ordersCount);
   }, [orders]);
+
+  // ---- إحصائيات لوحة التحكم ----
+  const dashboardStats = useMemo(() => {
+    const validOrders = orders.filter((o) => o.status !== "ملغي");
+    const totalSales = validOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
+    const totalOrders = orders.length;
+    const totalCustomers = customers.length;
+
+    const productSales = {};
+    validOrders.forEach((o) => {
+      (o.items || []).forEach((it) => {
+        const key = it.title || "منتج بدون اسم";
+        productSales[key] = (productSales[key] || 0) + (it.qty || 0);
+      });
+    });
+    let topProduct = null;
+    let topQty = 0;
+    Object.entries(productSales).forEach(([title, qty]) => {
+      if (qty > topQty) {
+        topQty = qty;
+        topProduct = title;
+      }
+    });
+
+    return { totalSales, totalOrders, totalCustomers, topProduct, topQty };
+  }, [orders, customers]);
   // تحقق من وجود جلسة دخول حالية، وتابع أي تغيير بحالة الدخول
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -387,7 +412,27 @@ export default function Admin() {
           تسجيل خروج
         </button>
       </div>
-
+{/* لوحة الإحصائيات */}
+      <div style={styles.statsGrid}>
+        <div style={styles.statCard}>
+          <div style={styles.statLabel}>إجمالي المبيعات</div>
+          <div style={styles.statValue}>{dashboardStats.totalSales} د.ل</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statLabel}>عدد الطلبات</div>
+          <div style={styles.statValue}>{dashboardStats.totalOrders}</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statLabel}>عدد العملاء</div>
+          <div style={styles.statValue}>{dashboardStats.totalCustomers}</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statLabel}>الأكثر مبيعاً</div>
+          <div style={{ ...styles.statValue, fontSize: 15 }}>
+            {dashboardStats.topProduct ? `${dashboardStats.topProduct} (${dashboardStats.topQty})` : "لا يوجد بعد"}
+          </div>
+        </div>
+      </div>
       {/* إعدادات المتجر */}
       <form onSubmit={handleSettingsSubmit} style={styles.form}>
         <h3>إعدادات المتجر</h3>
@@ -537,8 +582,6 @@ export default function Admin() {
         </div>
       )}
 
-      {/* نموذج إضافة / تعديل منتج */}
-      <form onSubmit={handleSubmit} style={styles.form}></form>
       {/* نموذج إضافة / تعديل منتج */}
       <form onSubmit={handleSubmit} style={styles.form}>
         <h3>{editingId ? "تعديل منتج" : "إضافة منتج جديد"}</h3>
@@ -719,6 +762,10 @@ export default function Admin() {
 
 const styles = {
   page: { maxWidth: 700, margin: "0 auto", padding: 16, fontFamily: "sans-serif" },
+  statsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16, marginBottom: 24 },
+  statCard: { border: "1px solid #eee", borderRadius: 10, padding: 14, background: "#fafafa" },
+  statLabel: { fontSize: 12, color: "#888", marginBottom: 4 },
+  statValue: { fontSize: 20, fontWeight: "bold", color: "#111" },
   headerRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   loginWrap: { display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" },
   loginBox: { display: "flex", flexDirection: "column", gap: 10, width: 260 },
