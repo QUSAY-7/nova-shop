@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabaseClient";
 function buildStatusWhatsAppLink(order) {
   let phone = (order.customer_phone || "").replace(/[^\d]/g, "");
@@ -67,7 +67,33 @@ export default function Admin() {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const ORDER_STATUSES = ["جديد", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
-
+// ---- تجميع العملاء من الطلبات ----
+  const customers = useMemo(() => {
+    const map = {};
+    orders.forEach((o) => {
+      const phone = o.customer_phone;
+      if (!phone) return; // تجاهل الطلبات القديمة بدون رقم هاتف
+      if (!map[phone]) {
+        map[phone] = {
+          phone,
+          name: o.customer_name || "بدون اسم",
+          address: o.customer_address || "",
+          ordersCount: 0,
+          totalSpent: 0,
+          lastOrderDate: o.created_at,
+        };
+      }
+      map[phone].ordersCount += 1;
+      map[phone].totalSpent += o.total_price || 0;
+      // تحديث آخر عنوان وتاريخ إن كان هذا الطلب أحدث
+      if (new Date(o.created_at) > new Date(map[phone].lastOrderDate)) {
+        map[phone].lastOrderDate = o.created_at;
+        map[phone].address = o.customer_address || map[phone].address;
+        map[phone].name = o.customer_name || map[phone].name;
+      }
+    });
+    return Object.values(map).sort((a, b) => b.ordersCount - a.ordersCount);
+  }, [orders]);
   // تحقق من وجود جلسة دخول حالية، وتابع أي تغيير بحالة الدخول
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -484,7 +510,35 @@ export default function Admin() {
           ))}
         </div>
       )}
+{/* العملاء */}
+      <h3>العملاء ({customers.length})</h3>
+      {customers.length === 0 ? (
+        <p style={{ color: "#888", marginBottom: 30 }}>لا يوجد عملاء مسجّلون بعد</p>
+      ) : (
+        <div style={{ ...styles.list, marginBottom: 30 }}>
+          {customers.map((c) => (
+            <div key={c.phone} style={styles.orderCard}>
+              <div style={styles.orderHeadRow}>
+                <strong>{c.name}</strong>
+                <span style={{ color: "#888", fontSize: 13 }}>
+                  آخر طلب: {new Date(c.lastOrderDate).toLocaleDateString("ar-LY")}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                <div>📞 {c.phone}</div>
+                {c.address && <div>📍 {c.address}</div>}
+              </div>
+              <div style={{ marginTop: 8, display: "flex", gap: 16, fontSize: 13, fontWeight: "bold" }}>
+                <span>عدد الطلبات: {c.ordersCount}</span>
+                <span style={{ color: "#1c9963" }}>إجمالي الإنفاق: {c.totalSpent} د.ل</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
+      {/* نموذج إضافة / تعديل منتج */}
+      <form onSubmit={handleSubmit} style={styles.form}></form>
       {/* نموذج إضافة / تعديل منتج */}
       <form onSubmit={handleSubmit} style={styles.form}>
         <h3>{editingId ? "تعديل منتج" : "إضافة منتج جديد"}</h3>
