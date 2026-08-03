@@ -85,7 +85,19 @@ export default function App() {
   // ---- معرض صور المنتج ----
   const [galleryProduct, setGalleryProduct] = useState(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
+// ---- تسجيل الزيارة (مرة واحدة يومياً لكل جهاز) ----
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const lastVisit = localStorage.getItem("nova_last_visit");
 
+    if (lastVisit !== today) {
+      supabase.from("visits").insert([{}]).then(({ error }) => {
+        if (!error) {
+          localStorage.setItem("nova_last_visit", today);
+        }
+      });
+    }
+  }, []);
   useEffect(() => {
     let isMounted = true;
 
@@ -102,6 +114,16 @@ export default function App() {
         setLoadError(error.message);
       } else {
         setProducts(data || []);
+        // فتح منتج معين تلقائياً لو الرابط يحتوي على ?product=ID
+        const params = new URLSearchParams(window.location.search);
+        const sharedId = params.get("product");
+        if (sharedId) {
+          const found = (data || []).find((p) => String(p.id) === String(sharedId));
+          if (found) {
+            setGalleryProduct(found);
+            setGalleryIndex(0);
+          }
+        }
       }
       setLoading(false);
     };
@@ -196,7 +218,15 @@ export default function App() {
 };
   const dec = (id) => setQty(id, (cart[id] || 0) - 1);
 
- 
+  const handleShare = (product) => {
+    const url = `${window.location.origin}${window.location.pathname}?product=${product.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      alert("تم نسخ رابط المنتج ✅");
+    }).catch(() => {
+      alert("تعذر نسخ الرابط، حاول مرة أخرى");
+    });
+  };
+
   const saveOrder = async () => {
     if (!customerName.trim() || !customerPhone.trim() || !customerAddress.trim()) {
       alert("من فضلك أكمل بياناتك (الاسم، الهاتف، العنوان) قبل إتمام الطلب");
@@ -881,9 +911,18 @@ export default function App() {
                         )}
                         <ProductThumb product={product} />
                       </div>
-                      <p className="product-name">{product.title}</p>
-                      <p className="product-desc-sm">{product.description || product.desc}</p>
-                      {product.stock > 0 && product.stock <= 5 && (
+                      
+                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "6px" }}>
+                        <p className="product-name">{product.title}</p>
+                        <button
+                          onClick={() => handleShare(product)}
+                          aria-label="مشاركة المنتج"
+                          style={{ flexShrink: 0, width: "26px", height: "26px", borderRadius: "999px", background: "var(--teal-light)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >
+                          <Copy size={12} style={{ color: "var(--teal-dark)" }} />
+                        </button>
+                      </div>
+                      <p className="product-desc-sm">{product.description || product.desc}</p> {product.stock > 0 && product.stock <= 5 && (
                         <p className="low-stock-note">باقي {product.stock} قطع فقط!</p>
                       )}
                       <div className="product-price-row">

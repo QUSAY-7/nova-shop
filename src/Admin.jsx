@@ -67,7 +67,9 @@ export default function Admin() {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const ORDER_STATUSES = ["جديد", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
-// ---- تجميع العملاء من الطلبات ----
+// ---- الزوار ----
+  const [visits, setVisits] = useState([]);
+  // ---- تجميع العملاء من الطلبات ----
   const customers = useMemo(() => {
     const map = {};
     orders.forEach((o) => {
@@ -117,8 +119,14 @@ export default function Admin() {
       }
     });
 
-    return { totalSales, totalOrders, totalCustomers, topProduct, topQty };
-  }, [orders, customers]);
+    // حساب زوار اليوم وزوار الشهر
+    const today = new Date().toISOString().slice(0, 10);
+    const thisMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const todayVisits = visits.filter((v) => v.created_at.slice(0, 10) === today).length;
+    const monthVisits = visits.filter((v) => v.created_at.slice(0, 7) === thisMonth).length;
+
+    return { totalSales, totalOrders, totalCustomers, topProduct, topQty, todayVisits, monthVisits };
+  }, [orders, customers, visits]);
   // تحقق من وجود جلسة دخول حالية، وتابع أي تغيير بحالة الدخول
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -142,6 +150,7 @@ export default function Admin() {
       fetchProducts();
       fetchSettings();
       fetchOrders();
+      fetchVisits();
     }
   }, [authed]);
 
@@ -204,7 +213,12 @@ export default function Admin() {
     if (!error) setOrders(data);
     setOrdersLoading(false);
   }
-
+async function fetchVisits() {
+    const { data, error } = await supabase
+      .from("visits")
+      .select("created_at");
+    if (!error) setVisits(data || []);
+  }
   async function updateOrderStatus(id, status) {
     const { error } = await supabase
       .from("orders")
@@ -431,6 +445,14 @@ export default function Admin() {
           <div style={{ ...styles.statValue, fontSize: 15 }}>
             {dashboardStats.topProduct ? `${dashboardStats.topProduct} (${dashboardStats.topQty})` : "لا يوجد بعد"}
           </div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statLabel}>زوار اليوم</div>
+          <div style={styles.statValue}>{dashboardStats.todayVisits}</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statLabel}>زوار هذا الشهر</div>
+          <div style={styles.statValue}>{dashboardStats.monthVisits}</div>
         </div>
       </div>
       {/* إعدادات المتجر */}
