@@ -32,7 +32,7 @@ import { supabase } from "./supabaseClient";
 const MENU_ITEMS = [
   { label: "الرئيسية", href: "#home" },
   { label: "المنتجات", href: "#products" },
-  { label: "لماذا نوفا", href: "#why" },
+  { label: "لماذا نختارنا", href: "#why" },
   { label: "الأسئلة الشائعة", href: "#faq" },
   { label: "تواصل معنا", href: "#contact" },
 ];
@@ -802,7 +802,7 @@ export default function App() {
                 <div className="parcel-scan-clip">
                   <div className="scan-line" />
                 </div>
-                <span className="parcel-mark">NOVA</span>
+               <span className="parcel-mark">{(settings?.store_name || "NOVA").split(" ")[0].toUpperCase()}</span>
               </div>
               <div className="badge-pulse">
                 <ShieldCheck />
@@ -815,7 +815,7 @@ export default function App() {
       {/* ===== Why Nova ===== */}
       <section id="why" className="section">
         <div className="container">
-          <h2 className="section-title">لماذا تتسوق من نوفا</h2>
+          <h2 className="section-title">لماذا تتسوق من {settings?.store_name || "نوفا"}</h2>
           <div className="features-grid">
             {FEATURES.map(({ icon: Icon, title, body }) => (
               <div key={title} className="feature-card">
@@ -983,14 +983,14 @@ export default function App() {
       </section>
 
       {/* ===== Footer ===== */}
-      <footer id="contact" className="footer">
-        <p className="footer-name">{settings?.store_name || "NOVA SHOP"}</p>
-        <p className="footer-tag">توصيل لكل مدن ليبيا، بثقة من أول طلب</p>
-        <a href={`https://wa.me/${settings?.whatsapp_number || ""}`} target="_blank" rel="noreferrer" className="footer-wa">
-          <MessageCircle /> {settings?.whatsapp_number}
-        </a>
-      </footer>
-
+     {/* ===== Footer ===== */}
+<footer id="contact" className="footer">
+  <p className="footer-name">VELTRIX SHOP</p>
+  <p className="footer-tag">مدعوم من فيلتريكس شوب — حلول متاجر إلكترونية احترافية</p>
+  <a href="https://wa.me/218931739453" target="_blank" rel="noreferrer" className="footer-wa">
+    <MessageCircle /> تواصل معنا
+  </a>
+</footer>
       {/* ===== Sticky mobile/tablet order bar ===== */}
       <div className="sticky-bar">
         <div className="sticky-bar-inner">
