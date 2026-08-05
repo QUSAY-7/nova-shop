@@ -48,7 +48,7 @@ export default function Admin() {
   const [credsMessage, setCredsMessage] = useState("");
   // ---- تبويبات لوحة التحكم ----
   const [activeTab, setActiveTab] = useState("dashboard");
-
+const [sidebarOpen, setSidebarOpen] = useState(false);
   useEffect(() => {
     if (isModerator) setActiveTab("products");
   }, [userRole]);
@@ -551,29 +551,53 @@ useEffect(() => {
   }
 
   return (
-    <div style={styles.layout}>
-      {/* الشريط الجانبي */}
-      <aside style={styles.sidebar}>
-        <h3 style={styles.sidebarTitle}>لوحة التحكم</h3>
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              ...styles.tabBtn,
-              ...(activeTab === tab.id ? styles.tabBtnActive : {}),
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-        <button onClick={handleLogout} style={styles.logoutBtn}>
-          تسجيل خروج
-        </button>
-      </aside>
+  <div style={styles.layout}>
+    {/* زر فتح/إغلاق القائمة - يظهر بس على الموبايل */}
+    <button
+      onClick={() => setSidebarOpen(!sidebarOpen)}
+      style={styles.menuToggle}
+      className="admin-menu-toggle"
+    >
+      ☰
+    </button>
 
-      {/* المحتوى */}
-      <div style={styles.page}>
+    {/* خلفية شفافة تقفل القائمة عند الضغط عليها */}
+    {sidebarOpen && (
+      <div
+        onClick={() => setSidebarOpen(false)}
+        style={styles.overlay}
+        className="admin-overlay"
+      />
+    )}
+
+    {/* الشريط الجانبي */}
+    <aside
+      style={styles.sidebar}
+      className={`admin-sidebar ${sidebarOpen ? "admin-sidebar-open" : ""}`}
+    >
+      <h3 style={styles.sidebarTitle}>لوحة التحكم</h3>
+      {TABS.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => {
+            setActiveTab(tab.id);
+            setSidebarOpen(false);
+          }}
+          style={{
+            ...styles.tabBtn,
+            ...(activeTab === tab.id ? styles.tabBtnActive : {}),
+          }}
+        >
+          {tab.label}
+        </button>
+      ))}
+      <button onClick={handleLogout} style={styles.logoutBtn}>
+        تسجيل خروج
+      </button>
+    </aside>
+
+    {/* المحتوى */}
+    <div style={styles.page}>
         {/* ---- تبويب: الرئيسية ---- */}
         
 {activeTab === "dashboard" && (
@@ -1052,6 +1076,28 @@ useEffect(() => {
 
 const styles = {
   layout: { display: "flex", minHeight: "100vh", fontFamily: "sans-serif" },
+ menuToggle: {
+  display: "none",
+  position: "fixed",
+  top: 12,
+  right: 12,
+  zIndex: 1001,
+  width: 42,
+  height: 42,
+  background: "#111",
+  color: "#fff",
+  border: "none",
+  borderRadius: 8,
+  fontSize: 20,
+  cursor: "pointer",
+},
+overlay: {
+  display: "none",
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.5)",
+  zIndex: 999,
+},
   sidebar: {
     width: 200,
     background: "#111",

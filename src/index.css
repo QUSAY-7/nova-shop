@@ -2,4 +2,22 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}@media (max-width: 768px) {
+  .admin-menu-toggle {
+    display: block !important;
+  }
+  .admin-overlay {
+    display: block !important;
+  }
+  .admin-sidebar {
+    position: fixed !important;
+    top: 0;
+    right: -220px;
+    height: 100vh;
+    z-index: 1000;
+    transition: right 0.25s ease;
+  }
+  .admin-sidebar-open {
+    right: 0 !important;
+  }
 }
