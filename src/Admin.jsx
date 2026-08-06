@@ -104,7 +104,13 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const ORDER_STATUSES = ["جديد", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
-
+const STATUS_LABELS = {
+  "جديد": "جديد",
+  "قيد التجهيز": "قيد التجهيز",
+  "تم الشحن": "قيد الشحن",
+  "تم التسليم": "تم التسليم",
+  "ملغي": "ملغي",
+};
   const [visits, setVisits] = useState([]);
 
   const customers = useMemo(() => {
@@ -736,52 +742,68 @@ useEffect(() => {
             ) : orders.length === 0 ? (
               <p style={{ color: "#888" }}>لا توجد طلبات حتى الآن</p>
             ) : (
-              <div style={styles.list}>
-                {orders.map((o) => (
-                  <div key={o.id} style={styles.orderCard}>
-                    <div style={styles.orderHeadRow}>
-                      <strong>طلب #{o.id}</strong>
-                      <span style={{ color: "#888", fontSize: 13 }}>
-                        {new Date(o.created_at).toLocaleString("ar-LY")}
-                      </span>
+              <div style={styles.kanbanBoard}>
+                {ORDER_STATUSES.map((status) => {
+                  const statusOrders = orders.filter((o) => o.status === status);
+                  return (
+                    <div key={status} style={styles.kanbanColumn}>
+                      <div style={styles.kanbanHeader}>
+                        <span>{STATUS_LABELS[status]}</span>
+                        <span style={styles.kanbanCount}>{statusOrders.length}</span>
+                      </div>
+                      <div style={styles.kanbanList}>
+                        {statusOrders.length === 0 ? (
+                          <p style={{ color: "#bbb", fontSize: 12, textAlign: "center", padding: 16 }}>
+                            لا توجد طلبات
+                          </p>
+                        ) : (
+                          statusOrders.map((o) => (
+                            <div key={o.id} style={styles.orderCard}>
+                              <div style={styles.orderHeadRow}>
+                                <strong>#{o.id}</strong>
+                                <span style={{ color: "#888", fontSize: 12 }}>
+                                  {new Date(o.created_at).toLocaleDateString("ar-LY")}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 13, margin: "6px 0" }}>
+                                {(o.items || []).map((it, i) => (
+                                  <div key={i}>{it.title} × {it.qty}</div>
+                                ))}
+                              </div>
+                              <div style={{ fontSize: 13, fontWeight: "bold" }}>
+                                {o.total_price} د.ل — {o.payment_method}
+                              </div>
+                              <div style={{ fontSize: 12, marginTop: 6, padding: 6, background: "#f7f7f7", borderRadius: 6 }}>
+                                <div>{o.customer_name || "غير مسجل"}</div>
+                                <div>{o.customer_phone || "غير مسجل"}</div>
+                              </div>
+                              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                                <select
+                                  value={o.status}
+                                  onChange={(e) => updateOrderStatus(o.id, e.target.value)}
+                                  style={{ ...styles.select, fontSize: 12, flex: 1 }}
+                                >
+                                  {ORDER_STATUSES.map((s) => (
+                                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                                  ))}
+                                </select>
+                                {o.customer_phone && (
+                                  <button
+                                    type="button"
+                                    onClick={() => window.open(buildStatusWhatsAppLink(o), "_blank")}
+                                    style={{ ...styles.whatsappBtn, fontSize: 11, padding: "6px 8px" }}
+                                  >
+                                    واتساب
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 14, margin: "6px 0" }}>
-                      {(o.items || []).map((it, i) => (
-                        <div key={i}>
-                          {it.title} × {it.qty} — {it.price * it.qty} د.ل
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: "bold" }}>
-                      الإجمالي: {o.total_price} د.ل — {o.payment_method}
-                    </div>
-                    <div style={{ fontSize: 13, marginTop: 8, padding: 8, background: "#f7f7f7", borderRadius: 6 }}>
-                      <div><strong>الزبون:</strong> {o.customer_name || "غير مسجل"}</div>
-                      <div><strong>الهاتف:</strong> {o.customer_phone || "غير مسجل"}</div>
-                      <div><strong>العنوان:</strong> {o.customer_address || "غير مسجل"}</div>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <select
-                        value={o.status}
-                        onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                        style={styles.select}
-                      >
-                        {ORDER_STATUSES.map((s) => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                      {o.customer_phone && (
-                        <button
-                          type="button"
-                          onClick={() => window.open(buildStatusWhatsAppLink(o), "_blank")}
-                          style={styles.whatsappBtn}
-                        >
-                          إرسال إشعار واتساب
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
@@ -1090,6 +1112,11 @@ const styles = {
   borderRadius: 8,
   fontSize: 20,
   cursor: "pointer",
+  kanbanBoard: { display: "flex", gap: 12, overflowX: "auto", paddingBottom: 12 },
+kanbanColumn: { minWidth: 240, maxWidth: 240, flexShrink: 0, background: "#f4f4f4", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", maxHeight: "75vh" },
+kanbanHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", paddingBottom: 8, marginBottom: 8, borderBottom: "2px solid #ddd" },
+kanbanCount: { background: "#111", color: "#fff", borderRadius: 999, padding: "2px 8px", fontSize: 12 },
+kanbanList: { display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" },
 },
 overlay: {
   display: "none",
