@@ -557,7 +557,7 @@ useEffect(() => {
   }
 
   return (
-  <div style={styles.layout}>
+  <div dir="rtl" style={styles.layout}>
     {/* زر فتح/إغلاق القائمة - يظهر بس على الموبايل */}
     <button
       onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -1112,7 +1112,15 @@ const styles = {
   borderRadius: 8,
   fontSize: 20,
   cursor: "pointer",
-  kanbanBoard: { display: "flex", gap: 12, overflowX: "auto", paddingBottom: 12 },
+  kanbanBoard: {
+  display: "flex",
+  flexDirection: "row",
+  flexWrap: "nowrap",
+  gap: 12,
+  overflowX: "auto",
+  paddingBottom: 12,
+  WebkitOverflowScrolling: "touch",
+},
 kanbanColumn: { minWidth: 240, maxWidth: 240, flexShrink: 0, background: "#f4f4f4", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", maxHeight: "75vh" },
 kanbanHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", paddingBottom: 8, marginBottom: 8, borderBottom: "2px solid #ddd" },
 kanbanCount: { background: "#111", color: "#fff", borderRadius: 999, padding: "2px 8px", fontSize: 12 },
