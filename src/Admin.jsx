@@ -742,7 +742,7 @@ useEffect(() => {
             ) : orders.length === 0 ? (
               <p style={{ color: "#888" }}>لا توجد طلبات حتى الآن</p>
             ) : (
-              <div style={styles.kanbanBoard}>
+              <div dir="rtl" style={styles.kanbanBoard}>
                 {ORDER_STATUSES.map((status) => {
                   const statusOrders = orders.filter((o) => o.status === status);
                   return (
