@@ -1112,7 +1112,8 @@ const styles = {
   borderRadius: 8,
   fontSize: 20,
   cursor: "pointer",
-  kanbanBoard: {
+},
+kanbanBoard: {
   display: "flex",
   flexDirection: "row",
   flexWrap: "nowrap",
@@ -1125,7 +1126,6 @@ kanbanColumn: { minWidth: 240, maxWidth: 240, flexShrink: 0, background: "#f4f4f
 kanbanHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", paddingBottom: 8, marginBottom: 8, borderBottom: "2px solid #ddd" },
 kanbanCount: { background: "#111", color: "#fff", borderRadius: 999, padding: "2px 8px", fontSize: 12 },
 kanbanList: { display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" },
-},
 overlay: {
   display: "none",
   position: "fixed",
