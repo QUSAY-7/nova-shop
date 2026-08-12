@@ -111,6 +111,12 @@ const STATUS_LABELS = {
   "تم التسليم": "تم التسليم",
   "ملغي": "ملغي",
 };
+const CUSTOMER_TIERS = ["دائم", "أحياناً", "نادر"];
+function getCustomerTier(ordersCount) {
+  if (ordersCount >= 10) return "دائم";
+  if (ordersCount >= 5) return "أحياناً";
+  return "نادر";
+}
   const [visits, setVisits] = useState([]);
 
   const customers = useMemo(() => {
@@ -136,7 +142,9 @@ const STATUS_LABELS = {
         map[phone].name = o.customer_name || map[phone].name;
       }
     });
-    return Object.values(map).sort((a, b) => b.ordersCount - a.ordersCount);
+    return Object.values(map)
+  .map((c) => ({ ...c, tier: getCustomerTier(c.ordersCount) }))
+  .sort((a, b) => b.ordersCount - a.ordersCount);
   }, [orders]);
 
   const dashboardStats = useMemo(() => {
@@ -201,6 +209,16 @@ const STATUS_LABELS = {
     };
   }, [orders, customers, visits, products]);
 
+  const productsByCategory = useMemo(() => {
+  const map = {};
+  products.forEach((p) => {
+    const cat = p.category || "بدون تصنيف";
+    if (!map[cat]) map[cat] = [];
+    map[cat].push(p);
+  });
+  return map;
+}, [products]);
+const categoryList = useMemo(() => Object.keys(productsByCategory), [productsByCategory]);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -603,7 +621,10 @@ useEffect(() => {
     </aside>
 
     {/* المحتوى */}
-    <div style={styles.page}>
+    <div style={{
+  ...styles.page,
+  ...(["orders", "customers", "products"].includes(activeTab) ? { maxWidth: "100%" } : {}),
+}}>
         {/* ---- تبويب: الرئيسية ---- */}
         
 {activeTab === "dashboard" && (
@@ -810,31 +831,51 @@ useEffect(() => {
         )}
 
         {/* ---- تبويب: العملاء ---- */}
-        {activeTab === "customers" && (
+        
+      {activeTab === "customers" && (
           <>
             <h3>العملاء ({customers.length})</h3>
             {customers.length === 0 ? (
               <p style={{ color: "#888" }}>لا يوجد عملاء مسجّلون بعد</p>
             ) : (
-              <div style={styles.list}>
-                {customers.map((c) => (
-                  <div key={c.phone} style={styles.orderCard}>
-                    <div style={styles.orderHeadRow}>
-                      <strong>{c.name}</strong>
-                      <span style={{ color: "#888", fontSize: 13 }}>
-                        آخر طلب: {new Date(c.lastOrderDate).toLocaleDateString("ar-LY")}
-                      </span>
+              <div style={styles.kanbanBoard}>
+                {CUSTOMER_TIERS.map((tier) => {
+                  const tierCustomers = customers.filter((c) => c.tier === tier);
+                  return (
+                    <div key={tier} style={styles.kanbanColumn}>
+                      <div style={styles.kanbanHeader}>
+                        <span>{tier}</span>
+                        <span style={styles.kanbanCount}>{tierCustomers.length}</span>
+                      </div>
+                      <div style={styles.kanbanList}>
+                        {tierCustomers.length === 0 ? (
+                          <p style={{ color: "#bbb", fontSize: 12, textAlign: "center", padding: 16 }}>
+                            لا يوجد عملاء
+                          </p>
+                        ) : (
+                          tierCustomers.map((c) => (
+                            <div key={c.phone} style={styles.orderCard}>
+                              <div style={styles.orderHeadRow}>
+                                <strong>{c.name}</strong>
+                                <span style={{ color: "#888", fontSize: 12 }}>
+                                  {new Date(c.lastOrderDate).toLocaleDateString("ar-LY")}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 13, marginTop: 6 }}>
+                                <div>📞 {c.phone}</div>
+                                {c.address && <div>📍 {c.address}</div>}
+                              </div>
+                              <div style={{ marginTop: 8, display: "flex", gap: 10, fontSize: 12, fontWeight: "bold" }}>
+                                <span>{c.ordersCount} طلب</span>
+                                <span style={{ color: "#1c9963" }}>{c.totalSpent} د.ل</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 13, marginTop: 6 }}>
-                      <div>📞 {c.phone}</div>
-                      {c.address && <div>📍 {c.address}</div>}
-                    </div>
-                    <div style={{ marginTop: 8, display: "flex", gap: 16, fontSize: 13, fontWeight: "bold" }}>
-                      <span>عدد الطلبات: {c.ordersCount}</span>
-                      <span style={{ color: "#1c9963" }}>إجمالي الإنفاق: {c.totalSpent} د.ل</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
@@ -974,33 +1015,42 @@ useEffect(() => {
             {loading ? (
               <p>جارٍ التحميل...</p>
             ) : (
-              <div style={styles.list}>
-                {products.map((p) => {
-                  const stockColor = p.stock === 0 ? "#c00" : p.stock <= 5 ? "#c98a00" : "#1c9963";
-                  const stockLabel =
-                    p.stock === 0 ? "نفد المخزون" : p.stock <= 5 ? `منخفض: ${p.stock} قطع` : `${p.stock} قطعة متوفرة`;
-                  return (
-                    <div key={p.id} style={styles.card}>
-                      {p.image && <img src={p.image} alt={p.title} style={styles.thumb} />}
-                      <div style={{ flex: 1 }}>
-                        <strong>{p.title}</strong>
-                        <div>{p.price} د.ك</div>
-                        {p.category && <div style={{ color: "#888" }}>{p.category}</div>}
-                        <div style={{ color: stockColor, fontWeight: "bold", fontSize: 13 }}>{stockLabel}</div>
-                      </div>
-                      <div style={styles.cardActions}>
-                      <button onClick={() => startEdit(p)} style={styles.secondaryBtn}>
-                        تعديل
-                      </button>
-                      {!isModerator && (
-                        <button onClick={() => handleDelete(p.id)} style={styles.deleteBtn}>
-                          حذف
-                        </button>
-                      )}
+              <div style={styles.kanbanBoard}>
+                {categoryList.map((cat) => (
+                  <div key={cat} style={styles.kanbanColumn}>
+                    <div style={styles.kanbanHeader}>
+                      <span>{cat}</span>
+                      <span style={styles.kanbanCount}>{productsByCategory[cat].length}</span>
                     </div>
+                    <div style={styles.kanbanList}>
+                      {productsByCategory[cat].map((p) => {
+                        const stockColor = p.stock === 0 ? "#c00" : p.stock <= 5 ? "#c98a00" : "#1c9963";
+                        const stockLabel =
+                          p.stock === 0 ? "نفد المخزون" : p.stock <= 5 ? `منخفض: ${p.stock} قطع` : `${p.stock} قطعة متوفرة`;
+                        return (
+                          <div key={p.id} style={styles.orderCard}>
+                            {p.image && (
+                              <img src={p.image} alt={p.title} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 6 }} />
+                            )}
+                            <strong style={{ display: "block", marginTop: 6 }}>{p.title}</strong>
+                            <div>{p.price} د.ك</div>
+                            <div style={{ color: stockColor, fontWeight: "bold", fontSize: 12 }}>{stockLabel}</div>
+                            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                              <button onClick={() => startEdit(p)} style={{ ...styles.secondaryBtn, fontSize: 12, flex: 1 }}>
+                                تعديل
+                              </button>
+                              {!isModerator && (
+                                <button onClick={() => handleDelete(p.id)} style={{ ...styles.deleteBtn, fontSize: 12, flex: 1 }}>
+                                  حذف
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </>
