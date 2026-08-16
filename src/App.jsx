@@ -73,11 +73,15 @@ export default function App() {
   const [customerAddress, setCustomerAddress] = useState("");
   const [copied, setCopied] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
+  const [lastOrder, setLastOrder] = useState(null);
+  const [showInvoicePrompt, setShowInvoicePrompt] = useState(false);
 
   // ---- بيانات المنتجات من Supabase ----
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [variantsByProduct, setVariantsByProduct] = useState({});
+  const [selectedVariants, setSelectedVariants] = useState({});
 
   // ---- إعدادات المتجر من Supabase ----
   const [settings, setSettings] = useState(null);
@@ -85,7 +89,8 @@ export default function App() {
   // ---- معرض صور المنتج ----
   const [galleryProduct, setGalleryProduct] = useState(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
-// ---- تسجيل الزيارة (مرة واحدة يومياً لكل جهاز) ----
+
+  // ---- تسجيل الزيارة (مرة واحدة يومياً لكل جهاز) ----
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const lastVisit = localStorage.getItem("nova_last_visit");
@@ -98,6 +103,7 @@ export default function App() {
       });
     }
   }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -136,7 +142,26 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
+    const fetchVariants = async () => {
+      const { data, error } = await supabase.from("product_variants").select("*");
+      if (!isMounted) return;
+      if (!error && data) {
+        const grouped = {};
+        data.forEach((v) => {
+          if (!grouped[v.product_id]) grouped[v.product_id] = [];
+          grouped[v.product_id].push(v);
+        });
+        setVariantsByProduct(grouped);
+      }
+    };
+    fetchVariants();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
+  useEffect(() => {
+    let isMounted = true;
     const fetchSettings = async () => {
       const { data, error } = await supabase
         .from("store_settings")
@@ -190,33 +215,103 @@ export default function App() {
     return list;
   }, [activeCategory, products, searchQuery, sortBy, minPrice, maxPrice]);
 
+  const getVariantsForProduct = (productId) => variantsByProduct[productId] || [];
+
+  const getSelectedVariant = (productId) => {
+    const opts = getVariantsForProduct(productId);
+    if (opts.length === 0) return null;
+    const sel = selectedVariants[productId] || {};
+    return (
+      opts.find(
+        (v) => (v.size || "") === (sel.size || "") && (v.color || "") === (sel.color || "")
+      ) || null
+    );
+  };
+
+  const setSelectedVariant = (productId, field, value) => {
+    setSelectedVariants((prev) => ({
+      ...prev,
+      [productId]: { ...prev[productId], [field]: value },
+    }));
+  };
+
+  const getEffectivePrice = (product, variant) =>
+    variant && variant.price != null ? Number(variant.price) : Number(product.price);
+
+  const getEffectiveStock = (product, variant) =>
+    variant ? Number(variant.quantity) : Number(product.stock);
+
+  const cartKey = (productId, variant) => (variant ? `${productId}::${variant.id}` : `${productId}`);
+
   const cartItems = useMemo(
     () =>
       Object.entries(cart)
-        .map(([id, qty]) => ({ product: products.find((p) => String(p.id) === String (id)), qty }))
+        .map(([key, line]) => {
+          const product = products.find((p) => String(p.id) === String(line.productId));
+          const variant = line.variantId
+            ? getVariantsForProduct(line.productId).find((v) => v.id === line.variantId)
+            : null;
+          return { key, product, variant, qty: line.qty };
+        })
         .filter((line) => line.product && line.qty > 0),
-    [cart, products]
+    [cart, products, variantsByProduct]
   );
 
   const totalQty = cartItems.reduce((sum, l) => sum + l.qty, 0);
-  const totalPrice = cartItems.reduce((sum, l) => sum + l.qty * l.product.price, 0);
+  const totalPrice = cartItems.reduce(
+    (sum, l) => sum + l.qty * getEffectivePrice(l.product, l.variant),
+    0
+  );
 
-  const setQty = (id, qty) => {
+  const setQty = (key, qty, meta) => {
     setCart((c) => {
       const next = { ...c };
-      if (qty <= 0) delete next[id];
-      else next[id] = qty;
+      if (qty <= 0) delete next[key];
+      else next[key] = { ...(meta || next[key] || {}), qty };
       return next;
     });
   };
-  const addToCart = (id) => setQty(id, (cart[id] || 0) + 1);
-  const inc = (id) => {
-  const product = products.find((p) => p.id === id);
-  const currentQty = cart[id] || 0;
-  if (product && currentQty >= product.stock) return; // يمنع الزيادة فوق المخزون المتاح
-  setQty(id, currentQty + 1);
-};
-  const dec = (id) => setQty(id, (cart[id] || 0) - 1);
+
+  const addToCart = (product) => {
+    const opts = getVariantsForProduct(product.id);
+    if (opts.length > 0) {
+      const variant = getSelectedVariant(product.id);
+      if (!variant) {
+        alert("من فضلك اختر المقاس/اللون أولاً");
+        return;
+      }
+      const key = cartKey(product.id, variant);
+      const current = cart[key]?.qty || 0;
+      setQty(key, current + 1, {
+        productId: product.id,
+        variantId: variant.id,
+        size: variant.size,
+        color: variant.color,
+      });
+    } else {
+      const key = cartKey(product.id, null);
+      const current = cart[key]?.qty || 0;
+      setQty(key, current + 1, { productId: product.id, variantId: null, size: null, color: null });
+    }
+  };
+
+  const inc = (key) => {
+    const line = cart[key];
+    if (!line) return;
+    const product = products.find((p) => p.id === line.productId);
+    const variant = line.variantId
+      ? getVariantsForProduct(line.productId).find((v) => v.id === line.variantId)
+      : null;
+    const stock = product ? getEffectiveStock(product, variant) : 0;
+    if (line.qty >= stock) return;
+    setQty(key, line.qty + 1, line);
+  };
+
+  const dec = (key) => {
+    const line = cart[key];
+    if (!line) return;
+    setQty(key, line.qty - 1, line);
+  };
 
   const handleShare = (product) => {
     const url = `${window.location.origin}${window.location.pathname}?product=${product.id}`;
@@ -236,61 +331,94 @@ export default function App() {
     const items = cartItems.map((l) => ({
       product_id: l.product.id,
       title: l.product.title,
+      size: l.variant?.size || null,
+      color: l.variant?.color || null,
       qty: l.qty,
-      price: l.product.price,
+      price: getEffectivePrice(l.product, l.variant),
     }));
 
-    const { error } = await supabase.from("orders").insert([
-      {
-        items,
-        total_price: totalPrice,
-        payment_method: payment === "cash" ? "كاش" : "تحويل بنكي",
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        customer_address: customerAddress,
-      },
-    ]);
+    const { data: insertedOrder, error } = await supabase
+      .from("orders")
+      .insert([
+        {
+          items,
+          total_price: totalPrice,
+          payment_method: payment === "cash" ? "كاش" : "تحويل بنكي",
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_address: customerAddress,
+        },
+      ])
+      .select()
+      .single();
 
     if (error) {
       console.error("فشل حفظ الطلب:", error.message);
       return false;
     }
 
-    // خصم الكمية من المخزون لكل منتج في الطلب
+    // خصم الكمية من المخزون (المنتج نفسه أو خيار المقاس/اللون حسب الحالة)
     for (const line of cartItems) {
-      const newStock = Math.max(0, line.product.stock - line.qty);
-      const { error: stockError } = await supabase
-        .from("products")
-        .update({ stock: newStock })
-        .eq("id", line.product.id);
-
-      if (stockError) {
-        console.error(`فشل تحديث مخزون المنتج ${line.product.title}:`, stockError.message);
+      if (line.variant) {
+        const newQty = Math.max(0, line.variant.quantity - line.qty);
+        const { error: variantError } = await supabase
+          .from("product_variants")
+          .update({ quantity: newQty })
+          .eq("id", line.variant.id);
+        if (variantError) {
+          console.error(`فشل تحديث كمية خيار المنتج ${line.product.title}:`, variantError.message);
+        }
+      } else {
+        const newStock = Math.max(0, line.product.stock - line.qty);
+        const { error: stockError } = await supabase
+          .from("products")
+          .update({ stock: newStock })
+          .eq("id", line.product.id);
+        if (stockError) {
+          console.error(`فشل تحديث مخزون المنتج ${line.product.title}:`, stockError.message);
+        }
       }
     }
 
-    // تحديث المخزون محلياً في الواجهة فوراً دون انتظار إعادة تحميل الصفحة
+    // تحديث الحالة محلياً فوراً
     setProducts((prev) =>
       prev.map((p) => {
-        const line = cartItems.find((l) => l.product.id === p.id);
+        const line = cartItems.find((l) => l.product.id === p.id && !l.variant);
         return line ? { ...p, stock: Math.max(0, p.stock - line.qty) } : p;
       })
     );
 
-    
-// إفراغ السلة وبيانات الزبون بعد إتمام الطلب
+    setVariantsByProduct((prev) => {
+      const next = { ...prev };
+      cartItems.forEach((line) => {
+        if (line.variant) {
+          next[line.product.id] = (next[line.product.id] || []).map((v) =>
+            v.id === line.variant.id ? { ...v, quantity: Math.max(0, v.quantity - line.qty) } : v
+          );
+        }
+      });
+      return next;
+    });
+
+    // إفراغ السلة وبيانات الزبون بعد إتمام الطلب
+    setLastOrder(insertedOrder);
+    setShowInvoicePrompt(true);
     setCart({});
+    setSelectedVariants({});
     setCustomerName("");
     setCustomerPhone("");
     setCustomerAddress("");
     return true;
   };
-
   const orderMessage = () => {
     const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
     cartItems.forEach((l) => {
       const code = l.product.code || l.product.id;
-      lines.push(`${l.product.title} (${code}) × ${l.qty} — ${l.product.price * l.qty} د.ل`);
+      const variantLabel = l.variant
+        ? ` (${[l.variant.size, l.variant.color].filter(Boolean).join(" / ")})`
+        : "";
+      const price = getEffectivePrice(l.product, l.variant);
+      lines.push(`${l.product.title}${variantLabel} (${code}) × ${l.qty} — ${price * l.qty} د.ل`);
     });
     lines.push("");
     lines.push(`الإجمالي: ${totalPrice} د.ل`);
@@ -309,6 +437,75 @@ export default function App() {
     } catch (e) {
       /* noop */
     }
+  };
+const printCustomerInvoice = (order) => {
+    if (!order) return;
+    const itemsRows = (order.items || [])
+      .map(
+        (it) => `
+          <tr>
+            <td>${it.title}${it.size || it.color ? ` (${[it.size, it.color].filter(Boolean).join(" / ")})` : ""}</td>
+            <td style="text-align:center">${it.qty}</td>
+            <td style="text-align:center">${it.price} د.ل</td>
+            <td style="text-align:center">${it.price * it.qty} د.ل</td>
+          </tr>`
+      )
+      .join("");
+
+    const invoiceWindow = window.open("", "_blank");
+    invoiceWindow.document.write(`
+      <!DOCTYPE html>
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="UTF-8" />
+        <title>فاتورة طلب #${order.id}</title>
+        <style>
+          body { font-family: Tajawal, Arial, sans-serif; padding: 32px; color: #0B2027; }
+          .header { border-bottom: 2px solid #0E7C86; padding-bottom: 16px; margin-bottom: 24px; }
+          .header h1 { color: #0E7C86; margin: 0; }
+          .meta { font-size: 13px; color: #5B7278; margin-top: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          th, td { padding: 10px; border-bottom: 1px solid #E3ECED; text-align: right; }
+          th { background: #E7F3F3; color: #0A5A61; }
+          .total-row td { font-weight: bold; font-size: 16px; border-top: 2px solid #0E7C86; }
+          .customer-box { margin-top: 20px; padding: 14px; background: #F3F7F8; border-radius: 8px; font-size: 13px; }
+          .footer { margin-top: 32px; text-align: center; font-size: 12px; color: #5B7278; }
+          @media print { button { display: none; } }
+          .print-btn { margin-top: 24px; padding: 10px 20px; background: #0E7C86; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="header" style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+          <div>
+            <h1>${settings?.store_name || "المتجر"}</h1>
+            <div class="meta">
+              فاتورة رقم INV-${order.id}<br/>
+              ${new Date(order.created_at || Date.now()).toLocaleDateString("ar-LY", { year: "numeric", month: "long", day: "numeric" })}
+              —
+              ${new Date(order.created_at || Date.now()).toLocaleTimeString("ar-LY", { hour: "2-digit", minute: "2-digit" })}
+            </div>
+          </div>
+          ${settings?.logo_url ? `<img src="${settings.logo_url}" alt="شعار" style="width:64px; height:64px; object-fit:contain;" />` : ""}
+        </div>
+        <div class="customer-box">
+          <div>الاسم: ${order.customer_name || "-"}</div>
+          <div>الهاتف: ${order.customer_phone || "-"}</div>
+          <div>العنوان: ${order.customer_address || "-"}</div>
+          <div>طريقة الدفع: ${order.payment_method || "-"}</div>
+        </div>
+        <table>
+          <thead><tr><th>المنتج</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
+          <tbody>
+            ${itemsRows}
+            <tr class="total-row"><td colspan="3">الإجمالي الكلي</td><td>${order.total_price} د.ل</td></tr>
+          </tbody>
+        </table>
+        <div class="footer">شكراً لتسوقك معنا</div>
+        <center><button class="print-btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button></center>
+      </body>
+      </html>
+    `);
+    invoiceWindow.document.close();
   };
 
   // يعرض صورة المنتج إن وجدت، وإلا أيقونة افتراضية حسب التصنيف
@@ -660,28 +857,31 @@ export default function App() {
               </div>
             ) : (
               <div className="cart-scroll">
-                {cartItems.map(({ product, qty }) => (
-                  <div key={product.id} className="cart-line">
+                {cartItems.map(({ key, product, variant, qty }) => (
+                  <div key={key} className="cart-line">
                     <div className="cart-thumb">
                       <CartThumb product={product} />
                     </div>
                     <div className="cart-info">
-                      <p className="cart-name">{product.title}</p>
+                      <p className="cart-name">
+                        {product.title}
+                        {variant && ` (${[variant.size, variant.color].filter(Boolean).join(" / ")})`}
+                      </p>
                       <p className="cart-code">{product.code || product.id}</p>
                       <div className="cart-line-bottom">
-                        <span className="cart-price">{product.price * qty} د.ل</span>
+                        <span className="cart-price">{getEffectivePrice(product, variant) * qty} د.ل</span>
                         <div className="qty-control sm">
-                          <button className="qty-btn" onClick={() => dec(product.id)}>
+                          <button className="qty-btn" onClick={() => dec(key)}>
                             <Minus />
                           </button>
                           <span className="qty-val">{qty}</span>
-                          <button className="qty-btn" onClick={() => inc(product.id)}>
+                          <button className="qty-btn" onClick={() => inc(key)}>
                             <Plus />
                           </button>
                         </div>
                       </div>
                     </div>
-                    <button className="cart-remove" onClick={() => setQty(product.id, 0)} aria-label="إزالة">
+                    <button className="cart-remove" onClick={() => setQty(key, 0)} aria-label="إزالة">
                       <Trash2 />
                     </button>
                   </div>
@@ -896,8 +1096,19 @@ export default function App() {
 
               <div className="product-grid">
                 {filteredProducts.map((product) => {
-                  const qty = cart[product.id] || 0;
+                  const variantOptions = getVariantsForProduct(product.id);
+                  const hasVariants = variantOptions.length > 0;
+                  const selectedVariant = hasVariants ? getSelectedVariant(product.id) : null;
+                  const effectivePrice = getEffectivePrice(product, selectedVariant);
+                  const effectiveStock = hasVariants
+                    ? (selectedVariant ? getEffectiveStock(product, selectedVariant) : 0)
+                    : product.stock;
+                  const key = cartKey(product.id, selectedVariant);
+                  const qty = cart[key]?.qty || 0;
                   const compareAt = product.compare_at ?? product.compareAt ?? null;
+                  const sizeOptions = Array.from(new Set(variantOptions.map((v) => v.size).filter(Boolean)));
+                  const colorOptions = Array.from(new Set(variantOptions.map((v) => v.color).filter(Boolean)));
+
                   return (
                     <div key={product.id} className="product-card">
                       <div
@@ -911,8 +1122,8 @@ export default function App() {
                         )}
                         <ProductThumb product={product} />
                       </div>
-                      
-                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "6px" }}>
+
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "6px" }}>
                         <p className="product-name">{product.title}</p>
                         <button
                           onClick={() => handleShare(product)}
@@ -922,36 +1133,71 @@ export default function App() {
                           <Copy size={12} style={{ color: "var(--teal-dark)" }} />
                         </button>
                       </div>
-                      <p className="product-desc-sm">{product.description || product.desc}</p> {product.stock > 0 && product.stock <= 5 && (
+                      <p className="product-desc-sm">{product.description || product.desc}</p>
+                      {!hasVariants && product.stock > 0 && product.stock <= 5 && (
                         <p className="low-stock-note">باقي {product.stock} قطع فقط!</p>
                       )}
+
+                      {hasVariants && (
+                        <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+                          {sizeOptions.length > 0 && (
+                            <select
+                              value={selectedVariants[product.id]?.size || ""}
+                              onChange={(e) => setSelectedVariant(product.id, "size", e.target.value)}
+                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
+                            >
+                              <option value="">المقاس</option>
+                              {sizeOptions.map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          )}
+                          {colorOptions.length > 0 && (
+                            <select
+                              value={selectedVariants[product.id]?.color || ""}
+                              onChange={(e) => setSelectedVariant(product.id, "color", e.target.value)}
+                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
+                            >
+                              <option value="">اللون</option>
+                              {colorOptions.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      )}
+
                       <div className="product-price-row">
-                        <span className="product-price">{product.price} د.ل</span>
+                        <span className="product-price">{effectivePrice} د.ل</span>
                         {compareAt && <span className="product-compare">{compareAt} د.ل</span>}
                       </div>
                       <div className="product-action">
-                        {product.stock === 0 ? (
+                        {hasVariants && !selectedVariant ? (
+                          <button className="add-btn" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
+                            اختر الخيار أولاً
+                          </button>
+                        ) : effectiveStock === 0 ? (
                           <button className="add-btn" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
                             نفد المخزون
                           </button>
                         ) : qty === 0 ? (
-                          <button className="add-btn" onClick={() => addToCart(product.id)}>
+                          <button className="add-btn" onClick={() => addToCart(product)}>
                             <Plus size={14} /> أضف للسلة
                           </button>
                         ) : (
                           <div className="qty-control">
-                            <button className="qty-btn" onClick={() => dec(product.id)}>
+                            <button className="qty-btn" onClick={() => dec(key)}>
                               <Minus />
                             </button>
                             <span className="qty-val">{qty}</span>
                             <button
-  className="qty-btn"
-  onClick={() => inc(product.id)}
-  disabled={qty >= product.stock}
-  style={qty >= product.stock ? { opacity: 0.4, cursor: "not-allowed" } : {}}
->
-  <Plus />
-</button>
+                              className="qty-btn"
+                              onClick={() => inc(key)}
+                              disabled={qty >= effectiveStock}
+                              style={qty >= effectiveStock ? { opacity: 0.4, cursor: "not-allowed" } : {}}
+                            >
+                              <Plus />
+                            </button>
                           </div>
                         )}
                       </div>
@@ -983,14 +1229,14 @@ export default function App() {
       </section>
 
       {/* ===== Footer ===== */}
-     {/* ===== Footer ===== */}
-<footer id="contact" className="footer">
-  <p className="footer-name">VELTRIX SHOP</p>
-  <p className="footer-tag">مدعوم من فيلتريكس شوب — حلول متاجر إلكترونية احترافية</p>
-  <a href="https://wa.me/218931739453" target="_blank" rel="noreferrer" className="footer-wa">
-    <MessageCircle /> تواصل معنا
-  </a>
-</footer>
+      <footer id="contact" className="footer">
+        <p className="footer-name">VELTRIX SHOP</p>
+        <p className="footer-tag">مدعوم من فيلتريكس شوب — حلول متاجر إلكترونية احترافية</p>
+        <a href="https://wa.me/218931739453" target="_blank" rel="noreferrer" className="footer-wa">
+          <MessageCircle /> تواصل معنا
+        </a>
+      </footer>
+
       {/* ===== Sticky mobile/tablet order bar ===== */}
       <div className="sticky-bar">
         <div className="sticky-bar-inner">
@@ -1056,6 +1302,87 @@ export default function App() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* ===== Post-order invoice prompt ===== */}
+      {showInvoicePrompt && lastOrder && (
+        <div className="gallery-overlay">
+          <div className="gallery-backdrop" onClick={() => setShowInvoicePrompt(false)} />
+          <div className="gallery-box" style={{ padding: "28px 20px", textAlign: "center" }}>
+            <ShieldCheck size={40} style={{ color: "var(--success)", margin: "0 auto 12px" }} />
+            <h3 style={{ marginBottom: 8 }}>تم إرسال طلبك بنجاح ✅</h3>
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
+              يمكنك تحميل أو طباعة فاتورتك كإثبات شراء
+            </p>
+            <button
+              className="cta-button"
+              style={{ marginBottom: 10 }}
+              onClick={() => printCustomerInvoice(lastOrder)}
+            >
+              🧾 عرض / طباعة الفاتورة
+            </button>
+            <button
+              className="secondary-btn"
+              style={{ width: "100%", padding: "12px", borderRadius: 14, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
+              onClick={() => setShowInvoicePrompt(false)}
+            >
+              إغلاق
+            </button>
+          </div>
+        </div>
+      )}
+      {/* ===== Post-order invoice prompt ===== */}
+      {showInvoicePrompt && lastOrder && (
+        <div className="gallery-overlay">
+          <div className="gallery-backdrop" onClick={() => setShowInvoicePrompt(false)} />
+          <div className="gallery-box" style={{ padding: "28px 20px", textAlign: "center" }}>
+            <ShieldCheck size={40} style={{ color: "var(--success)", margin: "0 auto 12px" }} />
+            <h3 style={{ marginBottom: 8 }}>تم إرسال طلبك بنجاح ✅</h3>
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
+              يمكنك تحميل أو طباعة فاتورتك كإثبات شراء
+            </p>
+            <button
+              className="cta-button"
+              style={{ marginBottom: 10 }}
+              onClick={() => printCustomerInvoice(lastOrder)}
+            >
+              🧾 عرض / طباعة الفاتورة
+            </button>
+            <button
+              className="secondary-btn"
+              style={{ width: "100%", padding: "12px", borderRadius: 14, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
+              onClick={() => setShowInvoicePrompt(false)}
+            >
+              إغلاق
+            </button>
+          </div>
+        </div>
+      )}
+      {/* ===== Post-order invoice prompt ===== */}
+      {showInvoicePrompt && lastOrder && (
+        <div className="gallery-overlay">
+          <div className="gallery-backdrop" onClick={() => setShowInvoicePrompt(false)} />
+          <div className="gallery-box" style={{ padding: "28px 20px", textAlign: "center" }}>
+            <ShieldCheck size={40} style={{ color: "var(--success)", margin: "0 auto 12px" }} />
+            <h3 style={{ marginBottom: 8 }}>تم إرسال طلبك بنجاح ✅</h3>
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
+              يمكنك تحميل أو طباعة فاتورتك كإثبات شراء
+            </p>
+            <button
+              className="cta-button"
+              style={{ marginBottom: 10 }}
+              onClick={() => printCustomerInvoice(lastOrder)}
+            >
+              🧾 عرض / طباعة الفاتورة
+            </button>
+            <button
+              className="secondary-btn"
+              style={{ width: "100%", padding: "12px", borderRadius: 14, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
+              onClick={() => setShowInvoicePrompt(false)}
+            >
+              إغلاق
+            </button>
           </div>
         </div>
       )}

@@ -74,27 +74,43 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
   const [uploadMethod, setUploadMethod] = useState("file");
 
   const emptyForm = {
-    name: "",
-    description: "",
-    price: "",
-    compare_at: "",
-    category: "",
-    code: "",
-    stock: "",
-    image: "",
-    extraImagesText: "",
-  };
+  name: "",
+  description: "",
+  price: "",
+  cost_price: "",        // ← جديد: سعر التكلفة
+  compare_at: "",
+  category: "",
+  code: "",
+  stock: "",
+  image: "",
+  extraImagesText: "",
+};
   const [form, setForm] = useState(emptyForm);
   const [imageFiles, setImageFiles] = useState([]);
   const [existingImages, setExistingImages] = useState([]);
   const [editingId, setEditingId] = useState(null);
+const [variants, setVariants] = useState([]); // [{ size, color, price, quantity }]
 
+function addVariantRow() {
+  setVariants([...variants, { size: "", color: "", price: "", quantity: "" }]);
+}
+
+function updateVariantRow(index, field, value) {
+  const updated = [...variants];
+  updated[index][field] = value;
+  setVariants(updated);
+}
+
+function removeVariantRow(index) {
+  setVariants(variants.filter((_, i) => i !== index));
+}
   const emptySettingsForm = {
     store_name: "",
     whatsapp_number: "",
     bank_account: "",
     facebook_url: "",
     instagram_url: "",
+    logo_url: "",
   };
   const [settingsForm, setSettingsForm] = useState(emptySettingsForm);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -194,6 +210,32 @@ function getCustomerTier(ordersCount) {
     const todayVisits = visits.filter((v) => v.created_at.slice(0, 10) === today).length;
     const monthVisits = visits.filter((v) => v.created_at.slice(0, 7) === thisMonth).length;
 
+    // هامش الربح: إجمالي / يومي / شهري من المبيعات الفعلية
+    const productsByTitle = {};
+    products.forEach((p) => {
+      productsByTitle[p.title] = p;
+    });
+
+    function calcProfit(ordersList) {
+      let profit = 0;
+      ordersList.forEach((o) => {
+        (o.items || []).forEach((it) => {
+          const product = productsByTitle[it.title];
+          if (product && product.cost_price != null) {
+            const itemPrice = Number(it.price) || 0;
+            const itemCost = Number(product.cost_price) || 0;
+            const qty = Number(it.qty) || 0;
+            profit += (itemPrice - itemCost) * qty;
+          }
+        });
+      });
+      return profit;
+    }
+
+    const totalProfit = calcProfit(validOrders);
+    const dailyProfit = calcProfit(validOrders.filter((o) => o.created_at.slice(0, 10) === today));
+    const monthlyProfit = calcProfit(validOrders.filter((o) => o.created_at.slice(0, 7) === thisMonth));
+
     return {
       totalSales,
       totalOrders,
@@ -206,6 +248,9 @@ function getCustomerTier(ordersCount) {
       monthlySales,
       topProducts,
       leastOrderedProducts,
+      totalProfit,
+      dailyProfit,
+      monthlyProfit,
     };
   }, [orders, customers, visits, products]);
 
@@ -268,6 +313,7 @@ useEffect(() => {
         bank_account: data.bank_account || "",
         facebook_url: data.facebook_url || "",
         instagram_url: data.instagram_url || "",
+        logo_url: data.logo_url || "",
       });
     }
     setSettingsLoading(false);
@@ -451,70 +497,115 @@ useEffect(() => {
 
     return urls;
   }
+async function handleSubmit(e) {
+  e.preventDefault();
+  if (!form.name || !form.price) {
+    alert("لازم تكتب اسم المنتج والسعر على الأقل");
+    return;
+  }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!form.name || !form.price) {
-      alert("لازم تكتب اسم المنتج والسعر على الأقل");
-      return;
-    }
+  setSaving(true);
+  const imageUrls = await uploadImagesIfNeeded();
 
-    setSaving(true);
-    const imageUrls = await uploadImagesIfNeeded();
+  const payload = {
+    title: form.name,
+    description: form.description || null,
+    price: Number(form.price),
+    cost_price: form.cost_price !== "" ? Number(form.cost_price) : null,
+    old_price: form.compare_at ? Number(form.compare_at) : null,
+    category: form.category || null,
+    code: form.code || null,
+    stock: form.stock !== "" ? Number(form.stock) : 0,
+    image: imageUrls[0] || null,
+    images: imageUrls,
+  };
 
-    const payload = {
-      title: form.name,
-      description: form.description || null,
-      price: Number(form.price),
-      old_price: form.compare_at ? Number(form.compare_at) : null,
-      category: form.category || null,
-      code: form.code || null,
-      stock: form.stock !== "" ? Number(form.stock) : 0,
-      image: imageUrls[0] || null,
-      images: imageUrls,
-    };
+  let error;
+  let productId = editingId;
 
-    let error;
-    if (editingId) {
-      ({ error } = await supabase.from("products").update(payload).eq("id", editingId));
-    } else {
-      ({ error } = await supabase.from("products").insert([payload]));
-    }
+  if (editingId) {
+    ({ error } = await supabase.from("products").update(payload).eq("id", editingId));
+  } else {
+    const { data, error: insertError } = await supabase
+      .from("products")
+      .insert([payload])
+      .select()
+      .single();
+    error = insertError;
+    if (data) productId = data.id;
+  }
 
+  if (error) {
     setSaving(false);
+    alert("صار خطأ: " + error.message);
+    return;
+  }
 
-    if (error) {
-      alert("صار خطأ: " + error.message);
-      return;
+  if (productId) {
+    await supabase.from("product_variants").delete().eq("product_id", productId);
+
+    const validVariants = variants
+      .filter((v) => v.size || v.color)
+      .map((v) => ({
+        product_id: productId,
+        size: v.size || null,
+        color: v.color || null,
+        price: v.price !== "" ? Number(v.price) : null,
+        quantity: v.quantity !== "" ? Number(v.quantity) : 0,
+      }));
+
+    if (validVariants.length > 0) {
+      await supabase.from("product_variants").insert(validVariants);
     }
-
-    setForm(emptyForm);
-    setImageFiles([]);
-    setExistingImages([]);
-    setEditingId(null);
-    fetchProducts();
   }
 
-  function startEdit(product) {
-    setEditingId(product.id);
-    const imgs = product.images && product.images.length ? product.images : (product.image ? [product.image] : []);
-    setForm({
-      name: product.title || "",
-      description: product.description || "",
-      price: product.price || "",
-      compare_at: product.old_price || "",
-      category: product.category || "",
-      code: product.code || "",
-      stock: product.stock ?? "",
-      image: imgs[0] || "",
-      extraImagesText: imgs.slice(1).join("\n"),
-    });
-    setExistingImages(imgs);
-    setImageFiles([]);
-    setUploadMethod("url");
-    setActiveTab("products");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
+  setSaving(false);
+  setForm(emptyForm);
+  setVariants([]);
+  setImageFiles([]);
+  setExistingImages([]);
+  setEditingId(null);
+  fetchProducts();
+}
+  
+
+    
+  async function startEdit(product) {
+  setEditingId(product.id);
+  const imgs = product.images && product.images.length ? product.images : (product.image ? [product.image] : []);
+  setForm({
+    name: product.title || "",
+    description: product.description || "",
+    price: product.price || "",
+    cost_price: product.cost_price ?? "",
+    compare_at: product.old_price || "",
+    category: product.category || "",
+    code: product.code || "",
+    stock: product.stock ?? "",
+    image: imgs[0] || "",
+    extraImagesText: imgs.slice(1).join("\n"),
+  });
+  setExistingImages(imgs);
+  setImageFiles([]);
+  setUploadMethod("url");
+
+  const { data: variantData } = await supabase
+    .from("product_variants")
+    .select("*")
+    .eq("product_id", product.id);
+
+  setVariants(
+    (variantData || []).map((v) => ({
+      size: v.size || "",
+      color: v.color || "",
+      price: v.price ?? "",
+      quantity: v.quantity ?? "",
+    }))
+  );
+
+  setActiveTab("products");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 
   function cancelEdit() {
     setEditingId(null);
@@ -651,6 +742,24 @@ useEffect(() => {
                 <div style={styles.statValue}>{dashboardStats.totalCustomers}</div>
               </div>
               <div style={styles.statCard}>
+                <div style={styles.statLabel}>إجمالي هامش الربح</div>
+                <div style={{ ...styles.statValue, color: "#1c9963" }}>
+                  {dashboardStats.totalProfit.toFixed(2)} د.ل
+                </div>
+              </div>
+              <div style={styles.statCard}>
+                <div style={styles.statLabel}>هامش ربح اليوم</div>
+                <div style={{ ...styles.statValue, color: "#1c9963" }}>
+                  {dashboardStats.dailyProfit.toFixed(2)} د.ل
+                </div>
+              </div>
+              <div style={styles.statCard}>
+                <div style={styles.statLabel}>هامش ربح الشهر</div>
+                <div style={{ ...styles.statValue, color: "#1c9963" }}>
+                  {dashboardStats.monthlyProfit.toFixed(2)} د.ل
+                </div>
+              </div>
+              <div style={styles.statCard}>
                 <div style={styles.statLabel}>زوار اليوم</div>
                 <div style={styles.statValue}>{dashboardStats.todayVisits}</div>
               </div>
@@ -715,6 +824,32 @@ useEffect(() => {
                   value={settingsForm.store_name}
                   onChange={(e) => setSettingsForm({ ...settingsForm, store_name: e.target.value })}
                 />
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 700 }}>شعار المتجر (اختياري)</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const fileExt = file.name.split(".").pop();
+                      const fileName = `logo-${Date.now()}.${fileExt}`;
+                      const { error: uploadError } = await supabase.storage
+                        .from("Product-images")
+                        .upload(fileName, file);
+                      if (uploadError) {
+                        alert("فشل رفع الشعار: " + uploadError.message);
+                        return;
+                      }
+                      const { data } = supabase.storage.from("Product-images").getPublicUrl(fileName);
+                      setSettingsForm({ ...settingsForm, logo_url: data.publicUrl });
+                    }}
+                    style={styles.input}
+                  />
+                  {settingsForm.logo_url && (
+                    <img src={settingsForm.logo_url} alt="شعار المتجر" style={{ width: 80, height: 80, objectFit: "contain", borderRadius: 8, border: "1px solid #eee" }} />
+                  )}
+                </div>
                 <input
                   style={styles.input}
                   placeholder="رقم الواتساب (بصيغة دولية، مثال 218912345678)"
@@ -900,21 +1035,34 @@ useEffect(() => {
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
               />
               <div style={styles.row}>
-                <input
-                  style={styles.input}
-                  type="number"
-                  placeholder="السعر *"
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
-                />
-                <input
-                  style={styles.input}
-                  type="number"
-                  placeholder="السعر قبل الخصم (اختياري)"
-                  value={form.compare_at}
-                  onChange={(e) => setForm({ ...form, compare_at: e.target.value })}
-                />
-              </div>
+  <input
+    style={styles.input}
+    type="number"
+    placeholder="السعر *"
+    value={form.price}
+    onChange={(e) => setForm({ ...form, price: e.target.value })}
+  />
+  <input
+    style={styles.input}
+    type="number"
+    placeholder="سعر التكلفة (اختياري)"
+    value={form.cost_price}
+    onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
+  />
+  <input
+    style={styles.input}
+    type="number"
+    placeholder="السعر قبل الخصم (اختياري)"
+    value={form.compare_at}
+    onChange={(e) => setForm({ ...form, compare_at: e.target.value })}
+  />
+</div>
+
+{form.price && form.cost_price && (
+  <div style={{ fontSize: 13, color: "#1c9963", fontWeight: "bold" }}>
+    هامش الربح: {(Number(form.price) - Number(form.cost_price)).toFixed(2)} د.ل
+  </div>
+)}
               <div style={styles.row}>
                 <input
                   style={styles.input}
@@ -998,7 +1146,51 @@ useEffect(() => {
                     ))}
                 </div>
               )}
+<div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+    <strong style={{ fontSize: 14 }}>المقاسات والألوان (اختياري)</strong>
+    <button type="button" onClick={addVariantRow} style={{ ...styles.secondaryBtn, fontSize: 12 }}>
+      + إضافة خيار
+    </button>
+  </div>
+  <span style={{ fontSize: 12, color: "#888" }}>
+    اتركه فارغ لو المنتج بلا مقاسات/ألوان. لو تبي سعر مختلف لكل خيار عبّي حقل السعر، وإلا اتركه فارغ ليستخدم سعر المنتج الأساسي.
+  </span>
 
+  {variants.map((v, i) => (
+    <div key={i} style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+      <input
+        style={{ ...styles.input, flex: 1 }}
+        placeholder="المقاس (مثال: L)"
+        value={v.size}
+        onChange={(e) => updateVariantRow(i, "size", e.target.value)}
+      />
+      <input
+        style={{ ...styles.input, flex: 1 }}
+        placeholder="اللون (مثال: أحمر)"
+        value={v.color}
+        onChange={(e) => updateVariantRow(i, "color", e.target.value)}
+      />
+      <input
+        style={{ ...styles.input, flex: 1 }}
+        type="number"
+        placeholder="سعر خاص (اختياري)"
+        value={v.price}
+        onChange={(e) => updateVariantRow(i, "price", e.target.value)}
+      />
+      <input
+        style={{ ...styles.input, flex: 1 }}
+        type="number"
+        placeholder="الكمية"
+        value={v.quantity}
+        onChange={(e) => updateVariantRow(i, "quantity", e.target.value)}
+      />
+      <button type="button" onClick={() => removeVariantRow(i)} style={{ ...styles.deleteBtn, fontSize: 12 }}>
+        حذف
+      </button>
+    </div>
+  ))}
+</div>
               <div style={styles.row}>
                 <button type="submit" disabled={saving} style={styles.primaryBtn}>
                   {saving ? "جارٍ الحفظ..." : editingId ? "حفظ التعديل" : "إضافة المنتج"}
