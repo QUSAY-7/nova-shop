@@ -89,7 +89,13 @@ export default function App() {
   // ---- معرض صور المنتج ----
   const [galleryProduct, setGalleryProduct] = useState(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
-
+  // ---- طلباتي (بحث الزبون عن طلباته) ----
+  const [myOrdersOpen, setMyOrdersOpen] = useState(false);
+  const [lookupPhone, setLookupPhone] = useState("");
+  const [myOrders, setMyOrders] = useState([]);
+  const [myOrdersLoading, setMyOrdersLoading] = useState(false);
+  const [myOrdersSearched, setMyOrdersSearched] = useState(false);
+  const [invoiceOrder, setInvoiceOrder] = useState(null);
   // ---- تسجيل الزيارة (مرة واحدة يومياً لكل جهاز) ----
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -410,6 +416,18 @@ export default function App() {
     setCustomerAddress("");
     return true;
   };
+  const fetchMyOrders = async () => {
+    if (!lookupPhone.trim()) return;
+    setMyOrdersLoading(true);
+    setMyOrdersSearched(true);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("customer_phone", lookupPhone.trim())
+      .order("created_at", { ascending: false });
+    if (!error) setMyOrders(data || []);
+    setMyOrdersLoading(false);
+  };
   const orderMessage = () => {
     const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
     cartItems.forEach((l) => {
@@ -500,7 +518,7 @@ const printCustomerInvoice = (order) => {
             <tr class="total-row"><td colspan="3">الإجمالي الكلي</td><td>${order.total_price} د.ل</td></tr>
           </tbody>
         </table>
-        <div class="footer">شكراً لتسوقك معنا</div>
+        <div class="footer">شكراً لتسوقك من ${settings?.store_name || "متجرنا"}</div>
         <center><button class="print-btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button></center>
       </body>
       </html>
@@ -804,6 +822,9 @@ const printCustomerInvoice = (order) => {
             <span className="accent">{(settings?.store_name || "NOVA SHOP").split(" ").slice(1).join(" ")}</span>
           </a>
 
+<button onClick={() => setMyOrdersOpen(true)} className="icon-btn" aria-label="طلباتي">
+            <Truck size={19} />
+          </button>
           <button onClick={() => setCartOpen(true)} className="icon-btn solid" aria-label="السلة">
             <ShoppingBag size={19} />
             {totalQty > 0 && <span className="cart-badge">{totalQty}</span>}
@@ -838,6 +859,128 @@ const printCustomerInvoice = (order) => {
         </div>
       )}
 
+{/* ===== My Orders drawer ===== */}
+      {myOrdersOpen && (
+        <div className="drawer-overlay">
+          <div className="drawer-backdrop" onClick={() => setMyOrdersOpen(false)} />
+          <div className="drawer">
+            <div className="drawer-head">
+              <span className="drawer-title">طلباتي</span>
+              <button onClick={() => setMyOrdersOpen(false)} className="icon-btn">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="field-block" style={{ marginTop: 0 }}>
+              <span className="field-label">رقم هاتفك</span>
+              <input
+                type="tel"
+                className="customer-input"
+                placeholder="09XXXXXXXX"
+                value={lookupPhone}
+                onChange={(e) => setLookupPhone(e.target.value)}
+              />
+              <button
+                onClick={fetchMyOrders}
+                className="cta-button"
+                style={{ marginTop: "10px" }}
+              >
+                بحث عن طلباتي
+              </button>
+            </div>
+
+            <div className="cart-scroll" style={{ marginTop: "16px" }}>
+              {myOrdersLoading ? (
+                <div className="state-box">جاري البحث...</div>
+              ) : myOrdersSearched && myOrders.length === 0 ? (
+                <div className="cart-empty">
+                  <ShoppingBag />
+                  <span>ما لقينا أي طلبات بهذا الرقم</span>
+                </div>
+              ) : (
+                myOrders.map((order) => (
+                  <div key={order.id} className="cart-line" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                      <span className="cart-name">
+                        {new Date(order.created_at).toLocaleDateString("ar-LY")}
+                      </span>
+                      <span className="cart-price">{order.total_price} د.ل</span>
+                    </div>
+                    {(order.items || []).map((item, idx) => (
+                      <p key={idx} className="cart-code">
+                        {item.title} × {item.qty}
+                      </p>
+                    ))}
+                    <button
+                      onClick={() => setInvoiceOrder(order)}
+                      className="add-btn"
+                      style={{ marginTop: "8px" }}
+                    >
+                      عرض الفاتورة
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ===== Invoice modal ===== */}
+      {invoiceOrder && (
+        <div className="gallery-overlay">
+          <div className="gallery-backdrop" onClick={() => setInvoiceOrder(null)} />
+          <div className="gallery-box" style={{ maxWidth: "380px", padding: "24px" }}>
+            <button className="gallery-close" onClick={() => setInvoiceOrder(null)} aria-label="إغلاق">
+              <X size={16} />
+            </button>
+
+            <div style={{ textAlign: "center", marginBottom: "16px" }}>
+              <p style={{ fontFamily: "'Almarai',sans-serif", fontWeight: 800, fontSize: "18px", color: "var(--teal-dark)" }}>
+                {settings?.store_name || "NOVA SHOP"}
+              </p>
+              <p style={{ fontSize: "12px", color: "var(--muted)" }}>
+                فاتورة طلب رقم {invoiceOrder.id}
+              </p>
+              <p style={{ fontSize: "11px", color: "var(--muted)" }}>
+                {new Date(invoiceOrder.created_at).toLocaleString("ar-LY")}
+              </p>
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)", padding: "12px 0", marginBottom: "12px" }}>
+              {(invoiceOrder.items || []).map((item, idx) => (
+                <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: "6px" }}>
+                  <span>
+                    {item.title}
+                    {(item.size || item.color) && ` (${[item.size, item.color].filter(Boolean).join(" / ")})`}
+                    {" × "}{item.qty}
+                  </span>
+                  <span>{item.price * item.qty} د.ل</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "15px", color: "var(--teal-dark)", marginBottom: "12px" }}>
+              <span>الإجمالي</span>
+              <span>{invoiceOrder.total_price} د.ل</span>
+            </div>
+
+            <div style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.8 }}>
+              <p>الاسم: {invoiceOrder.customer_name}</p>
+              <p>الهاتف: {invoiceOrder.customer_phone}</p>
+              <p>العنوان: {invoiceOrder.customer_address}</p>
+              <p>طريقة الدفع: {invoiceOrder.payment_method}</p>
+            </div>
+
+            <button
+              onClick={() => window.print()}
+              className="cta-button"
+              style={{ marginTop: "16px" }}
+            >
+              طباعة الفاتورة
+            </button>
+          </div>
+        </div>
+      )}
       {/* ===== Cart drawer ===== */}
       {cartOpen && (
         <div className="drawer-overlay">

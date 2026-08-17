@@ -19,7 +19,72 @@ function buildStatusWhatsAppLink(order) {
   const text = messages[order.status] || `مرحباً، تحديث بخصوص طلبك رقم #${order.id}`;
   return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 }
+function printAdminInvoice(order, storeName) {
+  const itemsRows = (order.items || [])
+    .map(
+      (it) => `
+        <tr>
+          <td>${it.title}${it.size || it.color ? ` (${[it.size, it.color].filter(Boolean).join(" / ")})` : ""}</td>
+          <td style="text-align:center">${it.qty}</td>
+          <td style="text-align:center">${it.price} د.ل</td>
+          <td style="text-align:center">${it.price * it.qty} د.ل</td>
+        </tr>`
+    )
+    .join("");
 
+  const invoiceWindow = window.open("", "_blank");
+  invoiceWindow.document.write(`
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8" />
+      <title>فاتورة طلب #${order.id}</title>
+      <style>
+        body { font-family: Tajawal, Arial, sans-serif; padding: 32px; color: #0B2027; }
+        .header { border-bottom: 2px solid #0E7C86; padding-bottom: 16px; margin-bottom: 24px; }
+        .header h1 { color: #0E7C86; margin: 0; }
+        .meta { font-size: 13px; color: #5B7278; margin-top: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th, td { padding: 10px; border-bottom: 1px solid #E3ECED; text-align: right; }
+        th { background: #E7F3F3; color: #0A5A61; }
+        .total-row td { font-weight: bold; font-size: 16px; border-top: 2px solid #0E7C86; }
+        .customer-box { margin-top: 20px; padding: 14px; background: #F3F7F8; border-radius: 8px; font-size: 13px; }
+        .footer { margin-top: 32px; text-align: center; font-size: 12px; color: #5B7278; }
+        @media print { button { display: none; } }
+        .print-btn { margin-top: 24px; padding: 10px 20px; background: #0E7C86; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>${storeName || "المتجر"}</h1>
+        <div class="meta">
+          فاتورة رقم INV-${order.id}<br/>
+          ${new Date(order.created_at).toLocaleDateString("ar-LY", { year: "numeric", month: "long", day: "numeric" })}
+          —
+          ${new Date(order.created_at).toLocaleTimeString("ar-LY", { hour: "2-digit", minute: "2-digit" })}
+        </div>
+      </div>
+      <div class="customer-box">
+        <div>الاسم: ${order.customer_name || "-"}</div>
+        <div>الهاتف: ${order.customer_phone || "-"}</div>
+        <div>العنوان: ${order.customer_address || "-"}</div>
+        <div>طريقة الدفع: ${order.payment_method || "-"}</div>
+        <div>حالة الطلب: ${order.status || "-"}</div>
+      </div>
+      <table>
+        <thead><tr><th>المنتج</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
+        <tbody>
+          ${itemsRows}
+          <tr class="total-row"><td colspan="3">الإجمالي الكلي</td><td>${order.total_price} د.ل</td></tr>
+        </tbody>
+      </table>
+      <div class="footer">شكراً لتسوقك من ${storeName || "متجرنا"}</div>
+      <center><button class="print-btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button></center>
+    </body>
+    </html>
+  `);
+  invoiceWindow.document.close();
+}
 export default function Admin() {
   const [session, setSession] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
@@ -58,6 +123,7 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
         { id: "dashboard", label: "الرئيسية" },
         { id: "settings", label: "إعدادات المتجر" },
         { id: "orders", label: "الطلبات" },
+        { id: "invoices", label: "الفواتير" },
         { id: "customers", label: "العملاء" },
         { id: "products", label: "المنتجات" },
         ...(isOwner
@@ -67,7 +133,6 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
             ]
           : []),
       ];
-
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -119,9 +184,11 @@ function removeVariantRow(index) {
 
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
-  const ORDER_STATUSES = ["جديد", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const ORDER_STATUSES = ["جديد", "قيد التحقق من الحوالة", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
 const STATUS_LABELS = {
   "جديد": "جديد",
+  "قيد التحقق من الحوالة": "قيد التحقق من الحوالة",
   "قيد التجهيز": "قيد التجهيز",
   "تم الشحن": "قيد الشحن",
   "تم التسليم": "تم التسليم",
@@ -253,7 +320,32 @@ function getCustomerTier(ordersCount) {
       monthlyProfit,
     };
   }, [orders, customers, visits, products]);
+const filteredInvoices = useMemo(() => {
+    if (!invoiceSearch.trim()) return orders;
+    const q = invoiceSearch.trim().toLowerCase();
+    return orders.filter(
+      (o) =>
+        String(o.id).includes(q) ||
+        (o.customer_name || "").toLowerCase().includes(q) ||
+        (o.customer_phone || "").includes(q)
+    );
+  }, [orders, invoiceSearch]);
 
+  const groupedInvoices = useMemo(() => {
+    const groups = {};
+    filteredInvoices.forEach((o) => {
+      const d = new Date(o.created_at);
+      const monthKey = d.toLocaleDateString("ar-LY", { year: "numeric", month: "long" });
+      const dayOfMonth = d.getDate();
+      const weekIndex = Math.min(Math.floor((dayOfMonth - 1) / 7), 3);
+      const weekLabel = `الأسبوع ${weekIndex + 1}`;
+
+      if (!groups[monthKey]) groups[monthKey] = {};
+      if (!groups[monthKey][weekLabel]) groups[monthKey][weekLabel] = [];
+      groups[monthKey][weekLabel].push(o);
+    });
+    return groups;
+  }, [filteredInvoices]);
   const productsByCategory = useMemo(() => {
   const map = {};
   products.forEach((p) => {
@@ -965,6 +1057,58 @@ async function handleSubmit(e) {
           </>
         )}
 
+{/* ---- تبويب: الفواتير ---- */}
+        {activeTab === "invoices" && (
+          <>
+            <h3>الفواتير</h3>
+            <input
+              style={{ ...styles.input, marginBottom: 16 }}
+              placeholder="ابحث برقم الطلب، اسم الزبون، أو رقم الهاتف..."
+              value={invoiceSearch}
+              onChange={(e) => setInvoiceSearch(e.target.value)}
+            />
+            {ordersLoading ? (
+              <p>جارٍ التحميل...</p>
+            ) : filteredInvoices.length === 0 ? (
+              <p style={{ color: "#888" }}>لا توجد نتائج مطابقة</p>
+            ) : (
+              Object.entries(groupedInvoices).map(([month, weeks]) => (
+                <div key={month} style={{ marginBottom: 24 }}>
+                  <h4 style={{ borderBottom: "2px solid #eee", paddingBottom: 6, marginBottom: 12 }}>{month}</h4>
+                  {Object.entries(weeks).map(([week, invoices]) => (
+                    <div key={week} style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 13, fontWeight: "bold", color: "#888", marginBottom: 8 }}>
+                        {week} ({invoices.length} فاتورة)
+                      </div>
+                      <div style={styles.list}>
+                        {invoices.map((o) => (
+                          <div key={o.id} style={styles.orderCard}>
+                            <div style={styles.orderHeadRow}>
+                              <strong>فاتورة #{o.id}</strong>
+                              <span style={{ color: "#888", fontSize: 12 }}>
+                                {new Date(o.created_at).toLocaleDateString("ar-LY")}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 13, marginTop: 6 }}>
+                              <div>{o.customer_name || "غير مسجل"} — {o.customer_phone || "-"}</div>
+                              <div style={{ fontWeight: "bold", marginTop: 4 }}>{o.total_price} د.ل — {o.status || "جديد"}</div>
+                            </div>
+                            <button
+                              onClick={() => printAdminInvoice(o, settingsForm.store_name)}
+                              style={{ ...styles.secondaryBtn, marginTop: 8, width: "100%" }}
+                            >
+                              🧾 عرض / طباعة الفاتورة
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))
+            )}
+          </>
+        )}
         {/* ---- تبويب: العملاء ---- */}
         
       {activeTab === "customers" && (
