@@ -817,7 +817,7 @@ const printCustomerInvoice = (order) => {
             <Menu size={19} />
           </button>
 
-          <a href="#home" className="logo">
+                    <a href="#home" className="logo">
             {(settings?.store_name || "NOVA SHOP").split(" ")[0]}{" "}
             <span className="accent">{(settings?.store_name || "NOVA SHOP").split(" ").slice(1).join(" ")}</span>
           </a>
@@ -1131,27 +1131,51 @@ const printCustomerInvoice = (order) => {
             </div>
           </div>
 
-          <div className="parcel-wrap">
-            <div className="parcel-glow" />
-            <div className="parcel-float">
-              <div className="parcel-chip chip-1">
-                <Headphones />
-              </div>
-              <div className="parcel-chip chip-2">
-                <Lightbulb />
-              </div>
-              <div className="parcel-body">
-                <div className="parcel-noise" />
-                <div className="parcel-scan-clip">
-                  <div className="scan-line" />
+                    {settings?.logo_url ? (
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 320,
+                maxHeight: 320,
+                minHeight: 160,
+                margin: "20px auto 0",
+                borderRadius: 24,
+                overflow: "hidden",
+                boxShadow: "0 12px 32px rgba(0,0,0,.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <img
+                src={settings.logo_url}
+                alt="شعار المتجر"
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+              />
+            </div>
+          ) : (
+            <div className="parcel-wrap">
+              <div className="parcel-glow" />
+              <div className="parcel-float">
+                <div className="parcel-chip chip-1">
+                  <Headphones />
                 </div>
-               <span className="parcel-mark">{(settings?.store_name || "NOVA").split(" ")[0].toUpperCase()}</span>
-              </div>
-              <div className="badge-pulse">
-                <ShieldCheck />
+                <div className="parcel-chip chip-2">
+                  <Lightbulb />
+                </div>
+                <div className="parcel-body">
+                  <div className="parcel-noise" />
+                  <div className="parcel-scan-clip">
+                    <div className="scan-line" />
+                  </div>
+                  <span className="parcel-mark">{(settings?.store_name || "NOVA").split(" ")[0].toUpperCase()}</span>
+                </div>
+                <div className="badge-pulse">
+                  <ShieldCheck />
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </section>
 

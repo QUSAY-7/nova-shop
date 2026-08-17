@@ -185,6 +185,7 @@ function removeVariantRow(index) {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [invoiceSearch, setInvoiceSearch] = useState("");
+    const [bankReceiptInputs, setBankReceiptInputs] = useState({});
   const ORDER_STATUSES = ["جديد", "قيد التحقق من الحوالة", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
 const STATUS_LABELS = {
   "جديد": "جديد",
@@ -199,6 +200,13 @@ function getCustomerTier(ordersCount) {
   if (ordersCount >= 10) return "دائم";
   if (ordersCount >= 5) return "أحياناً";
   return "نادر";
+}
+function isBankTransferOverdue(order) {
+  if (!order.bank_receipt_date || order.bank_verified_at) return false;
+  const receiptDate = new Date(order.bank_receipt_date);
+  const now = new Date();
+  const hoursPassed = (now - receiptDate) / (1000 * 60 * 60);
+  return hoursPassed > 24;
 }
   const [visits, setVisits] = useState([]);
 
@@ -537,7 +545,42 @@ useEffect(() => {
     }
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
   }
+  async function saveBankReceipt(orderId) {
+    const input = bankReceiptInputs[orderId] || {};
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        bank_receipt_number: input.number || null,
+        bank_receipt_date: input.date || null,
+      })
+      .eq("id", orderId);
+    if (error) {
+      alert("فشل حفظ بيانات الإيصال: " + error.message);
+      return;
+    }
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? { ...o, bank_receipt_number: input.number || null, bank_receipt_date: input.date || null }
+          : o
+      )
+    );
+  }
 
+  async function confirmBankTransfer(orderId) {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: "قيد التجهيز", bank_verified_at: now })
+      .eq("id", orderId);
+    if (error) {
+      alert("فشل تأكيد الحوالة: " + error.message);
+      return;
+    }
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: "قيد التجهيز", bank_verified_at: now } : o))
+    );
+  }
   async function handleLogin(e) {
     e.preventDefault();
     setLoginError("");
@@ -939,7 +982,35 @@ async function handleSubmit(e) {
                     style={styles.input}
                   />
                   {settingsForm.logo_url && (
-                    <img src={settingsForm.logo_url} alt="شعار المتجر" style={{ width: 80, height: 80, objectFit: "contain", borderRadius: 8, border: "1px solid #eee" }} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <img src={settingsForm.logo_url} alt="شعار المتجر" style={{ width: 80, height: 80, objectFit: "contain", borderRadius: 8, border: "1px solid #eee" }} />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm("متأكد تبي تحذف الشعار؟")) return;
+                          try {
+                            const url = settingsForm.logo_url;
+                            const fileName = url.split("/").pop();
+                            await supabase.storage.from("Product-images").remove([fileName]);
+                          } catch (err) {
+                            console.error("تعذر حذف الملف من التخزين:", err);
+                          }
+                          setSettingsForm({ ...settingsForm, logo_url: "" });
+                        }}
+                        style={{
+                          background: "#fee2e2",
+                          color: "#b91c1c",
+                          border: "1px solid #fca5a5",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        حذف الشعار
+                      </button>
+                    </div>
                   )}
                 </div>
                 <input
@@ -1025,7 +1096,7 @@ async function handleSubmit(e) {
                                 <div>{o.customer_name || "غير مسجل"}</div>
                                 <div>{o.customer_phone || "غير مسجل"}</div>
                               </div>
-                              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                                                            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                                 <select
                                   value={o.status}
                                   onChange={(e) => updateOrderStatus(o.id, e.target.value)}
@@ -1045,6 +1116,64 @@ async function handleSubmit(e) {
                                   </button>
                                 )}
                               </div>
+
+                                                            {o.payment_method === "تحويل بنكي" && (
+                                <div style={{ marginTop: 8, padding: 8, background: isBankTransferOverdue(o) ? "#ffe1e1" : "#fff8ec", borderRadius: 8, fontSize: 12 }}>
+                                  <div style={{ fontWeight: "bold", marginBottom: 6 }}>
+                                    توثيق الحوالة البنكية
+                                    {isBankTransferOverdue(o) && (
+                                      <span style={{ color: "#c00", marginRight: 6 }}>⚠️ تجاوز المهلة (24 ساعة)</span>
+                                    )}
+                                  </div>
+
+                                  {o.bank_verified_at ? (
+                                    <div style={{ color: "#1c9963", fontWeight: "bold" }}>
+                                      ✅ تم التأكيد بتاريخ {new Date(o.bank_verified_at).toLocaleString("ar-LY")}
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <input
+                                        placeholder="رقم/مرجع الإيصال"
+                                        value={bankReceiptInputs[o.id]?.number ?? o.bank_receipt_number ?? ""}
+                                        onChange={(e) =>
+                                          setBankReceiptInputs((prev) => ({
+                                            ...prev,
+                                            [o.id]: { ...prev[o.id], number: e.target.value },
+                                          }))
+                                        }
+                                        style={{ ...styles.input, fontSize: 12, padding: 6, marginBottom: 6 }}
+                                      />
+                                      <input
+                                        type="date"
+                                        value={bankReceiptInputs[o.id]?.date ?? o.bank_receipt_date ?? ""}
+                                        onChange={(e) =>
+                                          setBankReceiptInputs((prev) => ({
+                                            ...prev,
+                                            [o.id]: { ...prev[o.id], date: e.target.value },
+                                          }))
+                                        }
+                                        style={{ ...styles.input, fontSize: 12, padding: 6, marginBottom: 6 }}
+                                      />
+                                      <div style={{ display: "flex", gap: 6 }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => saveBankReceipt(o.id)}
+                                          style={{ ...styles.secondaryBtn, fontSize: 11, flex: 1, padding: 6 }}
+                                        >
+                                          حفظ البيانات
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => confirmBankTransfer(o.id)}
+                                          style={{ ...styles.primaryBtn, fontSize: 11, flex: 1, padding: 6 }}
+                                        >
+                                          ✅ تأكيد الوصول
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ))
                         )}
