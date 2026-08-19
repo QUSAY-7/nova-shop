@@ -1,5 +1,10 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
+  ShoppingCart,
+  Package,
+  Search,
+  Lock,
+  RotateCcw,
   ShoppingBag,
   Menu,
   X,
@@ -89,13 +94,31 @@ export default function App() {
   // ---- معرض صور المنتج ----
   const [galleryProduct, setGalleryProduct] = useState(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
-  // ---- طلباتي (بحث الزبون عن طلباته) ----
+
+  // ---- طلباتي السابقة (نظام تأكيد عبر واتساب وحفظ تلقائي) ----
   const [myOrdersOpen, setMyOrdersOpen] = useState(false);
+  const [orderTab, setOrderTab] = useState("local"); // 'local' | 'wa_verify'
   const [lookupPhone, setLookupPhone] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [enteredOtp, setEnteredOtp] = useState("");
+  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
+  const [localOrders, setLocalOrders] = useState([]);
   const [myOrders, setMyOrders] = useState([]);
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [myOrdersSearched, setMyOrdersSearched] = useState(false);
   const [invoiceOrder, setInvoiceOrder] = useState(null);
+
+  // تحميل طلبات الجهاز المحفوظة تلقائياً
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("nova_customer_orders") || "[]");
+      setLocalOrders(saved);
+    } catch (e) {
+      console.error("فشل قراءة الطلبات المحلية", e);
+    }
+  }, []);
+
   // ---- تسجيل الزيارة (مرة واحدة يومياً لكل جهاز) ----
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -363,6 +386,16 @@ export default function App() {
       return false;
     }
 
+    // حفظ الطلب في الـ LocalStorage لجهاز الزبون لسهولة متابعته
+    try {
+      const existing = JSON.parse(localStorage.getItem("nova_customer_orders") || "[]");
+      const updated = [insertedOrder, ...existing.filter((o) => o.id !== insertedOrder.id)].slice(0, 10);
+      localStorage.setItem("nova_customer_orders", JSON.stringify(updated));
+      setLocalOrders(updated);
+    } catch (e) {
+      console.error("فشل حفظ الطلب محلياً", e);
+    }
+
     // خصم الكمية من المخزون (المنتج نفسه أو خيار المقاس/اللون حسب الحالة)
     for (const line of cartItems) {
       if (line.variant) {
@@ -416,8 +449,31 @@ export default function App() {
     setCustomerAddress("");
     return true;
   };
-  const fetchMyOrders = async () => {
-    if (!lookupPhone.trim()) return;
+
+  // إرسال كود التحقق عبر واتساب
+  const sendWhatsAppOtp = () => {
+    if (!lookupPhone.trim() || lookupPhone.trim().length < 8) {
+      alert("من فضلك أدخل رقم هاتف صحيح أولاً.");
+      return;
+    }
+    const generated = String(Math.floor(1000 + Math.random() * 9000));
+    setOtpCode(generated);
+    setIsOtpSent(true);
+
+    const waMsg = encodeURIComponent(
+      `مرحباً ${settings?.store_name || "NOVA SHOP"}، أرغب في التحقق من حسابي وعرض طلباتي لرقم الهاتف (${lookupPhone.trim()}).\nرمز التحقق: [ ${generated} ]`
+    );
+    const storeWa = settings?.whatsapp_number || "218931739453";
+    window.open(`https://wa.me/${storeWa}?text=${waMsg}`, "_blank", "noopener,noreferrer");
+  };
+
+  // التحقق من الكود وجلب طلبات الزبون
+  const verifyAndFetchOrders = async () => {
+    if (enteredOtp.trim() !== otpCode) {
+      alert("رمز التحقق غير صحيح، يرجى التأكد من الرمز وإعادة المحاولة.");
+      return;
+    }
+    setIsVerified(true);
     setMyOrdersLoading(true);
     setMyOrdersSearched(true);
     const { data, error } = await supabase
@@ -425,9 +481,14 @@ export default function App() {
       .select("*")
       .eq("customer_phone", lookupPhone.trim())
       .order("created_at", { ascending: false });
-    if (!error) setMyOrders(data || []);
+    if (!error) {
+      setMyOrders(data || []);
+    } else {
+      setMyOrders([]);
+    }
     setMyOrdersLoading(false);
   };
+
   const orderMessage = () => {
     const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
     cartItems.forEach((l) => {
@@ -456,7 +517,8 @@ export default function App() {
       /* noop */
     }
   };
-const printCustomerInvoice = (order) => {
+
+  const printCustomerInvoice = (order) => {
     if (!order) return;
     const itemsRows = (order.items || [])
       .map(
@@ -608,10 +670,8 @@ const printCustomerInvoice = (order) => {
         .header-inner{ max-width: var(--container); margin:0 auto; padding: 0 16px; height:64px; display:flex; align-items:center; justify-content:space-between; }
         .icon-btn{ width:40px; height:40px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--line); transition: transform .15s ease; }
         .icon-btn:active{ transform: scale(.94); }
-        .icon-btn.solid{ background:var(--teal); border-color:var(--teal); color:#fff; position:relative; }
         .logo{ font-family:'Almarai',sans-serif; font-weight:800; font-size:20px; color:var(--teal-dark); }
         .logo .accent{ color:var(--gold); }
-        .cart-badge{ position:absolute; top:-4px; left:-4px; min-width:18px; height:18px; padding:0 4px; border-radius:999px; background:var(--gold); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; }
 
         /* ---------- Drawers ---------- */
         .drawer-overlay{ position:fixed; inset:0; z-index:50; display:flex; justify-content:flex-end; }
@@ -653,7 +713,7 @@ const printCustomerInvoice = (order) => {
         .total-line{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
         .total-amount{ font-family:'Almarai',sans-serif; font-weight:800; font-size:20px; color:var(--teal-dark); }
 
-        .cta-button{ width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:15px; border-radius:18px; background:var(--teal); color:#fff; font-weight:800; font-size:15px; box-shadow:0 10px 24px rgba(14,124,134,.25); transition: transform .15s ease; }
+        .cta-button{ width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px; border-radius:999px; background:var(--teal); color:#fff; font-weight:800; font-size:14px; box-shadow:0 8px 20px rgba(14,124,134,.25); transition: transform .15s ease; }
         .cta-button:active{ transform: scale(.98); }
         .cta-button:disabled{ opacity:.5; }
 
@@ -699,9 +759,9 @@ const printCustomerInvoice = (order) => {
         .feature-body{ font-size:12px; line-height:1.6; color:var(--muted); }
 
         /* ---------- Category tabs ---------- */
-        .cat-tabs{ display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:16px; scrollbar-width:none; }
+        .cat-tabs{ display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:16px; scrollbar-width:none; justify-content:flex-start; }
         .cat-tabs::-webkit-scrollbar{ display:none; }
-        .cat-tab{ flex-shrink:0; padding:9px 18px; border-radius:999px; font-size:13px; font-weight:700; border:1px solid var(--line); background:var(--surface); color:var(--ink); transition: all .15s ease; }
+        .cat-tab{ flex-shrink:0; padding:8px 16px; border-radius:999px; font-size:12.5px; font-weight:700; border:1px solid var(--line); background:var(--surface); color:var(--ink); transition: all .15s ease; }
         .cat-tab.active{ background:var(--teal); border-color:var(--teal); color:#fff; }
 
         /* ---------- Product grid ---------- */
@@ -716,7 +776,7 @@ const printCustomerInvoice = (order) => {
         .product-price{ font-family:'Almarai',sans-serif; font-weight:800; font-size:16px; color:var(--teal-dark); }
         .product-compare{ font-size:11px; color:var(--muted); text-decoration:line-through; }
         .product-action{ margin-top:10px; }
-        .add-btn{ width:100%; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:var(--teal-light); color:var(--teal-dark); font-size:12.5px; font-weight:700; transition: background .15s; }
+        .add-btn{ width:100%; display:flex; align-items:center; justify-content:center; gap:6px; padding:9px; border-radius:999px; background:var(--teal-light); color:var(--teal-dark); font-size:12px; font-weight:700; transition: background .15s; }
         .add-btn:active{ transform: scale(.97); }
         .product-action .qty-control{ width:100%; justify-content:space-between; background:var(--teal-light); }
 
@@ -725,14 +785,14 @@ const printCustomerInvoice = (order) => {
 
         /* ---------- Payment (in cart) ---------- */
         .field-block{ margin-top:16px; flex-shrink:0; }
-        .field-label{ font-size:13px; font-weight:700; display:block; margin-bottom:8px; }
+        .field-label{ font-size:12.5px; font-weight:700; display:block; margin-bottom:8px; }
         .payment-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-        .pay-btn{ display:flex; align-items:center; justify-content:center; gap:6px; padding:11px; border-radius:12px; font-size:12.5px; font-weight:700; background:transparent; border:1px solid var(--line); color:var(--ink); transition: all .15s ease; }
+        .pay-btn{ display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:999px; font-size:12px; font-weight:700; background:transparent; border:1px solid var(--line); color:var(--ink); transition: all .15s ease; }
         .pay-btn svg{ width:14px; height:14px; }
         .pay-btn.active{ background:var(--teal); border-color:var(--teal); color:#fff; }
-        .bank-box{ margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:11px; border-radius:12px; background:var(--teal-light); }
+        .bank-box{ margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; border-radius:999px; background:var(--teal-light); }
         .bank-number{ font-size:11px; font-family: monospace; letter-spacing:.5px; color:var(--teal-dark); direction:ltr; }
-        .copy-btn{ width:30px; height:30px; border-radius:999px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.12); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .copy-btn{ width:28px; height:28px; border-radius:999px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.12); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         .copy-btn svg{ width:13px; height:13px; }
         .copy-btn .ok{ color:var(--success); }
 
@@ -754,11 +814,11 @@ const printCustomerInvoice = (order) => {
         /* ---------- Sticky bar ---------- */
         .sticky-bar{ position:fixed; bottom:0; inset-inline:0; z-index:30; }
         .sticky-bar-inner{ max-width: var(--container); margin:0 auto; padding:8px 16px 16px; }
-        .sticky-card{ display:flex; align-items:center; gap:12px; padding:10px; border-radius:18px; background:var(--surface); border:1px solid var(--line); box-shadow:0 -6px 24px rgba(0,0,0,.08); }
+        .sticky-card{ display:flex; align-items:center; gap:12px; padding:10px; border-radius:999px; background:var(--surface); border:1px solid var(--line); box-shadow:0 -6px 24px rgba(0,0,0,.08); }
         .sticky-total-label{ font-size:10px; color:var(--muted); }
         .sticky-total-amount{ font-family:'Almarai',sans-serif; font-weight:800; color:var(--teal-dark); }
-        .sticky-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px; border-radius:14px; background:var(--teal); color:#fff; font-weight:700; }
-        .sticky-cta svg{ width:18px; height:18px; }
+        .sticky-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:12px; border-radius:999px; background:var(--teal); color:#fff; font-weight:700; font-size:13px; }
+        .sticky-cta svg{ width:17px; height:17px; }
 
         /* ---------- Product image gallery modal ---------- */
         .gallery-overlay{ position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
@@ -813,20 +873,24 @@ const printCustomerInvoice = (order) => {
       {/* ===== Header ===== */}
       <header className="header">
         <div className="header-inner">
-          <button onClick={() => setMenuOpen(true)} className="icon-btn" aria-label="القائمة">
-            <Menu size={19} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button onClick={() => setMenuOpen(true)} className="icon-btn" aria-label="القائمة">
+              <Menu size={19} />
+            </button>
+            <button onClick={() => setMyOrdersOpen(true)} className="orders-header-btn" aria-label="طلباتي السابقة">
+              <Package size={16} />
+              <span>طلباتي السابقة</span>
+            </button>
+          </div>
 
-                    <a href="#home" className="logo">
+          <a href="#home" className="logo">
             {(settings?.store_name || "NOVA SHOP").split(" ")[0]}{" "}
             <span className="accent">{(settings?.store_name || "NOVA SHOP").split(" ").slice(1).join(" ")}</span>
           </a>
 
-<button onClick={() => setMyOrdersOpen(true)} className="icon-btn" aria-label="طلباتي">
-            <Truck size={19} />
-          </button>
-          <button onClick={() => setCartOpen(true)} className="icon-btn solid" aria-label="السلة">
-            <ShoppingBag size={19} />
+          <button onClick={() => setCartOpen(true)} className="cart-header-btn" aria-label="السلة">
+            <ShoppingCart size={19} />
+            <span>السلة</span>
             {totalQty > 0 && <span className="cart-badge">{totalQty}</span>}
           </button>
         </div>
@@ -859,72 +923,165 @@ const printCustomerInvoice = (order) => {
         </div>
       )}
 
-{/* ===== My Orders drawer ===== */}
+      {/* ===== My Orders drawer (طلباتي السابقة) ===== */}
       {myOrdersOpen && (
         <div className="drawer-overlay">
           <div className="drawer-backdrop" onClick={() => setMyOrdersOpen(false)} />
           <div className="drawer">
             <div className="drawer-head">
-              <span className="drawer-title">طلباتي</span>
+              <span className="drawer-title" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Package size={20} color="var(--teal)" /> طلباتي السابقة
+              </span>
               <button onClick={() => setMyOrdersOpen(false)} className="icon-btn">
                 <X size={16} />
               </button>
             </div>
 
-            <div className="field-block" style={{ marginTop: 0 }}>
-              <span className="field-label">رقم هاتفك</span>
-              <input
-                type="tel"
-                className="customer-input"
-                placeholder="09XXXXXXXX"
-                value={lookupPhone}
-                onChange={(e) => setLookupPhone(e.target.value)}
-              />
+            <div className="order-tabs">
               <button
-                onClick={fetchMyOrders}
-                className="cta-button"
-                style={{ marginTop: "10px" }}
+                className={`order-tab-btn ${orderTab === "local" ? "active" : ""}`}
+                onClick={() => setOrderTab("local")}
               >
-                بحث عن طلباتي
+                طلبات هذا الجهاز ({localOrders.length})
+              </button>
+              <button
+                className={`order-tab-btn ${orderTab === "wa_verify" ? "active" : ""}`}
+                onClick={() => setOrderTab("wa_verify")}
+              >
+                استرجاع برقم الهاتف
               </button>
             </div>
 
-            <div className="cart-scroll" style={{ marginTop: "16px" }}>
-              {myOrdersLoading ? (
-                <div className="state-box">جاري البحث...</div>
-              ) : myOrdersSearched && myOrders.length === 0 ? (
-                <div className="cart-empty">
-                  <ShoppingBag />
-                  <span>ما لقينا أي طلبات بهذا الرقم</span>
-                </div>
-              ) : (
-                myOrders.map((order) => (
-                  <div key={order.id} className="cart-line" style={{ flexDirection: "column", alignItems: "stretch" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-                      <span className="cart-name">
-                        {new Date(order.created_at).toLocaleDateString("ar-LY")}
-                      </span>
-                      <span className="cart-price">{order.total_price} د.ل</span>
-                    </div>
-                    {(order.items || []).map((item, idx) => (
-                      <p key={idx} className="cart-code">
-                        {item.title} × {item.qty}
-                      </p>
-                    ))}
+            {orderTab === "wa_verify" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {!isVerified ? (
+                  <div className="wa-verify-box">
+                    <span style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>
+                      🔐 تأكيد ملكية الرقم عبر واتساب
+                    </span>
+                    <input
+                      type="tel"
+                      className="customer-input"
+                      placeholder="أدخل رقم هاتفك: 09XXXXXXXX"
+                      value={lookupPhone}
+                      onChange={(e) => setLookupPhone(e.target.value)}
+                    />
+                    <button onClick={sendWhatsAppOtp} className="wa-verify-btn">
+                      <MessageCircle size={17} /> استلام كود التأكيد في واتساب
+                    </button>
+
+                    {isOtpSent && (
+                      <div style={{ marginTop: "8px", borderTop: "1px dashed #BBF7D0", paddingTop: "8px" }}>
+                        <span style={{ fontSize: "11.5px", color: "#15803D", display: "block", marginBottom: "6px" }}>
+                          أدخل الرمز المكون من 4 أرقام الذي أُرسل لواتساب:
+                        </span>
+                        <div className="otp-inputs-wrapper">
+                          <input
+                            type="text"
+                            maxLength={4}
+                            className="otp-input-field"
+                            placeholder="••••"
+                            value={enteredOtp}
+                            onChange={(e) => setEnteredOtp(e.target.value)}
+                          />
+                          <button
+                            onClick={verifyAndFetchOrders}
+                            className="cta-button"
+                            style={{ width: "auto", padding: "0 16px", height: "38px" }}
+                          >
+                            تأكيد
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F0FDF4", padding: "8px 12px", borderRadius: "999px", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>
+                      ✅ تم التحقق: {lookupPhone}
+                    </span>
                     <button
-                      onClick={() => setInvoiceOrder(order)}
-                      className="add-btn"
-                      style={{ marginTop: "8px" }}
+                      onClick={() => { setIsVerified(false); setIsOtpSent(false); setEnteredOtp(""); }}
+                      style={{ fontSize: "11px", color: "var(--muted)", textDecoration: "underline" }}
                     >
-                      عرض الفاتورة
+                      تغيير الرقم
                     </button>
                   </div>
-                ))
-              )}
-            </div>
+                )}
+
+                <div className="cart-scroll">
+                  {myOrdersLoading ? (
+                    <div className="state-box">جاري تحميل طلباتك...</div>
+                  ) : myOrdersSearched && myOrders.length === 0 ? (
+                    <div className="cart-empty">
+                      <Package size={32} />
+                      <span>لا توجد طلبات مسجلة لهذا الرقم</span>
+                    </div>
+                  ) : (
+                    myOrders.map((order) => (
+                      <div key={order.id} className="cart-line" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                          <span className="cart-name">طلب رقم #{order.id}</span>
+                          <span className="cart-price">{order.total_price} د.ل</span>
+                        </div>
+                        <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "4px" }}>
+                          {new Date(order.created_at).toLocaleDateString("ar-LY")}
+                        </p>
+                        {(order.items || []).map((item, idx) => (
+                          <p key={idx} className="cart-code">
+                            {item.title} × {item.qty}
+                          </p>
+                        ))}
+                        <button
+                          onClick={() => setInvoiceOrder(order)}
+                          className="add-btn"
+                          style={{ marginTop: "8px" }}
+                        >
+                          🧾 عرض الفاتورة
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="cart-scroll">
+                {localOrders.length === 0 ? (
+                  <div className="cart-empty">
+                    <Package size={32} />
+                    <span>لا توجد طلبات مسجلة على هذا الجهاز بعد</span>
+                  </div>
+                ) : (
+                  localOrders.map((order) => (
+                    <div key={order.id} className="cart-line" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                        <span className="cart-name">طلب رقم #{order.id}</span>
+                        <span className="cart-price">{order.total_price} د.ل</span>
+                      </div>
+                      <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "4px" }}>
+                        {new Date(order.created_at).toLocaleDateString("ar-LY")}
+                      </p>
+                      {(order.items || []).map((item, idx) => (
+                        <p key={idx} className="cart-code">
+                          {item.title} × {item.qty}
+                        </p>
+                      ))}
+                      <button
+                        onClick={() => setInvoiceOrder(order)}
+                        className="add-btn"
+                        style={{ marginTop: "8px" }}
+                      >
+                        🧾 عرض الفاتورة
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
+
       {/* ===== Invoice modal ===== */}
       {invoiceOrder && (
         <div className="gallery-overlay">
@@ -972,7 +1129,7 @@ const printCustomerInvoice = (order) => {
             </div>
 
             <button
-              onClick={() => window.print()}
+              onClick={() => printCustomerInvoice(invoiceOrder)}
               className="cta-button"
               style={{ marginTop: "16px" }}
             >
@@ -981,13 +1138,16 @@ const printCustomerInvoice = (order) => {
           </div>
         </div>
       )}
+
       {/* ===== Cart drawer ===== */}
       {cartOpen && (
         <div className="drawer-overlay">
           <div className="drawer-backdrop" onClick={() => setCartOpen(false)} />
           <div className="drawer">
             <div className="drawer-head">
-              <span className="drawer-title">سلتك ({totalQty})</span>
+              <span className="drawer-title" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <ShoppingCart size={20} color="var(--teal)" /> سلتك ({totalQty})
+              </span>
               <button onClick={() => setCartOpen(false)} className="icon-btn">
                 <X size={16} />
               </button>
@@ -995,7 +1155,7 @@ const printCustomerInvoice = (order) => {
 
             {cartItems.length === 0 ? (
               <div className="cart-empty">
-                <ShoppingBag />
+                <ShoppingCart size={36} />
                 <span>سلتك فارغة، أضف منتجاً لتبدأ طلبك</span>
               </div>
             ) : (
@@ -1032,7 +1192,7 @@ const printCustomerInvoice = (order) => {
               </div>
             )}
 
-          {cartItems.length > 0 && (
+            {cartItems.length > 0 && (
               <>
                 <div className="field-block">
                   <span className="field-label">اسمك الكامل</span>
@@ -1090,7 +1250,7 @@ const printCustomerInvoice = (order) => {
                     <span className="total-amount">{totalPrice} د.ل</span>
                   </div>
                   <a
-                   href={waLink}
+                    href={waLink}
                     target="_blank"
                     rel="noreferrer"
                     className="cta-button"
@@ -1131,7 +1291,7 @@ const printCustomerInvoice = (order) => {
             </div>
           </div>
 
-                    {settings?.logo_url ? (
+          {settings?.logo_url ? (
             <div
               style={{
                 width: "100%",
@@ -1210,45 +1370,71 @@ const printCustomerInvoice = (order) => {
             <div className="state-box">لا توجد منتجات حالياً</div>
           ) : (
             <>
-              <div className="search-box">
-                <input
-                  type="text"
-                  className="search-input"
-                  placeholder="ابحث عن منتج..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                {searchQuery && (
-                  <button className="search-clear" onClick={() => setSearchQuery("")}>
-                    ×
-                  </button>
-                )}
+              {/* شريط البحث وتحديد الأسعار بتصميم بيضاوي كبسولة صغير وأنيق */}
+              <div className="search-filter-wrapper">
+                <div className="search-box">
+                  <span className="search-icon-inside">
+                    <Search size={15} />
+                  </span>
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="ابحث عن منتج..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  {searchQuery && (
+                    <button className="search-clear" onClick={() => setSearchQuery("")}>
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <div className="filters-row">
+                  <select
+                    className="sort-select"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                  >
+                    <option value="default">الترتيب الافتراضي</option>
+                    <option value="price-asc">السعر: من الأقل</option>
+                    <option value="price-desc">السعر: من الأعلى</option>
+                  </select>
+
+                  <div className="price-inputs-group">
+                    <input
+                      type="number"
+                      className="price-input"
+                      placeholder="من د.ل"
+                      value={minPrice}
+                      onChange={(e) => setMinPrice(e.target.value)}
+                    />
+                    <span style={{ fontSize: "10px", color: "var(--muted)" }}>-</span>
+                    <input
+                      type="number"
+                      className="price-input"
+                      placeholder="إلى د.ل"
+                      value={maxPrice}
+                      onChange={(e) => setMaxPrice(e.target.value)}
+                    />
+                  </div>
+
+                  {(searchQuery || minPrice || maxPrice || sortBy !== "default") && (
+                    <button
+                      className="filter-reset-btn"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setMinPrice("");
+                        setMaxPrice("");
+                        setSortBy("default");
+                      }}
+                    >
+                      <RotateCcw size={11} /> مسح الفلاتر
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="filters-row">
-                <select
-                  className="sort-select"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                >
-                  <option value="default">الترتيب الافتراضي</option>
-                  <option value="price-asc">السعر: من الأقل للأعلى</option>
-                  <option value="price-desc">السعر: من الأعلى للأقل</option>
-                </select>
-                <input
-                  type="number"
-                  className="price-input"
-                  placeholder="من (د.ل)"
-                  value={minPrice}
-                  onChange={(e) => setMinPrice(e.target.value)}
-                />
-                <input
-                  type="number"
-                  className="price-input"
-                  placeholder="إلى (د.ل)"
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(e.target.value)}
-                />
-              </div>
+
               <div className="cat-tabs">
                 {CATEGORIES.map((cat) => (
                   <button
@@ -1311,7 +1497,7 @@ const printCustomerInvoice = (order) => {
                             <select
                               value={selectedVariants[product.id]?.size || ""}
                               onChange={(e) => setSelectedVariant(product.id, "size", e.target.value)}
-                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
+                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "999px", border: "1px solid var(--line)", fontSize: "12px" }}
                             >
                               <option value="">المقاس</option>
                               {sizeOptions.map((s) => (
@@ -1323,7 +1509,7 @@ const printCustomerInvoice = (order) => {
                             <select
                               value={selectedVariants[product.id]?.color || ""}
                               onChange={(e) => setSelectedVariant(product.id, "color", e.target.value)}
-                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
+                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "999px", border: "1px solid var(--line)", fontSize: "12px" }}
                             >
                               <option value="">اللون</option>
                               {colorOptions.map((c) => (
@@ -1472,6 +1658,7 @@ const printCustomerInvoice = (order) => {
           </div>
         </div>
       )}
+
       {/* ===== Post-order invoice prompt ===== */}
       {showInvoicePrompt && lastOrder && (
         <div className="gallery-overlay">
@@ -1491,61 +1678,7 @@ const printCustomerInvoice = (order) => {
             </button>
             <button
               className="secondary-btn"
-              style={{ width: "100%", padding: "12px", borderRadius: 14, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
-              onClick={() => setShowInvoicePrompt(false)}
-            >
-              إغلاق
-            </button>
-          </div>
-        </div>
-      )}
-      {/* ===== Post-order invoice prompt ===== */}
-      {showInvoicePrompt && lastOrder && (
-        <div className="gallery-overlay">
-          <div className="gallery-backdrop" onClick={() => setShowInvoicePrompt(false)} />
-          <div className="gallery-box" style={{ padding: "28px 20px", textAlign: "center" }}>
-            <ShieldCheck size={40} style={{ color: "var(--success)", margin: "0 auto 12px" }} />
-            <h3 style={{ marginBottom: 8 }}>تم إرسال طلبك بنجاح ✅</h3>
-            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
-              يمكنك تحميل أو طباعة فاتورتك كإثبات شراء
-            </p>
-            <button
-              className="cta-button"
-              style={{ marginBottom: 10 }}
-              onClick={() => printCustomerInvoice(lastOrder)}
-            >
-              🧾 عرض / طباعة الفاتورة
-            </button>
-            <button
-              className="secondary-btn"
-              style={{ width: "100%", padding: "12px", borderRadius: 14, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
-              onClick={() => setShowInvoicePrompt(false)}
-            >
-              إغلاق
-            </button>
-          </div>
-        </div>
-      )}
-      {/* ===== Post-order invoice prompt ===== */}
-      {showInvoicePrompt && lastOrder && (
-        <div className="gallery-overlay">
-          <div className="gallery-backdrop" onClick={() => setShowInvoicePrompt(false)} />
-          <div className="gallery-box" style={{ padding: "28px 20px", textAlign: "center" }}>
-            <ShieldCheck size={40} style={{ color: "var(--success)", margin: "0 auto 12px" }} />
-            <h3 style={{ marginBottom: 8 }}>تم إرسال طلبك بنجاح ✅</h3>
-            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
-              يمكنك تحميل أو طباعة فاتورتك كإثبات شراء
-            </p>
-            <button
-              className="cta-button"
-              style={{ marginBottom: 10 }}
-              onClick={() => printCustomerInvoice(lastOrder)}
-            >
-              🧾 عرض / طباعة الفاتورة
-            </button>
-            <button
-              className="secondary-btn"
-              style={{ width: "100%", padding: "12px", borderRadius: 14, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
+              style={{ width: "100%", padding: "12px", borderRadius: 999, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
               onClick={() => setShowInvoicePrompt(false)}
             >
               إغلاق
