@@ -396,7 +396,7 @@ export default function App() {
       console.error("فشل حفظ الطلب محلياً", e);
     }
 
-    // خصم الكمية من المخزون (المنتج نفسه أو خيار المقاس/اللون حسب الحالة)
+    // خصم الكمية من المخزون
     for (const line of cartItems) {
       if (line.variant) {
         const newQty = Math.max(0, line.variant.quantity - line.qty);
@@ -588,7 +588,6 @@ export default function App() {
     invoiceWindow.document.close();
   };
 
-  // يعرض صورة المنتج إن وجدت، وإلا أيقونة افتراضية حسب التصنيف
   const ProductThumb = ({ product }) => {
     if (product.image) {
       return (
@@ -617,7 +616,6 @@ export default function App() {
     return <Icon />;
   };
 
-  // ---- معرض الصور: مساعدين ----
   const getProductImages = (product) => {
     if (product.images && product.images.length > 0) return product.images;
     if (product.image) return [product.image];
@@ -722,27 +720,9 @@ export default function App() {
         .hero-top{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px; }
         .eyebrow{ font-size:12px; font-weight:700; padding:6px 14px; border-radius:999px; background:var(--teal-light); color:var(--teal-dark); }
         .h1{ font-family:'Almarai',sans-serif; font-weight:800; font-size:26px; line-height:1.5; max-width:380px; }
-        .h1-sub{ font-size:14px; color:var(--muted); max-width:340px; line-height:1.7; }
+        .h1-sub{ font-size:14px; color:var(--muted); max-width:380px; line-height:1.7; }
 
-        .parcel-wrap{ position:relative; width:100%; max-width:260px; aspect-ratio:1/1; margin:20px auto 0; display:flex; align-items:center; justify-content:center; }
-        .parcel-glow{ position:absolute; inset:24px; border-radius:32px; filter:blur(30px); opacity:.4; background: radial-gradient(circle at 50% 40%, var(--teal), transparent 70%); }
-        .parcel-float{ position:relative; width:170px; height:190px; animation: floatY 4.5s ease-in-out infinite; }
-        @keyframes floatY{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
-        .parcel-chip{ position:absolute; width:64px; height:64px; border-radius:16px; display:flex; align-items:center; justify-content:center; box-shadow:0 12px 22px rgba(0,0,0,.16); }
-        .parcel-chip svg{ width:24px; height:24px; color:#fff; }
-        .chip-1{ right:-4px; top:6px; transform:rotate(-10deg); background:linear-gradient(135deg,#2a3f47,#0B2027); }
-        .chip-2{ left:-8px; top:2px; transform:rotate(9deg); background:linear-gradient(135deg,var(--gold),#8a6a22); }
-        .parcel-body{ position:absolute; inset:46px 8px 8px 8px; border-radius:18px; overflow:hidden; background:linear-gradient(160deg,#12333a,#0A1F24); box-shadow:0 20px 40px rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; }
-        .parcel-noise{ position:absolute; inset:0; opacity:.16; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.09) 0px, rgba(255,255,255,.09) 1px, transparent 1px, transparent 10px); }
-        .parcel-scan-clip{ position:absolute; inset:0; overflow:hidden; }
-        .scan-line{ position:absolute; inset-inline:0; height:32px; background:linear-gradient(180deg, transparent, rgba(45,212,191,.55), transparent); animation: scan 3.4s ease-in-out infinite; }
-        @keyframes scan{ 0%{ transform:translateY(-160%); opacity:0;} 12%{ opacity:1;} 88%{ opacity:1;} 100%{ transform:translateY(240%); opacity:0;} }
-        .parcel-mark{ position:relative; font-family:'Almarai',sans-serif; font-weight:800; font-size:13px; letter-spacing:3px; color:rgba(255,255,255,.35); }
-        .badge-pulse{ position:absolute; top:-6px; right:-6px; width:40px; height:40px; border-radius:999px; background:var(--teal); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(0,0,0,.2); animation: pulseRing 2.2s ease-out infinite; z-index:2; }
-        @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
-        .badge-pulse svg{ width:18px; height:18px; color:#fff; }
-
-        .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
+        .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:20px; }
         .trust-item{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px 6px; border-radius:18px; background:var(--surface); border:1px solid var(--line); }
         .trust-item svg{ width:20px; height:20px; color:var(--teal); }
         .trust-item span{ font-size:11px; font-weight:500; color:var(--muted); text-align:center; line-height:1.3; }
@@ -841,7 +821,6 @@ export default function App() {
         @media (min-width: 640px){
           :root{ --container: 720px; }
           .h1{ font-size:30px; max-width:480px; }
-          .parcel-wrap{ max-width:300px; }
           .features-grid{ grid-template-columns:repeat(2,1fr); gap:14px; }
           .product-grid{ grid-template-columns:repeat(3,1fr); }
         }
@@ -853,18 +832,17 @@ export default function App() {
           :root{ --container: 1120px; }
           .app{ padding-bottom:40px; }
 
-          .hero .container{ display:grid; grid-template-columns: 1.1fr 0.9fr; align-items:center; gap:48px; text-align:right; }
-          .hero-top{ align-items:flex-start; text-align:right; }
-          .h1{ font-size:38px; max-width:540px; }
-          .h1-sub{ max-width:460px; }
-          .parcel-wrap{ margin:0; max-width:360px; }
-          .trust-row{ grid-column: 1 / -1; grid-template-columns:repeat(3,1fr); max-width:540px; margin-top:32px; }
+          .hero .container{ display:flex; flex-direction:column; align-items:center; text-align:center; }
+          .hero-top{ align-items:center; text-align:center; }
+          .h1{ font-size:34px; max-width:580px; }
+          .h1-sub{ max-width:520px; }
+          .trust-row{ grid-template-columns:repeat(3,1fr); max-width:540px; margin-top:24px; }
 
           .features-grid{ grid-template-columns:repeat(4,1fr); gap:16px; }
           .feature-card{ padding:20px; }
 
           .product-grid{ grid-template-columns:repeat(4,1fr); gap:18px; }
-          .faq-list{ max-width:760px; }
+          .faq-list{ max-width:760px; margin: 0 auto; }
 
           .sticky-bar{ display:none; }
         }
@@ -1269,13 +1247,29 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== Hero ===== */}
+      {/* ===== Hero (الشعار والوصف متناسق على كل الأجهزة مثل الصورة 2) ===== */}
       <section id="home" className="hero">
         <div className="container">
           <div className="hero-top">
             <span className="eyebrow">توصيل لكل مدن ليبيا 🇱🇾</span>
-            <h1 className="h1">تسوّق إلكترونياتك وإكسسواراتك بثقة، من أول طلب</h1>
-            <p className="h1-sub">تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية.</p>
+
+            {/* عرض شعار المتجر بشكل منظم وجذاب */}
+            {settings?.logo_url && (
+              <div className="hero-logo-banner">
+                <img
+                  src={settings.logo_url}
+                  alt={settings?.store_name || "شعار المتجر"}
+                  className="hero-logo-img"
+                />
+              </div>
+            )}
+
+            <h1 className="h1">{settings?.store_name || "NOVA SHOP"}</h1>
+            
+            {/* وصف المتجر تحت الشعار مباشرة */}
+            <p className="hero-store-description">
+              {settings?.store_description || "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}
+            </p>
 
             <div className="trust-row">
               {[
@@ -1290,52 +1284,6 @@ export default function App() {
               ))}
             </div>
           </div>
-
-          {settings?.logo_url ? (
-            <div
-              style={{
-                width: "100%",
-                maxWidth: 320,
-                maxHeight: 320,
-                minHeight: 160,
-                margin: "20px auto 0",
-                borderRadius: 24,
-                overflow: "hidden",
-                boxShadow: "0 12px 32px rgba(0,0,0,.15)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <img
-                src={settings.logo_url}
-                alt="شعار المتجر"
-                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
-              />
-            </div>
-          ) : (
-            <div className="parcel-wrap">
-              <div className="parcel-glow" />
-              <div className="parcel-float">
-                <div className="parcel-chip chip-1">
-                  <Headphones />
-                </div>
-                <div className="parcel-chip chip-2">
-                  <Lightbulb />
-                </div>
-                <div className="parcel-body">
-                  <div className="parcel-noise" />
-                  <div className="parcel-scan-clip">
-                    <div className="scan-line" />
-                  </div>
-                  <span className="parcel-mark">{(settings?.store_name || "NOVA").split(" ")[0].toUpperCase()}</span>
-                </div>
-                <div className="badge-pulse">
-                  <ShieldCheck />
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </section>
 

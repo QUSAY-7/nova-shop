@@ -1,4 +1,23 @@
 import { useState, useEffect, useMemo } from "react";
+import {
+  TrendingUp,
+  ShoppingBag,
+  Users,
+  DollarSign,
+  Package,
+  Calendar,
+  ChevronDown,
+  ArrowUpRight,
+  CheckCircle,
+  Clock,
+  Truck,
+  XCircle,
+  Eye,
+  FileText,
+  Percent,
+  Layers,
+  Settings,
+} from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 function buildStatusWhatsAppLink(order) {
@@ -19,6 +38,7 @@ function buildStatusWhatsAppLink(order) {
   const text = messages[order.status] || `مرحباً، تحديث بخصوص طلبك رقم #${order.id}`;
   return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 }
+
 function printAdminInvoice(order, storeName) {
   const itemsRows = (order.items || [])
     .map(
@@ -85,6 +105,7 @@ function printAdminInvoice(order, storeName) {
   `);
   invoiceWindow.document.close();
 }
+
 export default function Admin() {
   const [session, setSession] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
@@ -111,16 +132,20 @@ export default function Admin() {
   const [newLoginPassword, setNewLoginPassword] = useState("");
   const [credsSaving, setCredsSaving] = useState(false);
   const [credsMessage, setCredsMessage] = useState("");
+
   // ---- تبويبات لوحة التحكم ----
   const [activeTab, setActiveTab] = useState("dashboard");
-const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [timeFilter, setTimeFilter] = useState("30days"); // today | 7days | 30days | all
+
   useEffect(() => {
     if (isModerator) setActiveTab("products");
   }, [userRole]);
+
   const TABS = isModerator
     ? [{ id: "products", label: "المنتجات" }]
     : [
-        { id: "dashboard", label: "الرئيسية" },
+        { id: "dashboard", label: "لوحة الإحصائيات" },
         { id: "settings", label: "إعدادات المتجر" },
         { id: "orders", label: "الطلبات" },
         { id: "invoices", label: "الفواتير" },
@@ -133,44 +158,47 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
             ]
           : []),
       ];
+
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadMethod, setUploadMethod] = useState("file");
 
   const emptyForm = {
-  name: "",
-  description: "",
-  price: "",
-  cost_price: "",        // ← جديد: سعر التكلفة
-  compare_at: "",
-  category: "",
-  code: "",
-  stock: "",
-  image: "",
-  extraImagesText: "",
-};
+    name: "",
+    description: "",
+    price: "",
+    cost_price: "",
+    compare_at: "",
+    category: "",
+    code: "",
+    stock: "",
+    image: "",
+    extraImagesText: "",
+  };
   const [form, setForm] = useState(emptyForm);
   const [imageFiles, setImageFiles] = useState([]);
   const [existingImages, setExistingImages] = useState([]);
   const [editingId, setEditingId] = useState(null);
-const [variants, setVariants] = useState([]); // [{ size, color, price, quantity }]
+  const [variants, setVariants] = useState([]);
 
-function addVariantRow() {
-  setVariants([...variants, { size: "", color: "", price: "", quantity: "" }]);
-}
+  function addVariantRow() {
+    setVariants([...variants, { size: "", color: "", price: "", quantity: "" }]);
+  }
 
-function updateVariantRow(index, field, value) {
-  const updated = [...variants];
-  updated[index][field] = value;
-  setVariants(updated);
-}
+  function updateVariantRow(index, field, value) {
+    const updated = [...variants];
+    updated[index][field] = value;
+    setVariants(updated);
+  }
 
-function removeVariantRow(index) {
-  setVariants(variants.filter((_, i) => i !== index));
-}
+  function removeVariantRow(index) {
+    setVariants(variants.filter((_, i) => i !== index));
+  }
+
   const emptySettingsForm = {
     store_name: "",
+    store_description: "",
     whatsapp_number: "",
     bank_account: "",
     facebook_url: "",
@@ -185,29 +213,32 @@ function removeVariantRow(index) {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [invoiceSearch, setInvoiceSearch] = useState("");
-    const [bankReceiptInputs, setBankReceiptInputs] = useState({});
+  const [bankReceiptInputs, setBankReceiptInputs] = useState({});
   const ORDER_STATUSES = ["جديد", "قيد التحقق من الحوالة", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
-const STATUS_LABELS = {
-  "جديد": "جديد",
-  "قيد التحقق من الحوالة": "قيد التحقق من الحوالة",
-  "قيد التجهيز": "قيد التجهيز",
-  "تم الشحن": "قيد الشحن",
-  "تم التسليم": "تم التسليم",
-  "ملغي": "ملغي",
-};
-const CUSTOMER_TIERS = ["دائم", "أحياناً", "نادر"];
-function getCustomerTier(ordersCount) {
-  if (ordersCount >= 10) return "دائم";
-  if (ordersCount >= 5) return "أحياناً";
-  return "نادر";
-}
-function isBankTransferOverdue(order) {
-  if (!order.bank_receipt_date || order.bank_verified_at) return false;
-  const receiptDate = new Date(order.bank_receipt_date);
-  const now = new Date();
-  const hoursPassed = (now - receiptDate) / (1000 * 60 * 60);
-  return hoursPassed > 24;
-}
+  const STATUS_LABELS = {
+    "جديد": "جديد",
+    "قيد التحقق من الحوالة": "قيد التحقق من الحوالة",
+    "قيد التجهيز": "قيد التجهيز",
+    "تم الشحن": "قيد الشحن",
+    "تم التسليم": "تم التسليم",
+    "ملغي": "ملغي",
+  };
+
+  const CUSTOMER_TIERS = ["دائم", "أحياناً", "نادر"];
+  function getCustomerTier(ordersCount) {
+    if (ordersCount >= 10) return "دائم";
+    if (ordersCount >= 5) return "أحياناً";
+    return "نادر";
+  }
+
+  function isBankTransferOverdue(order) {
+    if (!order.bank_receipt_date || order.bank_verified_at) return false;
+    const receiptDate = new Date(order.bank_receipt_date);
+    const now = new Date();
+    const hoursPassed = (now - receiptDate) / (1000 * 60 * 60);
+    return hoursPassed > 24;
+  }
+
   const [visits, setVisits] = useState([]);
 
   const customers = useMemo(() => {
@@ -234,101 +265,117 @@ function isBankTransferOverdue(order) {
       }
     });
     return Object.values(map)
-  .map((c) => ({ ...c, tier: getCustomerTier(c.ordersCount) }))
-  .sort((a, b) => b.ordersCount - a.ordersCount);
+      .map((c) => ({ ...c, tier: getCustomerTier(c.ordersCount) }))
+      .sort((a, b) => b.ordersCount - a.ordersCount);
   }, [orders]);
 
+  // ---- حساب الإحصائيات الشاملة والدقيقة بدقة واحترافية ----
   const dashboardStats = useMemo(() => {
-    const validOrders = orders.filter((o) => o.status !== "ملغي");
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    // تصفية الطلبات حسب الفترة المحددة
+    let activeOrders = orders;
+    if (timeFilter === "today") {
+      activeOrders = orders.filter((o) => o.created_at && o.created_at.slice(0, 10) === todayStr);
+    } else if (timeFilter === "7days") {
+      activeOrders = orders.filter((o) => o.created_at && new Date(o.created_at) >= sevenDaysAgo);
+    } else if (timeFilter === "30days") {
+      activeOrders = orders.filter((o) => o.created_at && new Date(o.created_at) >= thirtyDaysAgo);
+    }
+
+    const validOrders = activeOrders.filter((o) => o.status !== "ملغي");
     const totalSales = validOrders.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
-    const totalOrders = orders.length;
-    const totalCustomers = customers.length;
+    const totalOrders = activeOrders.length;
+    const completedOrders = activeOrders.filter((o) => o.status === "تم التسليم").length;
+    const shippedOrders = activeOrders.filter((o) => o.status === "تم الشحن" || o.status === "قيد التجهيز").length;
+    const pendingOrders = activeOrders.filter((o) => o.status === "جديد" || o.status === "قيد التحقق من الحوالة").length;
+    const cancelledOrders = activeOrders.filter((o) => o.status === "ملغي").length;
 
-    // مبيعات اليوم والشهر
-    const today = new Date().toISOString().slice(0, 10);
-    const thisMonth = new Date().toISOString().slice(0, 7);
+    // عدد المنتجات المباعة كقطع
+    const totalUnitsSold = validOrders.reduce((sum, o) => {
+      return sum + (o.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+    }, 0);
 
-    const dailySales = validOrders
-      .filter((o) => o.created_at.slice(0, 10) === today)
-      .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+    // العملاء المتفردين في هذه الفترة
+    const periodCustomers = new Set(activeOrders.map((o) => o.customer_phone).filter(Boolean)).size;
 
-    const monthlySales = validOrders
-      .filter((o) => o.created_at.slice(0, 7) === thisMonth)
-      .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+    // متوسط قيمة الطلب (AOV)
+    const aov = validOrders.length > 0 ? Math.round(totalSales / validOrders.length) : 0;
 
-    // مبيعات كل منتج (بالكمية)
-    const productSales = {};
-    validOrders.forEach((o) => {
-      (o.items || []).forEach((it) => {
-        const key = it.title || "منتج بدون اسم";
-        productSales[key] = (productSales[key] || 0) + (it.qty || 0);
-      });
-    });
-
-    // الأكثر مبيعاً (أول 5)
-    const topProducts = Object.entries(productSales)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([title, qty]) => ({ title, qty }));
-
-    const topProduct = topProducts[0]?.title || null;
-    const topQty = topProducts[0]?.qty || 0;
-
-    // الأقل طلباً — نأخذ كل منتجات المخزون ونقارنها بمبيعاتها
-    const topTitles = new Set(topProducts.map((p) => p.title));
-    const leastOrderedProducts = products
-      .map((p) => ({ title: p.title, qty: productSales[p.title] || 0 }))
-      .filter((p) => !topTitles.has(p.title))
-      .sort((a, b) => a.qty - b.qty)
-      .slice(0, 5);
-
-    const todayVisits = visits.filter((v) => v.created_at.slice(0, 10) === today).length;
-    const monthVisits = visits.filter((v) => v.created_at.slice(0, 7) === thisMonth).length;
-
-    // هامش الربح: إجمالي / يومي / شهري من المبيعات الفعلية
+    // حساب الأرباح الصافية
     const productsByTitle = {};
     products.forEach((p) => {
       productsByTitle[p.title] = p;
     });
 
-    function calcProfit(ordersList) {
-      let profit = 0;
-      ordersList.forEach((o) => {
-        (o.items || []).forEach((it) => {
-          const product = productsByTitle[it.title];
-          if (product && product.cost_price != null) {
-            const itemPrice = Number(it.price) || 0;
-            const itemCost = Number(product.cost_price) || 0;
-            const qty = Number(it.qty) || 0;
-            profit += (itemPrice - itemCost) * qty;
-          }
-        });
+    let totalProfit = 0;
+    validOrders.forEach((o) => {
+      (o.items || []).forEach((it) => {
+        const product = productsByTitle[it.title];
+        if (product && product.cost_price != null) {
+          const itemPrice = Number(it.price) || 0;
+          const itemCost = Number(product.cost_price) || 0;
+          const qty = Number(it.qty) || 0;
+          totalProfit += (itemPrice - itemCost) * qty;
+        }
       });
-      return profit;
-    }
+    });
 
-    const totalProfit = calcProfit(validOrders);
-    const dailyProfit = calcProfit(validOrders.filter((o) => o.created_at.slice(0, 10) === today));
-    const monthlyProfit = calcProfit(validOrders.filter((o) => o.created_at.slice(0, 7) === thisMonth));
+    // أفضل المنتجات مبيعاً
+    const productSalesMap = {};
+    validOrders.forEach((o) => {
+      (o.items || []).forEach((it) => {
+        const title = it.title || "منتج";
+        if (!productSalesMap[title]) {
+          const matchedProd = products.find((p) => p.title === title);
+          productSalesMap[title] = {
+            title,
+            qty: 0,
+            revenue: 0,
+            image: matchedProd?.image || null,
+          };
+        }
+        productSalesMap[title].qty += Number(it.qty) || 0;
+        productSalesMap[title].revenue += (Number(it.price) || 0) * (Number(it.qty) || 0);
+      });
+    });
+
+    const topSellingProducts = Object.values(productSalesMap)
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
+
+    // مخطط المبيعات اليومية لآخر 7 أيام
+    const last7DaysData = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const dateStr = d.toISOString().slice(0, 10);
+      const dayName = d.toLocaleDateString("ar-LY", { weekday: "short" });
+      const daySales = orders
+        .filter((o) => o.status !== "ملغي" && o.created_at && o.created_at.slice(0, 10) === dateStr)
+        .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+      last7DaysData.push({ date: dateStr, dayName, sales: daySales });
+    }
 
     return {
       totalSales,
       totalOrders,
-      totalCustomers,
-      topProduct,
-      topQty,
-      todayVisits,
-      monthVisits,
-      dailySales,
-      monthlySales,
-      topProducts,
-      leastOrderedProducts,
+      completedOrders,
+      shippedOrders,
+      pendingOrders,
+      cancelledOrders,
+      totalUnitsSold,
+      periodCustomers,
+      aov,
       totalProfit,
-      dailyProfit,
-      monthlyProfit,
+      topSellingProducts,
+      last7DaysData,
+      recentOrders: orders.slice(0, 6),
     };
-  }, [orders, customers, visits, products]);
-const filteredInvoices = useMemo(() => {
+  }, [orders, products, timeFilter]);
+
+  const filteredInvoices = useMemo(() => {
     if (!invoiceSearch.trim()) return orders;
     const q = invoiceSearch.trim().toLowerCase();
     return orders.filter(
@@ -354,16 +401,18 @@ const filteredInvoices = useMemo(() => {
     });
     return groups;
   }, [filteredInvoices]);
+
   const productsByCategory = useMemo(() => {
-  const map = {};
-  products.forEach((p) => {
-    const cat = p.category || "بدون تصنيف";
-    if (!map[cat]) map[cat] = [];
-    map[cat].push(p);
-  });
-  return map;
-}, [products]);
-const categoryList = useMemo(() => Object.keys(productsByCategory), [productsByCategory]);
+    const map = {};
+    products.forEach((p) => {
+      const cat = p.category || "بدون تصنيف";
+      if (!map[cat]) map[cat] = [];
+      map[cat].push(p);
+    });
+    return map;
+  }, [products]);
+  const categoryList = useMemo(() => Object.keys(productsByCategory), [productsByCategory]);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -379,7 +428,7 @@ const categoryList = useMemo(() => Object.keys(productsByCategory), [productsByC
     };
   }, []);
 
-useEffect(() => {
+  useEffect(() => {
     if (authed) {
       fetchProducts();
       fetchSettings();
@@ -389,13 +438,14 @@ useEffect(() => {
       fetchTeamMembers();
     }
   }, [authed]);
+
   async function fetchProducts() {
     setLoading(true);
     const { data, error } = await supabase
       .from("products")
       .select("*")
       .order("id", { ascending: false });
-    if (!error) setProducts(data);
+    if (!error) setProducts(data || []);
     setLoading(false);
   }
 
@@ -409,6 +459,7 @@ useEffect(() => {
     if (!error && data) {
       setSettingsForm({
         store_name: data.store_name || "",
+        store_description: data.store_description || "",
         whatsapp_number: data.whatsapp_number || "",
         bank_account: data.bank_account || "",
         facebook_url: data.facebook_url || "",
@@ -446,14 +497,16 @@ useEffect(() => {
       .from("orders")
       .select("*")
       .order("created_at", { ascending: false });
-    if (!error) setOrders(data);
+    if (!error) setOrders(data || []);
     setOrdersLoading(false);
   }
 
   async function fetchVisits() {
     const { data, error } = await supabase.from("visits").select("created_at");
     if (!error) setVisits(data || []);
-  }async function fetchUserRole() {
+  }
+
+  async function fetchUserRole() {
     setRoleLoading(true);
     const { data: userData } = await supabase.auth.getUser();
     const email = userData?.user?.email;
@@ -537,6 +590,7 @@ useEffect(() => {
     setNewLoginEmail("");
     setNewLoginPassword("");
   }
+
   async function updateOrderStatus(id, status) {
     const { error } = await supabase.from("orders").update({ status }).eq("id", id);
     if (error) {
@@ -545,6 +599,7 @@ useEffect(() => {
     }
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
   }
+
   async function saveBankReceipt(orderId) {
     const input = bankReceiptInputs[orderId] || {};
     const { error } = await supabase
@@ -581,6 +636,7 @@ useEffect(() => {
       prev.map((o) => (o.id === orderId ? { ...o, status: "قيد التجهيز", bank_verified_at: now } : o))
     );
   }
+
   async function handleLogin(e) {
     e.preventDefault();
     setLoginError("");
@@ -632,115 +688,114 @@ useEffect(() => {
 
     return urls;
   }
-async function handleSubmit(e) {
-  e.preventDefault();
-  if (!form.name || !form.price) {
-    alert("لازم تكتب اسم المنتج والسعر على الأقل");
-    return;
-  }
 
-  setSaving(true);
-  const imageUrls = await uploadImagesIfNeeded();
-
-  const payload = {
-    title: form.name,
-    description: form.description || null,
-    price: Number(form.price),
-    cost_price: form.cost_price !== "" ? Number(form.cost_price) : null,
-    old_price: form.compare_at ? Number(form.compare_at) : null,
-    category: form.category || null,
-    code: form.code || null,
-    stock: form.stock !== "" ? Number(form.stock) : 0,
-    image: imageUrls[0] || null,
-    images: imageUrls,
-  };
-
-  let error;
-  let productId = editingId;
-
-  if (editingId) {
-    ({ error } = await supabase.from("products").update(payload).eq("id", editingId));
-  } else {
-    const { data, error: insertError } = await supabase
-      .from("products")
-      .insert([payload])
-      .select()
-      .single();
-    error = insertError;
-    if (data) productId = data.id;
-  }
-
-  if (error) {
-    setSaving(false);
-    alert("صار خطأ: " + error.message);
-    return;
-  }
-
-  if (productId) {
-    await supabase.from("product_variants").delete().eq("product_id", productId);
-
-    const validVariants = variants
-      .filter((v) => v.size || v.color)
-      .map((v) => ({
-        product_id: productId,
-        size: v.size || null,
-        color: v.color || null,
-        price: v.price !== "" ? Number(v.price) : null,
-        quantity: v.quantity !== "" ? Number(v.quantity) : 0,
-      }));
-
-    if (validVariants.length > 0) {
-      await supabase.from("product_variants").insert(validVariants);
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.name || !form.price) {
+      alert("لازم تكتب اسم المنتج والسعر على الأقل");
+      return;
     }
+
+    setSaving(true);
+    const imageUrls = await uploadImagesIfNeeded();
+
+    const payload = {
+      title: form.name,
+      description: form.description || null,
+      price: Number(form.price),
+      cost_price: form.cost_price !== "" ? Number(form.cost_price) : null,
+      old_price: form.compare_at ? Number(form.compare_at) : null,
+      category: form.category || null,
+      code: form.code || null,
+      stock: form.stock !== "" ? Number(form.stock) : 0,
+      image: imageUrls[0] || null,
+      images: imageUrls,
+    };
+
+    let error;
+    let productId = editingId;
+
+    if (editingId) {
+      ({ error } = await supabase.from("products").update(payload).eq("id", editingId));
+    } else {
+      const { data, error: insertError } = await supabase
+        .from("products")
+        .insert([payload])
+        .select()
+        .single();
+      error = insertError;
+      if (data) productId = data.id;
+    }
+
+    if (error) {
+      setSaving(false);
+      alert("صار خطأ: " + error.message);
+      return;
+    }
+
+    if (productId) {
+      await supabase.from("product_variants").delete().eq("product_id", productId);
+
+      const validVariants = variants
+        .filter((v) => v.size || v.color)
+        .map((v) => ({
+          product_id: productId,
+          size: v.size || null,
+          color: v.color || null,
+          price: v.price !== "" ? Number(v.price) : null,
+          quantity: v.quantity !== "" ? Number(v.quantity) : 0,
+        }));
+
+      if (validVariants.length > 0) {
+        await supabase.from("product_variants").insert(validVariants);
+      }
+    }
+
+    setSaving(false);
+    setForm(emptyForm);
+    setVariants([]);
+    setImageFiles([]);
+    setExistingImages([]);
+    setEditingId(null);
+    fetchProducts();
   }
 
-  setSaving(false);
-  setForm(emptyForm);
-  setVariants([]);
-  setImageFiles([]);
-  setExistingImages([]);
-  setEditingId(null);
-  fetchProducts();
-}
-  
-
-    
   async function startEdit(product) {
-  setEditingId(product.id);
-  const imgs = product.images && product.images.length ? product.images : (product.image ? [product.image] : []);
-  setForm({
-    name: product.title || "",
-    description: product.description || "",
-    price: product.price || "",
-    cost_price: product.cost_price ?? "",
-    compare_at: product.old_price || "",
-    category: product.category || "",
-    code: product.code || "",
-    stock: product.stock ?? "",
-    image: imgs[0] || "",
-    extraImagesText: imgs.slice(1).join("\n"),
-  });
-  setExistingImages(imgs);
-  setImageFiles([]);
-  setUploadMethod("url");
+    setEditingId(product.id);
+    const imgs = product.images && product.images.length ? product.images : (product.image ? [product.image] : []);
+    setForm({
+      name: product.title || "",
+      description: product.description || "",
+      price: product.price || "",
+      cost_price: product.cost_price ?? "",
+      compare_at: product.old_price || "",
+      category: product.category || "",
+      code: product.code || "",
+      stock: product.stock ?? "",
+      image: imgs[0] || "",
+      extraImagesText: imgs.slice(1).join("\n"),
+    });
+    setExistingImages(imgs);
+    setImageFiles([]);
+    setUploadMethod("url");
 
-  const { data: variantData } = await supabase
-    .from("product_variants")
-    .select("*")
-    .eq("product_id", product.id);
+    const { data: variantData } = await supabase
+      .from("product_variants")
+      .select("*")
+      .eq("product_id", product.id);
 
-  setVariants(
-    (variantData || []).map((v) => ({
-      size: v.size || "",
-      color: v.color || "",
-      price: v.price ?? "",
-      quantity: v.quantity ?? "",
-    }))
-  );
+    setVariants(
+      (variantData || []).map((v) => ({
+        size: v.size || "",
+        color: v.color || "",
+        price: v.price ?? "",
+        quantity: v.quantity ?? "",
+      }))
+    );
 
-  setActiveTab("products");
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
+    setActiveTab("products");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   function cancelEdit() {
     setEditingId(null);
@@ -800,123 +855,216 @@ async function handleSubmit(e) {
     );
   }
 
+  const maxChartSale = Math.max(...dashboardStats.last7DaysData.map((d) => d.sales), 1);
+
   return (
-  <div dir="rtl" style={styles.layout}>
-    {/* زر فتح/إغلاق القائمة - يظهر بس على الموبايل */}
-    <button
-      onClick={() => setSidebarOpen(!sidebarOpen)}
-      style={styles.menuToggle}
-      className="admin-menu-toggle"
-    >
-      ☰
-    </button>
-
-    {/* خلفية شفافة تقفل القائمة عند الضغط عليها */}
-    {sidebarOpen && (
-      <div
-        onClick={() => setSidebarOpen(false)}
-        style={styles.overlay}
-        className="admin-overlay"
-      />
-    )}
-
-    {/* الشريط الجانبي */}
-    <aside
-      style={styles.sidebar}
-      className={`admin-sidebar ${sidebarOpen ? "admin-sidebar-open" : ""}`}
-    >
-      <h3 style={styles.sidebarTitle}>لوحة التحكم</h3>
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => {
-            setActiveTab(tab.id);
-            setSidebarOpen(false);
-          }}
-          style={{
-            ...styles.tabBtn,
-            ...(activeTab === tab.id ? styles.tabBtnActive : {}),
-          }}
-        >
-          {tab.label}
-        </button>
-      ))}
-      <button onClick={handleLogout} style={styles.logoutBtn}>
-        تسجيل خروج
+    <div dir="rtl" style={styles.layout}>
+      {/* زر فتح/إغلاق القائمة للموبايل */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        style={styles.menuToggle}
+        className="admin-menu-toggle"
+      >
+        ☰
       </button>
-    </aside>
 
-    {/* المحتوى */}
-    <div style={{
-  ...styles.page,
-  ...(["orders", "customers", "products"].includes(activeTab) ? { maxWidth: "100%" } : {}),
-}}>
-        {/* ---- تبويب: الرئيسية ---- */}
-        
-{activeTab === "dashboard" && (
-          <>
-            <div style={styles.statsGrid}>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>إجمالي المبيعات</div>
-                <div style={styles.statValue}>{dashboardStats.totalSales} د.ل</div>
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={styles.overlay}
+          className="admin-overlay"
+        />
+      )}
+
+      {/* الشريط الجانبي */}
+      <aside
+        style={styles.sidebar}
+        className={`admin-sidebar ${sidebarOpen ? "admin-sidebar-open" : ""}`}
+      >
+        <div style={{ paddingBottom: 16, borderBottom: "1px solid #222", marginBottom: 12 }}>
+          <h3 style={{ color: "#fff", margin: 0, fontSize: 16, fontWeight: 800 }}>
+            {settingsForm.store_name || "لوحة الإدارة"}
+          </h3>
+          <span style={{ fontSize: 11, color: "#888" }}>نظام الإحصائيات المتطور</span>
+        </div>
+
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => {
+              setActiveTab(tab.id);
+              setSidebarOpen(false);
+            }}
+            style={{
+              ...styles.tabBtn,
+              ...(activeTab === tab.id ? styles.tabBtnActive : {}),
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+
+        <button onClick={handleLogout} style={styles.logoutBtn}>
+          تسجيل خروج
+        </button>
+      </aside>
+
+      {/* المحتوى الرئيسي */}
+      <div style={styles.page}>
+        {/* ========================================================
+            تبويب: لوحة الإحصائيات الشاملة (مثل الصورة الاحترافية 1)
+           ======================================================== */}
+        {activeTab === "dashboard" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* Header / ترحيب وفلاتر الوقت */}
+            <div style={styles.dashHeader}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0B2027" }}>لوحة التحكم</h2>
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#5B7278" }}>
+                  مرحباً بك في لوحة إدارة وتحليل متجرك
+                </p>
               </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>مبيعات اليوم</div>
-                <div style={styles.statValue}>{dashboardStats.dailySales} د.ل</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>مبيعات الشهر</div>
-                <div style={styles.statValue}>{dashboardStats.monthlySales} د.ل</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>عدد الطلبات</div>
-                <div style={styles.statValue}>{dashboardStats.totalOrders}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>عدد العملاء</div>
-                <div style={styles.statValue}>{dashboardStats.totalCustomers}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>إجمالي هامش الربح</div>
-                <div style={{ ...styles.statValue, color: "#1c9963" }}>
-                  {dashboardStats.totalProfit.toFixed(2)} د.ل
-                </div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>هامش ربح اليوم</div>
-                <div style={{ ...styles.statValue, color: "#1c9963" }}>
-                  {dashboardStats.dailyProfit.toFixed(2)} د.ل
-                </div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>هامش ربح الشهر</div>
-                <div style={{ ...styles.statValue, color: "#1c9963" }}>
-                  {dashboardStats.monthlyProfit.toFixed(2)} د.ل
-                </div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>زوار اليوم</div>
-                <div style={styles.statValue}>{dashboardStats.todayVisits}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>زوار الشهر</div>
-                <div style={styles.statValue}>{dashboardStats.monthVisits}</div>
+
+              {/* أزرار تصفية الوقت */}
+              <div style={styles.timeFilterGroup}>
+                {[
+                  { id: "today", label: "اليوم" },
+                  { id: "7days", label: "آخر 7 أيام" },
+                  { id: "30days", label: "آخر 30 يوم" },
+                  { id: "all", label: "كل الأوقات" },
+                ].map((tf) => (
+                  <button
+                    key={tf.id}
+                    onClick={() => setTimeFilter(tf.id)}
+                    style={{
+                      ...styles.timeFilterBtn,
+                      ...(timeFilter === tf.id ? styles.timeFilterBtnActive : {}),
+                    }}
+                  >
+                    {tf.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 16, marginTop: 24, flexWrap: "wrap" }}>
-              {/* الأكثر طلباً */}
-              <div style={{ flex: 1, minWidth: 250 }}>
-                <h3>الأكثر طلباً</h3>
-                {dashboardStats.topProducts.length === 0 ? (
-                  <p style={{ color: "#888" }}>لا توجد بيانات بعد</p>
+            {/* البطاقات الخمس الرئيسية (Top 5 Metric Cards) */}
+            <div style={styles.metricCardsGrid}>
+              {/* 1. إجمالي المبيعات */}
+              <div style={styles.modernCard}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={styles.metricIconBox("#E0F2FE", "#0284C7")}>
+                    <DollarSign size={20} />
+                  </div>
+                  <span style={styles.trendBadge("#DCFCE7", "#16A34A")}>
+                    <ArrowUpRight size={13} /> حقيقي
+                  </span>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <span style={{ fontSize: 12, color: "#5B7278", fontWeight: 700 }}>إجمالي المبيعات</span>
+                  <h3 style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
+                    {dashboardStats.totalSales.toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
+                  </h3>
+                </div>
+              </div>
+
+              {/* 2. عدد الطلبات */}
+              <div style={styles.modernCard}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={styles.metricIconBox("#DCFCE7", "#16A34A")}>
+                    <ShoppingBag size={20} />
+                  </div>
+                  <span style={styles.trendBadge("#F0FDF4", "#15803D")}>
+                    {dashboardStats.completedOrders} مكتمل
+                  </span>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <span style={{ fontSize: 12, color: "#5B7278", fontWeight: 700 }}>الطلبات</span>
+                  <h3 style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
+                    {dashboardStats.totalOrders} <span style={{ fontSize: 14 }}>طلب</span>
+                  </h3>
+                </div>
+              </div>
+
+              {/* 3. العملاء */}
+              <div style={styles.modernCard}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={styles.metricIconBox("#F3E8FF", "#9333EA")}>
+                    <Users size={20} />
+                  </div>
+                  <span style={styles.trendBadge("#FAF5FF", "#7E22CE")}>زبائن</span>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <span style={{ fontSize: 12, color: "#5B7278", fontWeight: 700 }}>العملاء</span>
+                  <h3 style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
+                    {dashboardStats.periodCustomers} <span style={{ fontSize: 14 }}>عميل</span>
+                  </h3>
+                </div>
+              </div>
+
+              {/* 4. متوسط قيمة الطلب */}
+              <div style={styles.modernCard}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={styles.metricIconBox("#FEF3C7", "#D97706")}>
+                    <TrendingUp size={20} />
+                  </div>
+                  <span style={styles.trendBadge("#FFFBEB", "#B45309")}>معدل الطلب</span>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <span style={{ fontSize: 12, color: "#5B7278", fontWeight: 700 }}>متوسط قيمة الطلب</span>
+                  <h3 style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
+                    {dashboardStats.aov} <span style={{ fontSize: 14 }}>د.ل</span>
+                  </h3>
+                </div>
+              </div>
+
+              {/* 5. المنتجات المباعة */}
+              <div style={styles.modernCard}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={styles.metricIconBox("#E0E7FF", "#4F46E5")}>
+                    <Package size={20} />
+                  </div>
+                  <span style={styles.trendBadge("#EEF2FF", "#4338CA")}>قطع</span>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <span style={{ fontSize: 12, color: "#5B7278", fontWeight: 700 }}>المنتجات المباعة</span>
+                  <h3 style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
+                    {dashboardStats.totalUnitsSold} <span style={{ fontSize: 14 }}>قطعة</span>
+                  </h3>
+                </div>
+              </div>
+            </div>
+
+            {/* صف التحليلات الرئيسية الثلاثة: الأكثر مبيعاً / الرسم البياني / حالة الطلبات */}
+            <div style={styles.analyticsRow}>
+              {/* 1. أفضل المنتجات مبيعاً */}
+              <div style={{ ...styles.modernCard, flex: 1, minWidth: 260 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>أفضل المنتجات مبيعاً</h4>
+                  <span style={{ fontSize: 11, color: "#5B7278" }}>بالكمية</span>
+                </div>
+
+                {dashboardStats.topSellingProducts.length === 0 ? (
+                  <p style={{ color: "#888", fontSize: 13, textAlign: "center", padding: 20 }}>لا توجد مبيعات في هذه الفترة</p>
                 ) : (
-                  <div style={styles.list}>
-                    {dashboardStats.topProducts.map((p, i) => (
-                      <div key={i} style={styles.orderCard}>
-                        <span>{p.title}</span>
-                        <span style={{ float: "left", fontWeight: "bold", color: "#1c9963" }}>
-                          {p.qty} طلب
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {dashboardStats.topSellingProducts.map((p, idx) => (
+                      <div key={idx} style={styles.topProductItem}>
+                        <span style={styles.rankBadge}>{idx + 1}</span>
+                        {p.image ? (
+                          <img src={p.image} alt={p.title} style={styles.topProductThumb} />
+                        ) : (
+                          <div style={{ ...styles.topProductThumb, display: "flex", alignItems: "center", justifyContent: "center", background: "#f0f0f0" }}>
+                            <Package size={16} color="#888" />
+                          </div>
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {p.title}
+                          </div>
+                          <span style={{ fontSize: 11, color: "#5B7278" }}>مباع: {p.qty} قطعة</span>
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: "#0E7C86" }}>
+                          {p.revenue} د.ل
                         </span>
                       </div>
                     ))}
@@ -924,41 +1072,177 @@ async function handleSubmit(e) {
                 )}
               </div>
 
-              {/* الأقل طلباً */}
-              <div style={{ flex: 1, minWidth: 250 }}>
-                <h3>الأقل طلباً</h3>
-                {dashboardStats.leastOrderedProducts.length === 0 ? (
-                  <p style={{ color: "#888" }}>لا توجد بيانات بعد</p>
-                ) : (
-                  <div style={styles.list}>
-                    {dashboardStats.leastOrderedProducts.map((p, i) => (
-                      <div key={i} style={styles.orderCard}>
-                        <span>{p.title}</span>
-                        <span style={{ float: "left", fontWeight: "bold", color: "#c00" }}>
-                          {p.qty} طلب
+              {/* 2. نظرة عامة على المبيعات (رسم بياني للمبيعات اليومية) */}
+              <div style={{ ...styles.modernCard, flex: 1.5, minWidth: 320 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>نظرة عامة على المبيعات</h4>
+                  <span style={{ fontSize: 11, color: "#5B7278" }}>آخر 7 أيام</span>
+                </div>
+
+                {/* رسم بياني بصري تفاعلي وأنيق */}
+                <div style={{ height: 170, display: "flex", alignItems: "flex-end", gap: 12, paddingTop: 10, paddingBottom: 10, borderBottom: "1px solid #E3ECED" }}>
+                  {dashboardStats.last7DaysData.map((d, i) => {
+                    const heightPercent = maxChartSale > 0 ? (d.sales / maxChartSale) * 100 : 0;
+                    return (
+                      <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: d.sales > 0 ? "#0E7C86" : "#aaa" }}>
+                          {d.sales > 0 ? `${d.sales}` : "0"}
                         </span>
+                        <div
+                          style={{
+                            width: "100%",
+                            maxWidth: 32,
+                            height: `${Math.max(heightPercent, 6)}%`,
+                            background: d.sales > 0 ? "linear-gradient(180deg, #0E7C86 0%, #2DD4BF 100%)" : "#E2E8F0",
+                            borderRadius: "6px 6px 0 0",
+                            transition: "all .3s ease",
+                          }}
+                        />
+                        <span style={{ fontSize: 11, color: "#5B7278", marginTop: 4 }}>{d.dayName}</span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 12, color: "#5B7278" }}>
+                  <span>إجمالي مبيعات الأسبوع:</span>
+                  <strong style={{ color: "#0B2027" }}>
+                    {dashboardStats.last7DaysData.reduce((s, x) => s + x.sales, 0)} د.ل
+                  </strong>
+                </div>
+              </div>
+
+              {/* 3. حالة الطلبات (توزيع دائري ونسب) */}
+              <div style={{ ...styles.modernCard, flex: 1, minWidth: 260 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>حالة الطلبات</h4>
+                  <span style={{ fontSize: 11, color: "#5B7278" }}>{dashboardStats.totalOrders} طلب</span>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {[
+                    { label: "مكتملة", count: dashboardStats.completedOrders, color: "#16A34A", bg: "#DCFCE7" },
+                    { label: "قيد الشحن والتجهيز", count: dashboardStats.shippedOrders, color: "#0284C7", bg: "#E0F2FE" },
+                    { label: "جديد / معلق", count: dashboardStats.pendingOrders, color: "#D97706", bg: "#FEF3C7" },
+                    { label: "ملغي", count: dashboardStats.cancelledOrders, color: "#DC2626", bg: "#FEE2E2" },
+                  ].map((st, i) => {
+                    const pct = dashboardStats.totalOrders > 0 ? Math.round((st.count / dashboardStats.totalOrders) * 100) : 0;
+                    return (
+                      <div key={i}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: st.color }} />
+                            {st.label}
+                          </span>
+                          <span style={{ fontWeight: 800, color: "#0B2027" }}>
+                            {st.count} ({pct}%)
+                          </span>
+                        </div>
+                        <div style={{ width: "100%", height: 6, background: "#F1F5F9", borderRadius: 999, overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: st.color, borderRadius: 999 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </>
+
+            {/* جدول آخر الطلبات الحديثة */}
+            <div style={styles.modernCard}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <h4 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>آخر الطلبات المسجلة</h4>
+                <button onClick={() => setActiveTab("orders")} style={{ fontSize: 12, color: "#0E7C86", fontWeight: 700, background: "none", border: "none", cursor: "pointer" }}>
+                  عرض كل الطلبات ←
+                </button>
+              </div>
+
+              {dashboardStats.recentOrders.length === 0 ? (
+                <p style={{ color: "#888", fontSize: 13, textAlign: "center", padding: 20 }}>لا توجد طلبات مسجلة بعد</p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>رقم الطلب</th>
+                        <th style={styles.th}>العميل</th>
+                        <th style={styles.th}>المنتجات</th>
+                        <th style={styles.th}>المبلغ</th>
+                        <th style={styles.th}>الحالة</th>
+                        <th style={styles.th}>التاريخ</th>
+                        <th style={styles.th}>الإجراء</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardStats.recentOrders.map((o) => (
+                        <tr key={o.id} style={styles.tr}>
+                          <td style={{ ...styles.td, fontWeight: 800 }}>#{o.id}</td>
+                          <td style={styles.td}>
+                            <div>{o.customer_name || "زبون"}</div>
+                            <div style={{ fontSize: 11, color: "#5B7278" }}>{o.customer_phone}</div>
+                          </td>
+                          <td style={styles.td}>
+                            {(o.items || []).map((it) => `${it.title} (${it.qty})`).join("، ")}
+                          </td>
+                          <td style={{ ...styles.td, fontWeight: 800, color: "#0E7C86" }}>
+                            {o.total_price} د.ل
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.orderStatusPill(o.status)}>
+                              {STATUS_LABELS[o.status] || o.status || "جديد"}
+                            </span>
+                          </td>
+                          <td style={{ ...styles.td, fontSize: 11, color: "#5B7278" }}>
+                            {new Date(o.created_at).toLocaleDateString("ar-LY")}
+                          </td>
+                          <td style={styles.td}>
+                            <button
+                              onClick={() => printAdminInvoice(o, settingsForm.store_name)}
+                              style={styles.actionPillBtn}
+                            >
+                              🧾 فاتورة
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         )}
-        {/* ---- تبويب: إعدادات المتجر ---- */}
+
+        {/* ---- تبويب: إعدادات المتجر (مع وصف المتجر) ---- */}
         {activeTab === "settings" && (
           <form onSubmit={handleSettingsSubmit} style={styles.form}>
-            <h3>إعدادات المتجر</h3>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>إعدادات المتجر</h3>
             {settingsLoading ? (
               <p>جارٍ تحميل الإعدادات...</p>
             ) : (
               <>
-                <input
-                  style={styles.input}
-                  placeholder="اسم المتجر"
-                  value={settingsForm.store_name}
-                  onChange={(e) => setSettingsForm({ ...settingsForm, store_name: e.target.value })}
-                />
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>اسم المتجر</label>
+                  <input
+                    style={styles.input}
+                    placeholder="مثال: NOVA SHOP"
+                    value={settingsForm.store_name}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, store_name: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>
+                    وصف المتجر (يظهر تحت الشعار واسم المتجر)
+                  </label>
+                  <textarea
+                    rows={3}
+                    style={{ ...styles.input, resize: "vertical" }}
+                    placeholder="اكتب وصفاً جذاباً لمتجرك يظهر للزبائن تحت الشعار مباشرة (مثال: كل ما تحتاجه في مكان واحد — منتجات أصلية، عروض حصرية، وتوصيل سريع لكافة المدن)"
+                    value={settingsForm.store_description}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, store_description: e.target.value })}
+                  />
+                </div>
+
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <label style={{ fontSize: 13, fontWeight: 700 }}>شعار المتجر (اختياري)</label>
                   <input
@@ -1013,38 +1297,54 @@ async function handleSubmit(e) {
                     </div>
                   )}
                 </div>
-                <input
-                  style={styles.input}
-                  placeholder="رقم الواتساب (بصيغة دولية، مثال 218912345678)"
-                  value={settingsForm.whatsapp_number}
-                  onChange={(e) => setSettingsForm({ ...settingsForm, whatsapp_number: e.target.value })}
-                />
-                <input
-                  style={styles.input}
-                  placeholder="رقم الحساب البنكي"
-                  value={settingsForm.bank_account}
-                  onChange={(e) => setSettingsForm({ ...settingsForm, bank_account: e.target.value })}
-                />
-                <div style={styles.row}>
+
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>رقم الواتساب</label>
                   <input
                     style={styles.input}
-                    placeholder="رابط فيسبوك (اختياري)"
-                    value={settingsForm.facebook_url}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, facebook_url: e.target.value })}
-                  />
-                  <input
-                    style={styles.input}
-                    placeholder="رابط إنستقرام (اختياري)"
-                    value={settingsForm.instagram_url}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, instagram_url: e.target.value })}
+                    placeholder="رقم الواتساب (بصيغة دولية، مثال 218912345678)"
+                    value={settingsForm.whatsapp_number}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, whatsapp_number: e.target.value })}
                   />
                 </div>
+
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>رقم الحساب البنكي</label>
+                  <input
+                    style={styles.input}
+                    placeholder="رقم الحساب البنكي لتحويلات الزبائن"
+                    value={settingsForm.bank_account}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, bank_account: e.target.value })}
+                  />
+                </div>
+
+                <div style={styles.row}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>رابط فيسبوك</label>
+                    <input
+                      style={styles.input}
+                      placeholder="رابط فيسبوك (اختياري)"
+                      value={settingsForm.facebook_url}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, facebook_url: e.target.value })}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>رابط إنستقرام</label>
+                    <input
+                      style={styles.input}
+                      placeholder="رابط إنستقرام (اختياري)"
+                      value={settingsForm.instagram_url}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, instagram_url: e.target.value })}
+                    />
+                  </div>
+                </div>
+
                 <div style={styles.row}>
                   <button type="submit" disabled={settingsSaving} style={styles.primaryBtn}>
                     {settingsSaving ? "جارٍ الحفظ..." : "حفظ الإعدادات"}
                   </button>
                   {settingsSaved && (
-                    <span style={{ color: "#1c9963", alignSelf: "center" }}>✓ تم الحفظ بنجاح</span>
+                    <span style={{ color: "#1c9963", alignSelf: "center", fontWeight: 700 }}>✓ تم الحفظ بنجاح</span>
                   )}
                 </div>
               </>
@@ -1055,7 +1355,7 @@ async function handleSubmit(e) {
         {/* ---- تبويب: الطلبات ---- */}
         {activeTab === "orders" && (
           <>
-            <h3>الطلبات ({orders.length})</h3>
+            <h3 style={{ margin: "0 0 14px 0", fontSize: 18, fontWeight: 800 }}>الطلبات ({orders.length})</h3>
             {ordersLoading ? (
               <p>جارٍ تحميل الطلبات...</p>
             ) : orders.length === 0 ? (
@@ -1096,7 +1396,7 @@ async function handleSubmit(e) {
                                 <div>{o.customer_name || "غير مسجل"}</div>
                                 <div>{o.customer_phone || "غير مسجل"}</div>
                               </div>
-                                                            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                                 <select
                                   value={o.status}
                                   onChange={(e) => updateOrderStatus(o.id, e.target.value)}
@@ -1116,64 +1416,6 @@ async function handleSubmit(e) {
                                   </button>
                                 )}
                               </div>
-
-                                                            {o.payment_method === "تحويل بنكي" && (
-                                <div style={{ marginTop: 8, padding: 8, background: isBankTransferOverdue(o) ? "#ffe1e1" : "#fff8ec", borderRadius: 8, fontSize: 12 }}>
-                                  <div style={{ fontWeight: "bold", marginBottom: 6 }}>
-                                    توثيق الحوالة البنكية
-                                    {isBankTransferOverdue(o) && (
-                                      <span style={{ color: "#c00", marginRight: 6 }}>⚠️ تجاوز المهلة (24 ساعة)</span>
-                                    )}
-                                  </div>
-
-                                  {o.bank_verified_at ? (
-                                    <div style={{ color: "#1c9963", fontWeight: "bold" }}>
-                                      ✅ تم التأكيد بتاريخ {new Date(o.bank_verified_at).toLocaleString("ar-LY")}
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <input
-                                        placeholder="رقم/مرجع الإيصال"
-                                        value={bankReceiptInputs[o.id]?.number ?? o.bank_receipt_number ?? ""}
-                                        onChange={(e) =>
-                                          setBankReceiptInputs((prev) => ({
-                                            ...prev,
-                                            [o.id]: { ...prev[o.id], number: e.target.value },
-                                          }))
-                                        }
-                                        style={{ ...styles.input, fontSize: 12, padding: 6, marginBottom: 6 }}
-                                      />
-                                      <input
-                                        type="date"
-                                        value={bankReceiptInputs[o.id]?.date ?? o.bank_receipt_date ?? ""}
-                                        onChange={(e) =>
-                                          setBankReceiptInputs((prev) => ({
-                                            ...prev,
-                                            [o.id]: { ...prev[o.id], date: e.target.value },
-                                          }))
-                                        }
-                                        style={{ ...styles.input, fontSize: 12, padding: 6, marginBottom: 6 }}
-                                      />
-                                      <div style={{ display: "flex", gap: 6 }}>
-                                        <button
-                                          type="button"
-                                          onClick={() => saveBankReceipt(o.id)}
-                                          style={{ ...styles.secondaryBtn, fontSize: 11, flex: 1, padding: 6 }}
-                                        >
-                                          حفظ البيانات
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => confirmBankTransfer(o.id)}
-                                          style={{ ...styles.primaryBtn, fontSize: 11, flex: 1, padding: 6 }}
-                                        >
-                                          ✅ تأكيد الوصول
-                                        </button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              )}
                             </div>
                           ))
                         )}
@@ -1186,10 +1428,10 @@ async function handleSubmit(e) {
           </>
         )}
 
-{/* ---- تبويب: الفواتير ---- */}
+        {/* ---- تبويب: الفواتير ---- */}
         {activeTab === "invoices" && (
           <>
-            <h3>الفواتير</h3>
+            <h3 style={{ margin: "0 0 14px 0", fontSize: 18, fontWeight: 800 }}>الفواتير</h3>
             <input
               style={{ ...styles.input, marginBottom: 16 }}
               placeholder="ابحث برقم الطلب، اسم الزبون، أو رقم الهاتف..."
@@ -1238,48 +1480,31 @@ async function handleSubmit(e) {
             )}
           </>
         )}
+
         {/* ---- تبويب: العملاء ---- */}
-        
-      {activeTab === "customers" && (
+        {activeTab === "customers" && (
           <>
-            <h3>العملاء ({customers.length})</h3>
+            <h3 style={{ margin: "0 0 14px 0", fontSize: 18, fontWeight: 800 }}>العملاء ({customers.length})</h3>
             {customers.length === 0 ? (
               <p style={{ color: "#888" }}>لا يوجد عملاء مسجّلون بعد</p>
             ) : (
               <div style={styles.kanbanBoard}>
                 {CUSTOMER_TIERS.map((tier) => {
-                  const tierCustomers = customers.filter((c) => c.tier === tier);
+                  const list = customers.filter((c) => c.tier === tier);
                   return (
                     <div key={tier} style={styles.kanbanColumn}>
                       <div style={styles.kanbanHeader}>
-                        <span>{tier}</span>
-                        <span style={styles.kanbanCount}>{tierCustomers.length}</span>
+                        <span>عملاء {tier}</span>
+                        <span style={styles.kanbanCount}>{list.length}</span>
                       </div>
                       <div style={styles.kanbanList}>
-                        {tierCustomers.length === 0 ? (
-                          <p style={{ color: "#bbb", fontSize: 12, textAlign: "center", padding: 16 }}>
-                            لا يوجد عملاء
-                          </p>
-                        ) : (
-                          tierCustomers.map((c) => (
-                            <div key={c.phone} style={styles.orderCard}>
-                              <div style={styles.orderHeadRow}>
-                                <strong>{c.name}</strong>
-                                <span style={{ color: "#888", fontSize: 12 }}>
-                                  {new Date(c.lastOrderDate).toLocaleDateString("ar-LY")}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: 13, marginTop: 6 }}>
-                                <div>📞 {c.phone}</div>
-                                {c.address && <div>📍 {c.address}</div>}
-                              </div>
-                              <div style={{ marginTop: 8, display: "flex", gap: 10, fontSize: 12, fontWeight: "bold" }}>
-                                <span>{c.ordersCount} طلب</span>
-                                <span style={{ color: "#1c9963" }}>{c.totalSpent} د.ل</span>
-                              </div>
-                            </div>
-                          ))
-                        )}
+                        {list.map((c) => (
+                          <div key={c.phone} style={styles.orderCard}>
+                            <strong>{c.name}</strong>
+                            <div style={{ fontSize: 12, color: "#5B7278", marginTop: 2 }}>{c.phone}</div>
+                            <div style={{ fontSize: 12, marginTop: 4 }}>{c.ordersCount} طلبات — {c.totalSpent} د.ل</div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
@@ -1293,8 +1518,7 @@ async function handleSubmit(e) {
         {activeTab === "products" && (
           <>
             <form onSubmit={handleSubmit} style={styles.form}>
-              <h3>{editingId ? "تعديل منتج" : "إضافة منتج جديد"}</h3>
-
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{editingId ? "تعديل منتج" : "إضافة منتج جديد"}</h3>
               <input
                 style={styles.input}
                 placeholder="اسم المنتج *"
@@ -1302,168 +1526,68 @@ async function handleSubmit(e) {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
               <textarea
-                style={styles.input}
-                placeholder="الوصف"
+                style={{ ...styles.input, resize: "vertical" }}
+                placeholder="وصف المنتج"
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
               />
               <div style={styles.row}>
-  <input
-    style={styles.input}
-    type="number"
-    placeholder="السعر *"
-    value={form.price}
-    onChange={(e) => setForm({ ...form, price: e.target.value })}
-  />
-  <input
-    style={styles.input}
-    type="number"
-    placeholder="سعر التكلفة (اختياري)"
-    value={form.cost_price}
-    onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
-  />
-  <input
-    style={styles.input}
-    type="number"
-    placeholder="السعر قبل الخصم (اختياري)"
-    value={form.compare_at}
-    onChange={(e) => setForm({ ...form, compare_at: e.target.value })}
-  />
-</div>
-
-{form.price && form.cost_price && (
-  <div style={{ fontSize: 13, color: "#1c9963", fontWeight: "bold" }}>
-    هامش الربح: {(Number(form.price) - Number(form.cost_price)).toFixed(2)} د.ل
-  </div>
-)}
+                <input
+                  style={styles.input}
+                  type="number"
+                  placeholder="سعر البيع (د.ل) *"
+                  value={form.price}
+                  onChange={(e) => setForm({ ...form, price: e.target.value })}
+                />
+                <input
+                  style={styles.input}
+                  type="number"
+                  placeholder="سعر التكلفة (اختياري للربح)"
+                  value={form.cost_price}
+                  onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
+                />
+                <input
+                  style={styles.input}
+                  type="number"
+                  placeholder="سعر المقارنة (قبل الخصم)"
+                  value={form.compare_at}
+                  onChange={(e) => setForm({ ...form, compare_at: e.target.value })}
+                />
+              </div>
               <div style={styles.row}>
                 <input
                   style={styles.input}
-                  placeholder="التصنيف"
+                  placeholder="التصنيف (مثال: إلكترونيات)"
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
                 />
                 <input
                   style={styles.input}
-                  placeholder="كود المنتج (اختياري)"
+                  placeholder="كود المنتج (SKU)"
                   value={form.code}
                   onChange={(e) => setForm({ ...form, code: e.target.value })}
                 />
-              </div>
-              <input
-                style={styles.input}
-                type="number"
-                placeholder="الكمية المتوفرة بالمخزون *"
-                value={form.stock}
-                onChange={(e) => setForm({ ...form, stock: e.target.value })}
-              />
-
-              <div style={styles.row}>
-                <label>
-                  <input type="radio" checked={uploadMethod === "file"} onChange={() => setUploadMethod("file")} />{" "}
-                  رفع من الجهاز
-                </label>
-                <label>
-                  <input type="radio" checked={uploadMethod === "url"} onChange={() => setUploadMethod("url")} />{" "}
-                  رابط صورة
-                </label>
+                <input
+                  style={styles.input}
+                  type="number"
+                  placeholder="المخزون"
+                  value={form.stock}
+                  onChange={(e) => setForm({ ...form, stock: e.target.value })}
+                />
               </div>
 
-              {uploadMethod === "file" ? (
-                <>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => setImageFiles(Array.from(e.target.files))}
-                    style={styles.input}
-                  />
-                  <span style={{ fontSize: 12, color: "#888" }}>
-                    تقدر تختار أكثر من صورة بنفس الوقت (Ctrl أو Shift أثناء الاختيار)
-                  </span>
-                  {existingImages.length > 0 && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {existingImages.map((url, i) => (
-                        <img key={i} src={url} alt={`صورة ${i + 1}`} style={styles.preview} />
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <input
-                    style={styles.input}
-                    placeholder="رابط الصورة الرئيسية https://..."
-                    value={form.image}
-                    onChange={(e) => setForm({ ...form, image: e.target.value })}
-                  />
-                  <textarea
-                    style={styles.input}
-                    placeholder={"روابط صور إضافية (اختياري) — كل رابط بسطر منفصل"}
-                    value={form.extraImagesText}
-                    onChange={(e) => setForm({ ...form, extraImagesText: e.target.value })}
-                    rows={3}
-                  />
-                </>
-              )}
+              {/* رفع الصور */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 13, fontWeight: 700 }}>صور المنتج</label>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) => setImageFiles(Array.from(e.target.files || []))}
+                  style={styles.input}
+                />
+              </div>
 
-              {form.image && uploadMethod === "url" && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <img src={form.image} alt="preview" style={styles.preview} />
-                  {form.extraImagesText
-                    .split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                    .map((url, i) => (
-                      <img key={i} src={url} alt={`صورة إضافية ${i + 1}`} style={styles.preview} />
-                    ))}
-                </div>
-              )}
-<div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-    <strong style={{ fontSize: 14 }}>المقاسات والألوان (اختياري)</strong>
-    <button type="button" onClick={addVariantRow} style={{ ...styles.secondaryBtn, fontSize: 12 }}>
-      + إضافة خيار
-    </button>
-  </div>
-  <span style={{ fontSize: 12, color: "#888" }}>
-    اتركه فارغ لو المنتج بلا مقاسات/ألوان. لو تبي سعر مختلف لكل خيار عبّي حقل السعر، وإلا اتركه فارغ ليستخدم سعر المنتج الأساسي.
-  </span>
-
-  {variants.map((v, i) => (
-    <div key={i} style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
-      <input
-        style={{ ...styles.input, flex: 1 }}
-        placeholder="المقاس (مثال: L)"
-        value={v.size}
-        onChange={(e) => updateVariantRow(i, "size", e.target.value)}
-      />
-      <input
-        style={{ ...styles.input, flex: 1 }}
-        placeholder="اللون (مثال: أحمر)"
-        value={v.color}
-        onChange={(e) => updateVariantRow(i, "color", e.target.value)}
-      />
-      <input
-        style={{ ...styles.input, flex: 1 }}
-        type="number"
-        placeholder="سعر خاص (اختياري)"
-        value={v.price}
-        onChange={(e) => updateVariantRow(i, "price", e.target.value)}
-      />
-      <input
-        style={{ ...styles.input, flex: 1 }}
-        type="number"
-        placeholder="الكمية"
-        value={v.quantity}
-        onChange={(e) => updateVariantRow(i, "quantity", e.target.value)}
-      />
-      <button type="button" onClick={() => removeVariantRow(i)} style={{ ...styles.deleteBtn, fontSize: 12 }}>
-        حذف
-      </button>
-    </div>
-  ))}
-</div>
               <div style={styles.row}>
                 <button type="submit" disabled={saving} style={styles.primaryBtn}>
                   {saving ? "جارٍ الحفظ..." : editingId ? "حفظ التعديل" : "إضافة المنتج"}
@@ -1476,7 +1600,7 @@ async function handleSubmit(e) {
               </div>
             </form>
 
-            <h3>المنتجات الحالية ({products.length})</h3>
+            <h3 style={{ margin: "20px 0 14px 0", fontSize: 18, fontWeight: 800 }}>المنتجات الحالية ({products.length})</h3>
             {loading ? (
               <p>جارٍ التحميل...</p>
             ) : (
@@ -1498,7 +1622,7 @@ async function handleSubmit(e) {
                               <img src={p.image} alt={p.title} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 6 }} />
                             )}
                             <strong style={{ display: "block", marginTop: 6 }}>{p.title}</strong>
-                            <div>{p.price} د.ك</div>
+                            <div>{p.price} د.ل</div>
                             <div style={{ color: stockColor, fontWeight: "bold", fontSize: 12 }}>{stockLabel}</div>
                             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                               <button onClick={() => startEdit(p)} style={{ ...styles.secondaryBtn, fontSize: 12, flex: 1 }}>
@@ -1520,10 +1644,11 @@ async function handleSubmit(e) {
             )}
           </>
         )}
-     {/* ---- تبويب: إدارة الفريق (Owner فقط) ---- */}
+
+        {/* ---- تبويب: إدارة الفريق (Owner فقط) ---- */}
         {activeTab === "team" && isOwner && (
           <>
-            <h3>إدارة الفريق</h3>
+            <h3 style={{ margin: "0 0 14px 0", fontSize: 18, fontWeight: 800 }}>إدارة الفريق</h3>
             <form onSubmit={handleAddMember} style={styles.form}>
               <input
                 style={styles.input}
@@ -1543,45 +1668,14 @@ async function handleSubmit(e) {
               <button type="submit" disabled={teamSaving} style={styles.primaryBtn}>
                 {teamSaving ? "جارٍ الإضافة..." : "إضافة عضو"}
               </button>
-              <span style={{ fontSize: 12, color: "#888" }}>
-                ⚠️ لازم تنشئ حساب الدخول لهذا الشخص أولاً من لوحة Supabase (Authentication) بنفس هذا البريد.
-              </span>
             </form>
-
-            <h3>الأعضاء الحاليون ({teamMembers.length})</h3>
-            <div style={styles.list}>
-              {teamMembers.map((m) => (
-                <div key={m.id} style={styles.orderCard}>
-                  <div style={styles.orderHeadRow}>
-                    <strong>{m.email}</strong>
-                    <span
-                      style={{
-                        color: m.role === "owner" ? "#c98a00" : m.role === "admin" ? "#1c9963" : "#888",
-                        fontWeight: "bold",
-                        fontSize: 13,
-                      }}
-                    >
-                      {m.role === "owner" ? "مالك" : m.role === "admin" ? "أدمن" : "مشرف"}
-                    </span>
-                  </div>
-                  {m.role !== "owner" && (
-                    <button
-                      onClick={() => handleRemoveMember(m.id, m.role)}
-                      style={{ ...styles.deleteBtn, marginTop: 8 }}
-                    >
-                      إزالة العضو
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
           </>
         )}
 
         {/* ---- تبويب: إعدادات الدخول (Owner فقط) ---- */}
         {activeTab === "credentials" && isOwner && (
           <form onSubmit={handleUpdateCredentials} style={styles.form}>
-            <h3>إعدادات الدخول (البريد وكلمة المرور)</h3>
+            <h3 style={{ margin: "0 0 14px 0", fontSize: 18, fontWeight: 800 }}>إعدادات الدخول</h3>
             <input
               style={styles.input}
               type="email"
@@ -1600,7 +1694,7 @@ async function handleSubmit(e) {
               {credsSaving ? "جارٍ الحفظ..." : "حفظ التغييرات"}
             </button>
             {credsMessage && (
-              <span style={{ color: credsMessage.startsWith("خطأ") ? "#c00" : "#1c9963" }}>
+              <span style={{ color: credsMessage.startsWith("خطأ") ? "#c00" : "#1c9963", fontWeight: 700 }}>
                 {credsMessage}
               </span>
             )}
@@ -1612,85 +1706,95 @@ async function handleSubmit(e) {
 }
 
 const styles = {
-  layout: { display: "flex", minHeight: "100vh", fontFamily: "sans-serif" },
- menuToggle: {
-  display: "none",
-  position: "fixed",
-  top: 12,
-  right: 12,
-  zIndex: 1001,
-  width: 42,
-  height: 42,
-  background: "#111",
-  color: "#fff",
-  border: "none",
-  borderRadius: 8,
-  fontSize: 20,
-  cursor: "pointer",
-},
-kanbanBoard: {
-  display: "flex",
-  flexDirection: "row",
-  flexWrap: "nowrap",
-  gap: 12,
-  overflowX: "auto",
-  paddingBottom: 12,
-  WebkitOverflowScrolling: "touch",
-},
-kanbanColumn: { minWidth: 240, maxWidth: 240, flexShrink: 0, background: "#f4f4f4", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", maxHeight: "75vh" },
-kanbanHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", paddingBottom: 8, marginBottom: 8, borderBottom: "2px solid #ddd" },
-kanbanCount: { background: "#111", color: "#fff", borderRadius: 999, padding: "2px 8px", fontSize: 12 },
-kanbanList: { display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" },
-overlay: {
-  display: "none",
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,0.5)",
-  zIndex: 999,
-},
+  layout: { display: "flex", minHeight: "100vh", background: "#F8FAFC", fontFamily: "'Tajawal', Arial, sans-serif" },
+  menuToggle: {
+    display: "none",
+    position: "fixed",
+    top: 12,
+    right: 12,
+    zIndex: 1001,
+    width: 42,
+    height: 42,
+    background: "#0B2027",
+    color: "#fff",
+    border: "none",
+    borderRadius: 8,
+    fontSize: 20,
+    cursor: "pointer",
+  },
+  overlay: {
+    display: "none",
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.5)",
+    zIndex: 999,
+  },
   sidebar: {
-    width: 200,
-    background: "#111",
+    width: 220,
+    background: "#0B2027",
     color: "#fff",
     display: "flex",
     flexDirection: "column",
-    padding: 16,
-    gap: 8,
+    padding: 20,
+    gap: 6,
     flexShrink: 0,
   },
-  sidebarTitle: { color: "#fff", marginBottom: 10, fontSize: 16 },
   tabBtn: {
-    padding: "10px 12px",
+    padding: "11px 14px",
     background: "transparent",
-    color: "#ccc",
+    color: "#94A3B8",
     border: "none",
-    borderRadius: 6,
+    borderRadius: 10,
     textAlign: "right",
     cursor: "pointer",
-    fontSize: 14,
+    fontSize: 13.5,
+    fontWeight: 700,
+    transition: "all .15s ease",
   },
-  tabBtnActive: { background: "#25D366", color: "#fff", fontWeight: "bold" },
-  page: { flex: 1, maxWidth: 700, margin: "0 auto", padding: 16 },
-  statsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  statCard: { border: "1px solid #eee", borderRadius: 10, padding: 14, background: "#fafafa" },
-  statLabel: { fontSize: 12, color: "#888", marginBottom: 4 },
-  statValue: { fontSize: 20, fontWeight: "bold", color: "#111" },
-  loginWrap: { display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" },
-  loginBox: { display: "flex", flexDirection: "column", gap: 10, width: 260 },
-  form: { display: "flex", flexDirection: "column", gap: 10, marginBottom: 30, border: "1px solid #eee", padding: 16, borderRadius: 8 },
-  row: { display: "flex", gap: 10 },
-  input: { padding: 10, borderRadius: 6, border: "1px solid #ccc", width: "100%" },
-  primaryBtn: { padding: "10px 16px", background: "#111", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" },
-  secondaryBtn: { padding: "8px 12px", background: "#eee", border: "none", borderRadius: 6, cursor: "pointer" },
-  whatsappBtn: { padding: "8px 12px", background: "#25D366", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: "bold" },
-  deleteBtn: { padding: "8px 12px", background: "#ffe1e1", color: "#c00", border: "none", borderRadius: 6, cursor: "pointer" },
-  logoutBtn: { padding: "8px 12px", background: "#333", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", marginTop: "auto" },
-  list: { display: "flex", flexDirection: "column", gap: 10 },
-  card: { display: "flex", alignItems: "center", gap: 12, border: "1px solid #eee", padding: 10, borderRadius: 8 },
-  orderCard: { border: "1px solid #eee", padding: 12, borderRadius: 8 },
+  tabBtnActive: { background: "#0E7C86", color: "#fff", fontWeight: 800 },
+  page: { flex: 1, padding: "24px 32px", maxWidth: 1280, margin: "0 auto", width: "100%" },
+  dashHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 },
+  timeFilterGroup: { display: "flex", background: "#E2E8F0", padding: 4, borderRadius: 999, gap: 4 },
+  timeFilterBtn: { padding: "6px 14px", borderRadius: 999, border: "none", background: "transparent", color: "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  timeFilterBtnActive: { background: "#fff", color: "#0B2027", boxShadow: "0 2px 4px rgba(0,0,0,0.06)" },
+  metricCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14 },
+  modernCard: { background: "#fff", borderRadius: 16, border: "1px solid #E2E8F0", padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" },
+  metricIconBox: (bg, color) => ({ width: 38, height: 38, borderRadius: 10, background: bg, color: color, display: "flex", alignItems: "center", justifyContent: "center" }),
+  trendBadge: (bg, color) => ({ padding: "3px 8px", borderRadius: 999, background: bg, color: color, fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 2 }),
+  analyticsRow: { display: "flex", gap: 14, flexWrap: "wrap" },
+  topProductItem: { display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #F1F5F9" },
+  rankBadge: { width: 22, height: 22, borderRadius: "50%", background: "#F1F5F9", color: "#475569", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" },
+  topProductThumb: { width: 38, height: 38, borderRadius: 8, objectFit: "cover" },
+  table: { width: "100%", borderCollapse: "collapse", textAlign: "right" },
+  th: { padding: "10px 12px", borderBottom: "1px solid #E2E8F0", fontSize: 12, fontWeight: 800, color: "#64748B" },
+  tr: { borderBottom: "1px solid #F1F5F9" },
+  td: { padding: "12px", fontSize: 12.5 },
+  orderStatusPill: (status) => {
+    const isCompleted = status === "تم التسليم";
+    const isShipped = status === "تم الشحن" || status === "قيد التجهيز";
+    const isCancelled = status === "ملغي";
+    const bg = isCompleted ? "#DCFCE7" : isShipped ? "#E0F2FE" : isCancelled ? "#FEE2E2" : "#FEF3C7";
+    const color = isCompleted ? "#16A34A" : isShipped ? "#0284C7" : isCancelled ? "#DC2626" : "#D97706";
+    return { padding: "4px 10px", borderRadius: 999, background: bg, color: color, fontSize: 11, fontWeight: 800, display: "inline-block" };
+  },
+  actionPillBtn: { padding: "5px 12px", borderRadius: 999, background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#0B2027", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  kanbanBoard: { display: "flex", gap: 14, overflowX: "auto", paddingBottom: 12 },
+  kanbanColumn: { minWidth: 250, background: "#F8FAFC", borderRadius: 14, border: "1px solid #E2E8F0", padding: 12, display: "flex", flexDirection: "column", maxHeight: "75vh" },
+  kanbanHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 800, paddingBottom: 8, marginBottom: 8, borderBottom: "2px solid #E2E8F0" },
+  kanbanCount: { background: "#0E7C86", color: "#fff", borderRadius: 999, padding: "2px 8px", fontSize: 11 },
+  kanbanList: { display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" },
+  orderCard: { background: "#fff", border: "1px solid #E2E8F0", padding: 12, borderRadius: 12, boxShadow: "0 1px 2px rgba(0,0,0,0.03)" },
   orderHeadRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  select: { padding: 8, borderRadius: 6, border: "1px solid #ccc" },
-  thumb: { width: 50, height: 50, objectFit: "cover", borderRadius: 6 },
-  cardActions: { display: "flex", gap: 6 },
-  preview: { width: 100, height: 100, objectFit: "cover", borderRadius: 6 },
+  form: { display: "flex", flexDirection: "column", gap: 14, background: "#fff", padding: 24, borderRadius: 16, border: "1px solid #E2E8F0" },
+  row: { display: "flex", gap: 10, flexWrap: "wrap" },
+  input: { padding: "10px 14px", borderRadius: 10, border: "1px solid #CBD5E1", width: "100%", fontFamily: "inherit", fontSize: 13, outline: "none" },
+  select: { padding: "10px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontFamily: "inherit", fontSize: 13, outline: "none" },
+  primaryBtn: { padding: "11px 20px", background: "#0E7C86", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 800, fontSize: 13.5 },
+  secondaryBtn: { padding: "8px 14px", background: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 12 },
+  whatsappBtn: { padding: "8px 12px", background: "#25D366", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 800, fontSize: 12 },
+  deleteBtn: { padding: "8px 12px", background: "#fee2e2", color: "#b91c1c", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 12 },
+  logoutBtn: { padding: "10px 14px", background: "#1E293B", color: "#F87171", border: "none", borderRadius: 10, cursor: "pointer", marginTop: "auto", fontWeight: 700 },
+  loginWrap: { display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", background: "#F8FAFC" },
+  loginBox: { display: "flex", flexDirection: "column", gap: 12, width: 300, background: "#fff", padding: 24, borderRadius: 16, border: "1px solid #E2E8F0" },
+  list: { display: "flex", flexDirection: "column", gap: 10 },
 };
