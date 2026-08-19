@@ -1268,7 +1268,7 @@ export default function App() {
             
             {/* وصف المتجر تحت الشعار مباشرة */}
             <p className="hero-store-description">
-              {settings?.store_description || "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}
+              {settings?.store_description || localStorage.getItem("nova_store_description") || "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}
             </p>
 
             <div className="trust-row">

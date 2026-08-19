@@ -275,7 +275,6 @@ export default function Admin() {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    // تصفية الطلبات حسب الفترة المحددة
     let activeOrders = orders;
     if (timeFilter === "today") {
       activeOrders = orders.filter((o) => o.created_at && o.created_at.slice(0, 10) === todayStr);
@@ -293,18 +292,13 @@ export default function Admin() {
     const pendingOrders = activeOrders.filter((o) => o.status === "جديد" || o.status === "قيد التحقق من الحوالة").length;
     const cancelledOrders = activeOrders.filter((o) => o.status === "ملغي").length;
 
-    // عدد المنتجات المباعة كقطع
     const totalUnitsSold = validOrders.reduce((sum, o) => {
       return sum + (o.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
     }, 0);
 
-    // العملاء المتفردين في هذه الفترة
     const periodCustomers = new Set(activeOrders.map((o) => o.customer_phone).filter(Boolean)).size;
-
-    // متوسط قيمة الطلب (AOV)
     const aov = validOrders.length > 0 ? Math.round(totalSales / validOrders.length) : 0;
 
-    // حساب الأرباح الصافية
     const productsByTitle = {};
     products.forEach((p) => {
       productsByTitle[p.title] = p;
@@ -323,7 +317,6 @@ export default function Admin() {
       });
     });
 
-    // أفضل المنتجات مبيعاً
     const productSalesMap = {};
     validOrders.forEach((o) => {
       (o.items || []).forEach((it) => {
@@ -346,16 +339,55 @@ export default function Admin() {
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 5);
 
-    // مخطط المبيعات اليومية لآخر 7 أيام
-    const last7DaysData = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-      const dateStr = d.toISOString().slice(0, 10);
-      const dayName = d.toLocaleDateString("ar-LY", { weekday: "short" });
-      const daySales = orders
-        .filter((o) => o.status !== "ملغي" && o.created_at && o.created_at.slice(0, 10) === dateStr)
-        .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
-      last7DaysData.push({ date: dateStr, dayName, sales: daySales });
+    // بيانات المخطط البياني الديناميكية حسب الفلتر المختار
+    let timelineData = [];
+    let timelineLabel = "آخر 7 أيام";
+    let timelineTotalLabel = "إجمالي مبيعات الأسبوع:";
+
+    if (timeFilter === "today") {
+      timelineLabel = "مبيعات اليوم";
+      timelineTotalLabel = "إجمالي مبيعات اليوم:";
+      timelineData = [{ dayName: "اليوم", sales: totalSales }];
+    } else if (timeFilter === "7days") {
+      timelineLabel = "آخر 7 أيام";
+      timelineTotalLabel = "إجمالي مبيعات 7 أيام:";
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        const dateStr = d.toISOString().slice(0, 10);
+        const dayName = d.toLocaleDateString("ar-LY", { weekday: "short" });
+        const daySales = orders
+          .filter((o) => o.status !== "ملغي" && o.created_at && o.created_at.slice(0, 10) === dateStr)
+          .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+        timelineData.push({ date: dateStr, dayName, sales: daySales });
+      }
+    } else if (timeFilter === "30days") {
+      timelineLabel = "آخر 30 يوماً";
+      timelineTotalLabel = "إجمالي مبيعات 30 يوماً:";
+      for (let w = 3; w >= 0; w--) {
+        const startDay = new Date(Date.now() - (w + 1) * 7 * 24 * 60 * 60 * 1000);
+        const endDay = new Date(Date.now() - w * 7 * 24 * 60 * 60 * 1000);
+        const weekSales = orders
+          .filter((o) => {
+            if (o.status === "ملغي" || !o.created_at) return false;
+            const od = new Date(o.created_at);
+            return od >= startDay && od <= endDay;
+          })
+          .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+        timelineData.push({ dayName: `الأسبوع ${4 - w}`, sales: weekSales });
+      }
+    } else {
+      timelineLabel = "كل الأوقات";
+      timelineTotalLabel = "إجمالي المبيعات الكلية:";
+      const monthsMap = {};
+      orders.forEach((o) => {
+        if (o.status === "ملغي" || !o.created_at) return;
+        const m = new Date(o.created_at).toLocaleDateString("ar-LY", { month: "short" });
+        monthsMap[m] = (monthsMap[m] || 0) + (Number(o.total_price) || 0);
+      });
+      timelineData = Object.entries(monthsMap).map(([dayName, sales]) => ({ dayName, sales }));
+      if (timelineData.length === 0) {
+        timelineData = [{ dayName: "الإجمالي", sales: totalSales }];
+      }
     }
 
     return {
@@ -370,7 +402,9 @@ export default function Admin() {
       aov,
       totalProfit,
       topSellingProducts,
-      last7DaysData,
+      timelineData,
+      timelineLabel,
+      timelineTotalLabel,
       recentOrders: orders.slice(0, 6),
     };
   }, [orders, products, timeFilter]);
@@ -385,22 +419,6 @@ export default function Admin() {
         (o.customer_phone || "").includes(q)
     );
   }, [orders, invoiceSearch]);
-
-  const groupedInvoices = useMemo(() => {
-    const groups = {};
-    filteredInvoices.forEach((o) => {
-      const d = new Date(o.created_at);
-      const monthKey = d.toLocaleDateString("ar-LY", { year: "numeric", month: "long" });
-      const dayOfMonth = d.getDate();
-      const weekIndex = Math.min(Math.floor((dayOfMonth - 1) / 7), 3);
-      const weekLabel = `الأسبوع ${weekIndex + 1}`;
-
-      if (!groups[monthKey]) groups[monthKey] = {};
-      if (!groups[monthKey][weekLabel]) groups[monthKey][weekLabel] = [];
-      groups[monthKey][weekLabel].push(o);
-    });
-    return groups;
-  }, [filteredInvoices]);
 
   const productsByCategory = useMemo(() => {
     const map = {};
@@ -459,7 +477,7 @@ export default function Admin() {
     if (!error && data) {
       setSettingsForm({
         store_name: data.store_name || "",
-        store_description: data.store_description || "",
+        store_description: data.store_description || localStorage.getItem("nova_store_description") || "",
         whatsapp_number: data.whatsapp_number || "",
         bank_account: data.bank_account || "",
         facebook_url: data.facebook_url || "",
@@ -475,16 +493,39 @@ export default function Admin() {
     setSettingsSaving(true);
     setSettingsSaved(false);
 
-    const { error } = await supabase
+    // محاولة الحفظ في Supabase
+    let { error } = await supabase
       .from("store_settings")
       .update(settingsForm)
       .eq("id", 1);
+
+    // إذا كان الخطأ بسبب عدم إضافة عمود store_description في جدول Supabase بعد
+    if (error && error.message.includes("store_description")) {
+      const { store_description, ...restSettings } = settingsForm;
+      if (store_description) {
+        localStorage.setItem("nova_store_description", store_description);
+      }
+      const fallbackResult = await supabase
+        .from("store_settings")
+        .update(restSettings)
+        .eq("id", 1);
+
+      if (!fallbackResult.error) {
+        error = null;
+      } else {
+        error = fallbackResult.error;
+      }
+    }
 
     setSettingsSaving(false);
 
     if (error) {
       alert("صار خطأ أثناء حفظ الإعدادات: " + error.message);
       return;
+    }
+
+    if (settingsForm.store_description) {
+      localStorage.setItem("nova_store_description", settingsForm.store_description);
     }
 
     setSettingsSaved(true);
@@ -533,16 +574,46 @@ export default function Admin() {
     if (!error) setTeamMembers(data || []);
   }
 
+  // حل مشكلة إضافة وتحديث رتبة العضو بذكاء بدون خطأ duplicate key
   async function handleAddMember(e) {
     e.preventDefault();
-    if (!newMemberEmail) return;
+    const emailClean = newMemberEmail.trim().toLowerCase();
+    if (!emailClean) return;
     setTeamSaving(true);
-    const { error } = await supabase
+
+    // التحقق إذا كان البريد مسجلاً مسبقاً
+    const { data: existingUser } = await supabase
       .from("admin_users")
-      .insert([{ email: newMemberEmail, role: newMemberRole }]);
+      .select("id, email, role")
+      .eq("email", emailClean)
+      .maybeSingle();
+
+    let error;
+    if (existingUser) {
+      if (existingUser.role === "owner") {
+        alert("هذا الحساب هو المالك الأساسي للمتجر ولا يمكن تغيير صلاحيته.");
+        setTeamSaving(false);
+        return;
+      }
+      ({ error } = await supabase
+        .from("admin_users")
+        .update({ role: newMemberRole })
+        .eq("id", existingUser.id));
+      if (!error) {
+        alert(`تم تحديث صلاحية (${emailClean}) إلى "${newMemberRole === "admin" ? "أدمن" : "مشرف"}" بنجاح ✅`);
+      }
+    } else {
+      ({ error } = await supabase
+        .from("admin_users")
+        .insert([{ email: emailClean, role: newMemberRole }]));
+      if (!error) {
+        alert(`تمت إضافة (${emailClean}) كـ "${newMemberRole === "admin" ? "أدمن" : "مشرف"}" بنجاح ✅`);
+      }
+    }
+
     setTeamSaving(false);
     if (error) {
-      alert("فشل الإضافة: " + error.message);
+      alert("فشل حفظ العضو: " + error.message);
       return;
     }
     setNewMemberEmail("");
@@ -555,7 +626,7 @@ export default function Admin() {
       alert("لا يمكن حذف المالك");
       return;
     }
-    if (!confirm("متأكد تبي تزيل هذا العضو؟")) return;
+    if (!confirm("متأكد تبي تزيل هذا العضو من الفريق؟")) return;
     const { error } = await supabase.from("admin_users").delete().eq("id", id);
     if (error) {
       alert("فشل الحذف: " + error.message);
@@ -855,7 +926,7 @@ export default function Admin() {
     );
   }
 
-  const maxChartSale = Math.max(...dashboardStats.last7DaysData.map((d) => d.sales), 1);
+  const maxChartSale = Math.max(...(dashboardStats.timelineData || []).map((d) => d.sales), 1);
 
   return (
     <div dir="rtl" style={styles.layout}>
@@ -912,7 +983,7 @@ export default function Admin() {
       {/* المحتوى الرئيسي */}
       <div style={styles.page}>
         {/* ========================================================
-            تبويب: لوحة الإحصائيات الشاملة (مثل الصورة الاحترافية 1)
+            تبويب: لوحة الإحصائيات الشاملة
            ======================================================== */}
         {activeTab === "dashboard" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -947,7 +1018,7 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* البطاقات الخمس الرئيسية (Top 5 Metric Cards) */}
+            {/* البطاقات الخمس الرئيسية */}
             <div style={styles.metricCardsGrid}>
               {/* 1. إجمالي المبيعات */}
               <div style={styles.modernCard}>
@@ -1012,8 +1083,11 @@ export default function Admin() {
                 <div style={{ marginTop: 14 }}>
                   <span style={{ fontSize: 12, color: "#5B7278", fontWeight: 700 }}>متوسط قيمة الطلب</span>
                   <h3 style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
-                    {dashboardStats.aov} <span style={{ fontSize: 14 }}>د.ل</span>
+                    {dashboardStats.aov.toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
                   </h3>
+                  <span style={{ fontSize: 10.5, color: "#94A3B8", marginTop: 2, display: "block" }}>
+                    (المبيعات ÷ عدد الطلبات)
+                  </span>
                 </div>
               </div>
 
@@ -1030,11 +1104,14 @@ export default function Admin() {
                   <h3 style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
                     {dashboardStats.totalUnitsSold} <span style={{ fontSize: 14 }}>قطعة</span>
                   </h3>
+                  <span style={{ fontSize: 10.5, color: "#94A3B8", marginTop: 2, display: "block" }}>
+                    إجمالي القطع في الفترة
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* صف التحليلات الرئيسية الثلاثة: الأكثر مبيعاً / الرسم البياني / حالة الطلبات */}
+            {/* صف التحليلات الرئيسية الثلاثة */}
             <div style={styles.analyticsRow}>
               {/* 1. أفضل المنتجات مبيعاً */}
               <div style={{ ...styles.modernCard, flex: 1, minWidth: 260 }}>
@@ -1064,7 +1141,7 @@ export default function Admin() {
                           <span style={{ fontSize: 11, color: "#5B7278" }}>مباع: {p.qty} قطعة</span>
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 800, color: "#0E7C86" }}>
-                          {p.revenue} د.ل
+                          {p.revenue.toLocaleString()} د.ل
                         </span>
                       </div>
                     ))}
@@ -1072,26 +1149,25 @@ export default function Admin() {
                 )}
               </div>
 
-              {/* 2. نظرة عامة على المبيعات (رسم بياني للمبيعات اليومية) */}
+              {/* 2. نظرة عامة على المبيعات (ديناميكية حسب الفلتر المختار) */}
               <div style={{ ...styles.modernCard, flex: 1.5, minWidth: 320 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                   <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>نظرة عامة على المبيعات</h4>
-                  <span style={{ fontSize: 11, color: "#5B7278" }}>آخر 7 أيام</span>
+                  <span style={{ fontSize: 11, color: "#0E7C86", fontWeight: 700 }}>{dashboardStats.timelineLabel}</span>
                 </div>
 
-                {/* رسم بياني بصري تفاعلي وأنيق */}
                 <div style={{ height: 170, display: "flex", alignItems: "flex-end", gap: 12, paddingTop: 10, paddingBottom: 10, borderBottom: "1px solid #E3ECED" }}>
-                  {dashboardStats.last7DaysData.map((d, i) => {
+                  {dashboardStats.timelineData.map((d, i) => {
                     const heightPercent = maxChartSale > 0 ? (d.sales / maxChartSale) * 100 : 0;
                     return (
                       <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}>
                         <span style={{ fontSize: 10, fontWeight: 700, color: d.sales > 0 ? "#0E7C86" : "#aaa" }}>
-                          {d.sales > 0 ? `${d.sales}` : "0"}
+                          {d.sales > 0 ? `${d.sales.toLocaleString()}` : "0"}
                         </span>
                         <div
                           style={{
                             width: "100%",
-                            maxWidth: 32,
+                            maxWidth: 36,
                             height: `${Math.max(heightPercent, 6)}%`,
                             background: d.sales > 0 ? "linear-gradient(180deg, #0E7C86 0%, #2DD4BF 100%)" : "#E2E8F0",
                             borderRadius: "6px 6px 0 0",
@@ -1104,14 +1180,14 @@ export default function Admin() {
                   })}
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 12, color: "#5B7278" }}>
-                  <span>إجمالي مبيعات الأسبوع:</span>
-                  <strong style={{ color: "#0B2027" }}>
-                    {dashboardStats.last7DaysData.reduce((s, x) => s + x.sales, 0)} د.ل
+                  <span>{dashboardStats.timelineTotalLabel}</span>
+                  <strong style={{ color: "#0B2027", fontSize: 13 }}>
+                    {dashboardStats.timelineData.reduce((s, x) => s + x.sales, 0).toLocaleString()} د.ل
                   </strong>
                 </div>
               </div>
 
-              {/* 3. حالة الطلبات (توزيع دائري ونسب) */}
+              {/* 3. حالة الطلبات */}
               <div style={{ ...styles.modernCard, flex: 1, minWidth: 260 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                   <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>حالة الطلبات</h4>
@@ -1212,7 +1288,7 @@ export default function Admin() {
           </div>
         )}
 
-        {/* ---- تبويب: إعدادات المتجر (مع وصف المتجر) ---- */}
+        {/* ---- تبويب: إعدادات المتجر ---- */}
         {activeTab === "settings" && (
           <form onSubmit={handleSettingsSubmit} style={styles.form}>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>إعدادات المتجر</h3>
@@ -1428,57 +1504,118 @@ export default function Admin() {
           </>
         )}
 
-        {/* ---- تبويب: الفواتير ---- */}
+        {/* ---- تبويب: الفواتير (تم تحويله إلى صفوف جدول منظمة) ---- */}
         {activeTab === "invoices" && (
-          <>
-            <h3 style={{ margin: "0 0 14px 0", fontSize: 18, fontWeight: 800 }}>الفواتير</h3>
-            <input
-              style={{ ...styles.input, marginBottom: 16 }}
-              placeholder="ابحث برقم الطلب، اسم الزبون، أو رقم الهاتف..."
-              value={invoiceSearch}
-              onChange={(e) => setInvoiceSearch(e.target.value)}
-            />
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0B2027" }}>سجل الفواتير</h3>
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#5B7278" }}>
+                  عرض وإدارة وطباعة جميع فواتير المبيعات
+                </p>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, background: "#E0F2FE", color: "#0369A1", padding: "6px 14px", borderRadius: 999 }}>
+                إجمالي الفواتير: {filteredInvoices.length} فاتورة ({filteredInvoices.reduce((s, o) => s + (Number(o.total_price) || 0), 0).toLocaleString()} د.ل)
+              </div>
+            </div>
+
+            {/* شريط البحث في الفواتير */}
+            <div style={styles.searchBarWrapper}>
+              <input
+                style={styles.invoiceSearchInput}
+                placeholder="🔍 ابحث برقم الفاتورة، اسم الزبون، أو رقم الهاتف..."
+                value={invoiceSearch}
+                onChange={(e) => setInvoiceSearch(e.target.value)}
+              />
+              {invoiceSearch && (
+                <button
+                  onClick={() => setInvoiceSearch("")}
+                  style={styles.clearSearchBtn}
+                >
+                  مسح
+                </button>
+              )}
+            </div>
+
             {ordersLoading ? (
-              <p>جارٍ التحميل...</p>
+              <p>جارٍ تحميل الفواتير...</p>
             ) : filteredInvoices.length === 0 ? (
-              <p style={{ color: "#888" }}>لا توجد نتائج مطابقة</p>
+              <div style={{ ...styles.modernCard, textAlign: "center", padding: 32, color: "#888" }}>
+                لا توجد فواتير مطابقة لعملية البحث
+              </div>
             ) : (
-              Object.entries(groupedInvoices).map(([month, weeks]) => (
-                <div key={month} style={{ marginBottom: 24 }}>
-                  <h4 style={{ borderBottom: "2px solid #eee", paddingBottom: 6, marginBottom: 12 }}>{month}</h4>
-                  {Object.entries(weeks).map(([week, invoices]) => (
-                    <div key={week} style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 13, fontWeight: "bold", color: "#888", marginBottom: 8 }}>
-                        {week} ({invoices.length} فاتورة)
-                      </div>
-                      <div style={styles.list}>
-                        {invoices.map((o) => (
-                          <div key={o.id} style={styles.orderCard}>
-                            <div style={styles.orderHeadRow}>
-                              <strong>فاتورة #{o.id}</strong>
-                              <span style={{ color: "#888", fontSize: 12 }}>
-                                {new Date(o.created_at).toLocaleDateString("ar-LY")}
-                              </span>
+              <div style={styles.modernCard}>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>رقم الفاتورة</th>
+                        <th style={styles.th}>العميل</th>
+                        <th style={styles.th}>رقم الهاتف</th>
+                        <th style={styles.th}>المنتجات</th>
+                        <th style={styles.th}>طريقة الدفع</th>
+                        <th style={styles.th}>الإجمالي</th>
+                        <th style={styles.th}>الحالة</th>
+                        <th style={styles.th}>تاريخ الفاتورة</th>
+                        <th style={styles.th}>الإجراء</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredInvoices.map((order) => (
+                        <tr key={order.id} style={styles.tr}>
+                          <td style={{ ...styles.td, fontWeight: 800, color: "#0E7C86" }}>
+                            INV-{order.id}
+                          </td>
+                          <td style={{ ...styles.td, fontWeight: 700 }}>
+                            {order.customer_name || "زبون"}
+                          </td>
+                          <td style={{ ...styles.td, direction: "ltr", textAlign: "right" }}>
+                            {order.customer_phone || "-"}
+                          </td>
+                          <td style={styles.td}>
+                            <div style={{ maxWidth: 220, fontSize: 12, lineHeight: 1.4 }}>
+                              {(order.items || []).map((it, idx) => (
+                                <span key={idx} style={{ display: "block" }}>
+                                  • {it.title} × {it.qty}
+                                </span>
+                              ))}
                             </div>
-                            <div style={{ fontSize: 13, marginTop: 6 }}>
-                              <div>{o.customer_name || "غير مسجل"} — {o.customer_phone || "-"}</div>
-                              <div style={{ fontWeight: "bold", marginTop: 4 }}>{o.total_price} د.ل — {o.status || "جديد"}</div>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: order.payment_method === "كاش" ? "#F1F5F9" : "#FEF3C7", color: order.payment_method === "كاش" ? "#334155" : "#B45309" }}>
+                              {order.payment_method || "كاش"}
+                            </span>
+                          </td>
+                          <td style={{ ...styles.td, fontWeight: 800, fontSize: 14, color: "#0B2027" }}>
+                            {order.total_price} د.ل
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.orderStatusPill(order.status)}>
+                              {STATUS_LABELS[order.status] || order.status || "جديد"}
+                            </span>
+                          </td>
+                          <td style={{ ...styles.td, fontSize: 11.5, color: "#5B7278" }}>
+                            <div>{new Date(order.created_at).toLocaleDateString("ar-LY")}</div>
+                            <div style={{ fontSize: 10, color: "#94A3B8" }}>
+                              {new Date(order.created_at).toLocaleTimeString("ar-LY", { hour: "2-digit", minute: "2-digit" })}
                             </div>
+                          </td>
+                          <td style={styles.td}>
                             <button
-                              onClick={() => printAdminInvoice(o, settingsForm.store_name)}
-                              style={{ ...styles.secondaryBtn, marginTop: 8, width: "100%" }}
+                              onClick={() => printAdminInvoice(order, settingsForm.store_name)}
+                              style={styles.printInvoiceRowBtn}
                             >
-                              🧾 عرض / طباعة الفاتورة
+                              🧾 طباعة / عرض
                             </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))
+              </div>
             )}
-          </>
+          </div>
         )}
 
         {/* ---- تبويب: العملاء ---- */}
@@ -1645,31 +1782,92 @@ export default function Admin() {
           </>
         )}
 
-        {/* ---- تبويب: إدارة الفريق (Owner فقط) ---- */}
+        {/* ---- تبويب: إدارة الفريق (Owner فقط) مع حل مشكلة البريد المكرر وعرض قائمة الأعضاء ---- */}
         {activeTab === "team" && isOwner && (
-          <>
-            <h3 style={{ margin: "0 0 14px 0", fontSize: 18, fontWeight: 800 }}>إدارة الفريق</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>إدارة الفريق والصلاحيات</h3>
+
             <form onSubmit={handleAddMember} style={styles.form}>
-              <input
-                style={styles.input}
-                type="email"
-                placeholder="البريد الإلكتروني للعضو الجديد"
-                value={newMemberEmail}
-                onChange={(e) => setNewMemberEmail(e.target.value)}
-              />
-              <select
-                style={styles.select}
-                value={newMemberRole}
-                onChange={(e) => setNewMemberRole(e.target.value)}
-              >
-                <option value="admin">أدمن (كل الصلاحيات عدا إدارة الفريق)</option>
-                <option value="moderator">مشرف (إضافة/تعديل منتجات فقط)</option>
-              </select>
-              <button type="submit" disabled={teamSaving} style={styles.primaryBtn}>
-                {teamSaving ? "جارٍ الإضافة..." : "إضافة عضو"}
-              </button>
+              <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>إضافة أو تعديل صلاحية عضو</h4>
+              <div style={styles.row}>
+                <input
+                  style={{ ...styles.input, flex: 2 }}
+                  type="email"
+                  placeholder="البريد الإلكتروني للعضو (مثال: aar06382@gmail.com)"
+                  value={newMemberEmail}
+                  onChange={(e) => setNewMemberEmail(e.target.value)}
+                  required
+                />
+                <select
+                  style={{ ...styles.select, flex: 1 }}
+                  value={newMemberRole}
+                  onChange={(e) => setNewMemberRole(e.target.value)}
+                >
+                  <option value="admin">أدمن (كل الصلاحيات عدا إدارة الفريق)</option>
+                  <option value="moderator">مشرف (إضافة وتعديل المنتجات فقط)</option>
+                </select>
+                <button type="submit" disabled={teamSaving} style={{ ...styles.primaryBtn, whiteSpace: "nowrap" }}>
+                  {teamSaving ? "جارٍ الحفظ..." : "حفظ الصلاحية"}
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: 12, color: "#5B7278", lineHeight: 1.6 }}>
+                💡 <strong>ملاحظة:</strong> إذا كان البريد مسجلاً مسبقاً، سيتم تعديل رتبته وصلاحيته تلقائياً بدون أي تعارض. تأكد من تسجيل نفس البريد في Authentication بـ Supabase ليتمكن العضو من الدخول بكلمة مروره.
+              </p>
             </form>
-          </>
+
+            <div style={styles.modernCard}>
+              <h4 style={{ margin: "0 0 14px 0", fontSize: 16, fontWeight: 800 }}>أعضاء الفريق الحاليون ({teamMembers.length})</h4>
+              {teamMembers.length === 0 ? (
+                <p style={{ color: "#888", fontSize: 13 }}>لا يوجد أعضاء مسجلين بعد</p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>البريد الإلكتروني</th>
+                        <th style={styles.th}>الرتبة / الصلاحية</th>
+                        <th style={styles.th}>تاريخ الإضافة</th>
+                        <th style={styles.th}>الإجراء</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teamMembers.map((m) => {
+                        const isMemberOwner = m.role === "owner";
+                        const roleLabel = isMemberOwner ? "مالك المتجر (Owner)" : m.role === "admin" ? "أدمن (Admin)" : "مشرف (Moderator)";
+                        const roleBg = isMemberOwner ? "#FEF3C7" : m.role === "admin" ? "#E0F2FE" : "#F1F5F9";
+                        const roleColor = isMemberOwner ? "#D97706" : m.role === "admin" ? "#0284C7" : "#475569";
+                        return (
+                          <tr key={m.id} style={styles.tr}>
+                            <td style={{ ...styles.td, fontWeight: 700 }}>{m.email}</td>
+                            <td style={styles.td}>
+                              <span style={{ padding: "4px 10px", borderRadius: 999, background: roleBg, color: roleColor, fontSize: 11.5, fontWeight: 800 }}>
+                                {roleLabel}
+                              </span>
+                            </td>
+                            <td style={{ ...styles.td, fontSize: 12, color: "#5B7278" }}>
+                              {m.created_at ? new Date(m.created_at).toLocaleDateString("ar-LY") : "-"}
+                            </td>
+                            <td style={styles.td}>
+                              {!isMemberOwner ? (
+                                <button
+                                  onClick={() => handleRemoveMember(m.id, m.role)}
+                                  style={{ ...styles.deleteBtn, padding: "5px 12px", borderRadius: 999 }}
+                                >
+                                  إزالة العضو
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: 12, color: "#94A3B8" }}>المالك الأساسي</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {/* ---- تبويب: إعدادات الدخول (Owner فقط) ---- */}
@@ -1765,10 +1963,13 @@ const styles = {
   topProductItem: { display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #F1F5F9" },
   rankBadge: { width: 22, height: 22, borderRadius: "50%", background: "#F1F5F9", color: "#475569", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" },
   topProductThumb: { width: 38, height: 38, borderRadius: 8, objectFit: "cover" },
+  searchBarWrapper: { display: "flex", alignItems: "center", gap: 8, width: "100%", maxWidth: 460 },
+  invoiceSearchInput: { flex: 1, padding: "10px 16px", borderRadius: 999, border: "1px solid #CBD5E1", background: "#fff", outline: "none", fontSize: 13, fontFamily: "inherit" },
+  clearSearchBtn: { padding: "8px 16px", borderRadius: 999, background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   table: { width: "100%", borderCollapse: "collapse", textAlign: "right" },
-  th: { padding: "10px 12px", borderBottom: "1px solid #E2E8F0", fontSize: 12, fontWeight: 800, color: "#64748B" },
-  tr: { borderBottom: "1px solid #F1F5F9" },
-  td: { padding: "12px", fontSize: 12.5 },
+  th: { padding: "12px 14px", borderBottom: "1.5px solid #E2E8F0", fontSize: 12.5, fontWeight: 800, color: "#475569", background: "#F8FAFC" },
+  tr: { borderBottom: "1px solid #F1F5F9", transition: "background .15s ease" },
+  td: { padding: "14px", fontSize: 13 },
   orderStatusPill: (status) => {
     const isCompleted = status === "تم التسليم";
     const isShipped = status === "تم الشحن" || status === "قيد التجهيز";
@@ -1778,6 +1979,7 @@ const styles = {
     return { padding: "4px 10px", borderRadius: 999, background: bg, color: color, fontSize: 11, fontWeight: 800, display: "inline-block" };
   },
   actionPillBtn: { padding: "5px 12px", borderRadius: 999, background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#0B2027", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  printInvoiceRowBtn: { padding: "6px 14px", borderRadius: 999, background: "#0E7C86", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, transition: "opacity .15s" },
   kanbanBoard: { display: "flex", gap: 14, overflowX: "auto", paddingBottom: 12 },
   kanbanColumn: { minWidth: 250, background: "#F8FAFC", borderRadius: 14, border: "1px solid #E2E8F0", padding: 12, display: "flex", flexDirection: "column", maxHeight: "75vh" },
   kanbanHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 800, paddingBottom: 8, marginBottom: 8, borderBottom: "2px solid #E2E8F0" },
@@ -1786,9 +1988,9 @@ const styles = {
   orderCard: { background: "#fff", border: "1px solid #E2E8F0", padding: 12, borderRadius: 12, boxShadow: "0 1px 2px rgba(0,0,0,0.03)" },
   orderHeadRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   form: { display: "flex", flexDirection: "column", gap: 14, background: "#fff", padding: 24, borderRadius: 16, border: "1px solid #E2E8F0" },
-  row: { display: "flex", gap: 10, flexWrap: "wrap" },
+  row: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" },
   input: { padding: "10px 14px", borderRadius: 10, border: "1px solid #CBD5E1", width: "100%", fontFamily: "inherit", fontSize: 13, outline: "none" },
-  select: { padding: "10px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontFamily: "inherit", fontSize: 13, outline: "none" },
+  select: { padding: "10px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontFamily: "inherit", fontSize: 13, outline: "none", background: "#fff" },
   primaryBtn: { padding: "11px 20px", background: "#0E7C86", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 800, fontSize: 13.5 },
   secondaryBtn: { padding: "8px 14px", background: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 12 },
   whatsappBtn: { padding: "8px 12px", background: "#25D366", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 800, fontSize: 12 },
