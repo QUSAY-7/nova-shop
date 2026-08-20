@@ -530,6 +530,56 @@ export default function App() {
       return false;
     }
 
+    // ----------------------------------------------------
+    // الأتمتة الفورية: ربط وتوجيه الطلب لشركة التوصيل (درب السبيل) فور إتمامه
+    // ----------------------------------------------------
+    try {
+      const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
+      const darbCfg = storedConfigs["darb_assabil"];
+      if (darbCfg && darbCfg.isActive !== false) {
+        const trackingRef = `DS-${insertedOrder.id}`;
+        await supabase
+          .from("orders")
+          .update({
+            tracking_number: trackingRef,
+            delivery_provider: "darb_assabil",
+          })
+          .eq("id", insertedOrder.id);
+
+        // إرسال حمولة الشحنة لخوادم درب السبيل في الخلفية
+        try {
+          const rawKey = (darbCfg.apiKey || "").trim();
+          const authVal = rawKey.startsWith("Bearer ")
+            ? rawKey
+            : rawKey.startsWith("apikey ")
+            ? rawKey
+            : `apikey ${rawKey}`;
+
+          fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/local/shipments`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+              "Authorization": authVal,
+              "X-API-VERSION": "1.0.0",
+            },
+            body: JSON.stringify({
+              receiver: {
+                name: customerName,
+                phone: customerPhone,
+                address: customerAddress,
+              },
+              paymentMethod: paymentLabel,
+              totalAmount: totalPrice,
+              notes: `طلب #${insertedOrder.id} - ${paymentLabel}`,
+            }),
+          }).catch(() => {});
+        } catch {}
+      }
+    } catch (deliveryDispatchErr) {
+      console.warn("Delivery auto-dispatch:", deliveryDispatchErr);
+    }
+
     // حفظ الطلب في الـ LocalStorage لجهاز الزبون لسهولة متابعته
     try {
       const existing = JSON.parse(localStorage.getItem("nova_customer_orders") || "[]");
