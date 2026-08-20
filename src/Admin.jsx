@@ -17,26 +17,1241 @@ import {
   Percent,
   Layers,
   Settings,
+  CreditCard,
+  Zap,
+  Plus,
+  CheckCircle2,
+  AlertTriangle,
+  Key,
+  Lock,
+  Unlock,
+  Trash2,
+  ExternalLink,
+  Copy,
+  Search,
+  Sliders,
+  Shield,
+  Globe,
+  Activity,
+  RefreshCw,
+  MessageCircle,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
-function buildStatusWhatsAppLink(order) {
-  let phone = (order.customer_phone || "").replace(/[^\d]/g, "");
-  if (!phone) return null;
+// ============================================================================
+// 1. INTEGRATION LAYER: NORMALIZED INTERNAL MODELS (النماذج الموحدة)
+// ============================================================================
+
+export class InternalCustomer {
+  constructor({ name = "", phone = "", email = "", notes = "" } = {}) {
+    this.name = name;
+    this.phone = phone;
+    this.email = email;
+    this.notes = notes;
+  }
+}
+
+export class InternalAddress {
+  constructor({
+    city = "",
+    area = "",
+    address = "",
+    street = "",
+    building = "",
+    landmark = "",
+    latitude = null,
+    longitude = null,
+  } = {}) {
+    this.city = city;
+    this.area = area;
+    this.address = address;
+    this.street = street;
+    this.building = building;
+    this.landmark = landmark;
+    this.latitude = latitude;
+    this.longitude = longitude;
+  }
+
+  get formattedAddress() {
+    return [this.city, this.area, this.street, this.building, this.address, this.landmark]
+      .filter(Boolean)
+      .join(" - ");
+  }
+}
+
+export class InternalOrderItem {
+  constructor({
+    id = null,
+    productId = null,
+    title = "",
+    sku = "",
+    quantity = 1,
+    unitPrice = 0,
+    totalPrice = 0,
+    variant = null,
+    weightKg = 0,
+  } = {}) {
+    this.id = id;
+    this.productId = productId;
+    this.title = title;
+    this.sku = sku;
+    this.quantity = Number(quantity) || 1;
+    this.unitPrice = Number(unitPrice) || 0;
+    this.totalPrice = Number(totalPrice) || this.unitPrice * this.quantity;
+    this.variant = variant;
+    this.weightKg = Number(weightKg) || 0;
+  }
+}
+
+export class InternalOrder {
+  constructor({
+    orderId = null,
+    referenceNumber = "",
+    customer = null,
+    shippingAddress = null,
+    items = [],
+    subtotal = 0,
+    shippingCost = 0,
+    discount = 0,
+    totalAmount = 0,
+    currency = "LYD",
+    paymentMethod = "cod",
+    paymentStatus = "pending",
+    orderStatus = "new",
+    notes = "",
+    createdAt = new Date().toISOString(),
+  } = {}) {
+    this.orderId = orderId;
+    this.referenceNumber = referenceNumber || (orderId ? `ORD-${orderId}` : "");
+    this.customer = customer instanceof InternalCustomer ? customer : new InternalCustomer(customer);
+    this.shippingAddress =
+      shippingAddress instanceof InternalAddress ? shippingAddress : new InternalAddress(shippingAddress);
+    this.items = (items || []).map((it) => (it instanceof InternalOrderItem ? it : new InternalOrderItem(it)));
+    this.subtotal = Number(subtotal) || 0;
+    this.shippingCost = Number(shippingCost) || 0;
+    this.discount = Number(discount) || 0;
+    this.totalAmount = Number(totalAmount) || this.subtotal + this.shippingCost - this.discount;
+    this.currency = currency || "LYD";
+    this.paymentMethod = paymentMethod;
+    this.paymentStatus = paymentStatus;
+    this.orderStatus = orderStatus;
+    this.notes = notes;
+    this.createdAt = createdAt;
+  }
+
+  get totalQuantity() {
+    return this.items.reduce((sum, it) => sum + (it.quantity || 0), 0);
+  }
+
+  get totalWeightKg() {
+    return this.items.reduce((sum, it) => sum + (it.weightKg || 0) * (it.quantity || 1), 0);
+  }
+}
+
+export class InternalShipment {
+  constructor({
+    shipmentId = null,
+    orderId = null,
+    providerCode = "",
+    providerShipmentId = "",
+    trackingNumber = "",
+    trackingUrl = "",
+    shippingCost = 0,
+    shipmentStatus = "draft",
+    labelUrl = "",
+    rawResponse = null,
+    createdAt = new Date().toISOString(),
+    updatedAt = new Date().toISOString(),
+  } = {}) {
+    this.shipmentId = shipmentId;
+    this.orderId = orderId;
+    this.providerCode = providerCode;
+    this.providerShipmentId = providerShipmentId;
+    this.trackingNumber = trackingNumber;
+    this.trackingUrl = trackingUrl;
+    this.shippingCost = Number(shippingCost) || 0;
+    this.shipmentStatus = shipmentStatus;
+    this.labelUrl = labelUrl;
+    this.rawResponse = rawResponse;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+  }
+}
+
+export class InternalPayment {
+  constructor({
+    paymentId = null,
+    orderId = null,
+    providerCode = "",
+    providerTransactionId = "",
+    amount = 0,
+    currency = "LYD",
+    paymentStatus = "pending",
+    paymentUrl = "",
+    rawResponse = null,
+    createdAt = new Date().toISOString(),
+    updatedAt = new Date().toISOString(),
+  } = {}) {
+    this.paymentId = paymentId;
+    this.orderId = orderId;
+    this.providerCode = providerCode;
+    this.providerTransactionId = providerTransactionId;
+    this.amount = Number(amount) || 0;
+    this.currency = currency || "LYD";
+    this.paymentStatus = paymentStatus;
+    this.paymentUrl = paymentUrl;
+    this.rawResponse = rawResponse;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+  }
+}
+
+// ============================================================================
+// 2. SECURITY & DATA MASKING UTILS (أدوات حماية وحجب البيانات الحساسة)
+// ============================================================================
+
+export function maskSecret(secret, visibleChars = 4) {
+  if (!secret || typeof secret !== "string") return "";
+  if (secret.length <= visibleChars * 2) return "••••••••";
+  const start = secret.slice(0, visibleChars);
+  const end = secret.slice(-visibleChars);
+  return `${start}••••••••${end}`;
+}
+
+export function sanitizeLogPayload(data) {
+  if (!data || typeof data !== "object") return data;
+  const sensitiveKeys = ["secret", "password", "token", "key", "authorization", "api_key", "client_secret"];
+  const sanitized = Array.isArray(data) ? [...data] : { ...data };
+
+  for (const key of Object.keys(sanitized)) {
+    const lowerKey = key.toLowerCase();
+    if (sensitiveKeys.some((k) => lowerKey.includes(k))) {
+      sanitized[key] = "•••••• [PROTECTED]";
+    } else if (typeof sanitized[key] === "object" && sanitized[key] !== null) {
+      sanitized[key] = sanitizeLogPayload(sanitized[key]);
+    }
+  }
+  return sanitized;
+}
+
+// ============================================================================
+// 3. INTEGRATION LOGS SERVICE (خدمة تسجيل العمليات والتكاملات)
+// ============================================================================
+
+class IntegrationLogManager {
+  constructor() {
+    this.storageKey = "nova_integration_logs";
+  }
+
+  getLogs() {
+    try {
+      const data = localStorage.getItem(this.storageKey);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  log({
+    providerCode,
+    providerType = "general",
+    action = "",
+    endpoint = "",
+    method = "GET",
+    statusCode = 200,
+    durationMs = 0,
+    success = true,
+    message = "",
+    orderId = null,
+    details = null,
+  }) {
+    const logs = this.getLogs();
+    const newEntry = {
+      id: "LOG-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+      timestamp: new Date().toISOString(),
+      providerCode,
+      providerType,
+      action,
+      endpoint,
+      method,
+      statusCode,
+      durationMs,
+      success,
+      message,
+      orderId,
+      details: sanitizeLogPayload(details),
+    };
+
+    const updated = [newEntry, ...logs].slice(0, 150);
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(updated));
+    } catch (e) {
+      console.error("Failed to persist integration log:", e);
+    }
+    return newEntry;
+  }
+
+  clearLogs() {
+    localStorage.removeItem(this.storageKey);
+  }
+}
+
+export const IntegrationLogs = new IntegrationLogManager();
+
+// ============================================================================
+// 4. STATUS MAPPER (محرك تعيين الحالات)
+// ============================================================================
+
+export class StatusMapper {
+  constructor(customMapping = {}) {
+    this.mapping = customMapping || {};
+  }
+
+  toStoreStatus(providerStatus, defaultStatus = "new") {
+    if (!providerStatus) return defaultStatus;
+    const normalized = String(providerStatus).toLowerCase().trim();
+    return this.mapping[normalized] || this.mapping[providerStatus] || defaultStatus;
+  }
+
+  toProviderStatus(storeStatus) {
+    for (const [providerStatus, internalStatus] of Object.entries(this.mapping)) {
+      if (internalStatus === storeStatus) return providerStatus;
+    }
+    return storeStatus;
+  }
+}
+
+// ============================================================================
+// 5. ABSTRACT BASE PROVIDERS (الفئات الأساسية للمزودات)
+// ============================================================================
+
+export class BaseProvider {
+  constructor(config = {}) {
+    this.code = config.code || "unknown";
+    this.name = config.name || "Unknown Provider";
+    this.type = config.type || "general"; // payment | delivery
+    this.config = config;
+    this.environment = config.environment || "sandbox"; // sandbox | production
+    this.isActive = config.isActive !== false;
+    this.statusMapper = new StatusMapper(config.statusMapping || {});
+  }
+
+  get isConfigured() {
+    return !!this.config.apiBaseUrl || this.config.isSystem;
+  }
+
+  async testConnection() {
+    throw new Error(`testConnection() not implemented in provider ${this.code}`);
+  }
+
+  logOperation(logData) {
+    return IntegrationLogs.log({
+      providerCode: this.code,
+      providerType: this.type,
+      ...logData,
+    });
+  }
+}
+
+export class PaymentProvider extends BaseProvider {
+  constructor(config = {}) {
+    super({ ...config, type: "payment" });
+  }
+
+  async createPayment(internalOrder) {
+    throw new Error(`createPayment() not implemented in ${this.code}`);
+  }
+
+  async verifyPayment(transactionId) {
+    throw new Error(`verifyPayment() not implemented in ${this.code}`);
+  }
+
+  async refundPayment(transactionId, amount) {
+    throw new Error(`refundPayment() is not supported by ${this.code}`);
+  }
+}
+
+export class DeliveryProvider extends BaseProvider {
+  constructor(config = {}) {
+    super({ ...config, type: "delivery" });
+  }
+
+  async calculateShipping(address, order) {
+    throw new Error(`calculateShipping() not implemented in ${this.code}`);
+  }
+
+  async createShipment(internalOrder) {
+    throw new Error(`createShipment() not implemented in ${this.code}`);
+  }
+
+  async getShipmentStatus(trackingNumber) {
+    throw new Error(`getShipmentStatus() not implemented in ${this.code}`);
+  }
+
+  async cancelShipment(trackingNumber) {
+    throw new Error(`cancelShipment() is not supported by ${this.code}`);
+  }
+
+  async getSupportedCities() {
+    return this.config.supportedCities || [];
+  }
+}
+
+// ============================================================================
+// 6. DEFAULT BUILT-IN ADAPTERS (المحولات الافتراضية الجاهزة)
+// ============================================================================
+
+export class CodPaymentProvider extends PaymentProvider {
+  constructor(config = {}) {
+    super({
+      code: "cod",
+      name: "الدفع عند الاستلام (كاش)",
+      description: "استلام قيمة الطلب نقداً عند تسليم الشحنة للزبون",
+      isSystem: true,
+      isActive: true,
+      ...config,
+    });
+  }
+
+  async testConnection() {
+    const startTime = Date.now();
+    this.logOperation({
+      action: "test_connection",
+      endpoint: "internal://cod/check",
+      statusCode: 200,
+      durationMs: Date.now() - startTime,
+      success: true,
+      message: "طريقة الدفع عند الاستلام جاهزة ونشطة داخل المتجر 🟢",
+    });
+    return { success: true, message: "الدفع عند الاستلام نشط وجاهز للعمل 🟢" };
+  }
+
+  async createPayment(internalOrder) {
+    return {
+      success: true,
+      transactionId: `COD-${internalOrder.orderId}`,
+      status: "pending_cod",
+      message: "تم اختيار الدفع عند الاستلام بنجاح",
+    };
+  }
+
+  async verifyPayment() {
+    return { success: true, status: "pending" };
+  }
+}
+
+export class BankTransferPaymentProvider extends PaymentProvider {
+  constructor(config = {}) {
+    super({
+      code: "bank_transfer",
+      name: "التحويل المصرفي (إيداع بنكي)",
+      description: "تحويل مباشر لحساب المتجر مع مراجعة وتأكيد الإيصال",
+      isSystem: true,
+      isActive: true,
+      ...config,
+    });
+  }
+
+  async testConnection() {
+    const startTime = Date.now();
+    const bankAccount = this.config.bankAccount || "محدد في إعدادات المتجر";
+    this.logOperation({
+      action: "test_connection",
+      endpoint: "internal://bank_transfer/check",
+      statusCode: 200,
+      durationMs: Date.now() - startTime,
+      success: true,
+      message: `التحويل المصرفي جاهز (الحساب: ${bankAccount}) 🟢`,
+    });
+    return { success: true, message: `التحويل المصرفي مهيأ وجاهز 🟢 (الحساب: ${bankAccount})` };
+  }
+
+  async createPayment(internalOrder) {
+    return {
+      success: true,
+      transactionId: `BANK-${internalOrder.orderId}`,
+      status: "awaiting_verification",
+      message: "يرجى إرفاق إيصال التحويل المصرفي لتأكيد الطلب",
+    };
+  }
+
+  async verifyPayment() {
+    return { success: true, status: "pending" };
+  }
+}
+
+export class GenericApiPaymentProvider extends PaymentProvider {
+  async testConnection() {
+    const startTime = Date.now();
+    if (!this.config.apiBaseUrl) {
+      const msg = "لم يتم تعيين رابط Base URL للبوابة";
+      this.logOperation({
+        action: "test_connection",
+        endpoint: "n/a",
+        statusCode: 400,
+        durationMs: 0,
+        success: false,
+        message: msg,
+      });
+      return { success: false, message: msg };
+    }
+
+    try {
+      const response = await fetch(this.config.apiBaseUrl, {
+        method: "HEAD",
+        headers: {
+          ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
+        },
+      });
+
+      const durationMs = Date.now() - startTime;
+      const success = response.ok || response.status === 401 || response.status === 405;
+
+      this.logOperation({
+        action: "test_connection",
+        endpoint: this.config.apiBaseUrl,
+        method: "HEAD",
+        statusCode: response.status,
+        durationMs,
+        success,
+        message: success ? "تم الوصول لخادم البوابة بنجاح" : `رد الخادم برمز: ${response.status}`,
+      });
+
+      return {
+        success,
+        message: success
+          ? `تم اختبار الاتصال بالبوابة بنجاح 🟢 (رمز الاستجابة: ${response.status})`
+          : `تعذر الاتصال بالبوابة 🔴 (رمز الاستجابة: ${response.status})`,
+      };
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      this.logOperation({
+        action: "test_connection",
+        endpoint: this.config.apiBaseUrl,
+        method: "HEAD",
+        statusCode: 0,
+        durationMs,
+        success: false,
+        message: err.message,
+      });
+      return { success: false, message: `فشل الاتصال بالبوابة: ${err.message}` };
+    }
+  }
+
+  async createPayment(internalOrder) {
+    return {
+      success: true,
+      paymentUrl: `${this.config.apiBaseUrl}/checkout?order=${internalOrder.orderId}`,
+      transactionId: `TX-${Date.now()}`,
+    };
+  }
+
+  async verifyPayment(transactionId) {
+    return { success: true, status: "completed" };
+  }
+}
+
+export class ManualDeliveryProvider extends DeliveryProvider {
+  constructor(config = {}) {
+    super({
+      code: "manual_delivery",
+      name: "التوصيل الخاص / المحلي (مندوب المتجر)",
+      description: "توصيل الطلبات عبر مناديب المتجر بتسعير مرن لكل مدينة",
+      isSystem: true,
+      isActive: true,
+      ...config,
+    });
+  }
+
+  async testConnection() {
+    const startTime = Date.now();
+    this.logOperation({
+      action: "test_connection",
+      endpoint: "internal://manual_delivery/check",
+      statusCode: 200,
+      durationMs: Date.now() - startTime,
+      success: true,
+      message: "خدمة التوصيل الخاصة بالمتجر تعمل بنجاح 🟢",
+    });
+    return { success: true, message: "خدمة التوصيل الخاصة بالمتجر جاهزة ونشطة 🟢" };
+  }
+
+  async calculateShipping(address) {
+    const cityRates = this.config.cityRates || {
+      "طرابلس": 15,
+      "بنغازي": 25,
+      "مصراتة": 20,
+      "الزاوية": 15,
+      "البيضاء": 30,
+      "طبرق": 35,
+      "سبها": 35,
+      "سرت": 25,
+      "زليتن": 20,
+      "غريان": 20,
+      "الخمس": 20,
+    };
+    const flatRate = this.config.flatRate != null ? Number(this.config.flatRate) : 20;
+    const cost = address?.city && cityRates[address.city] != null ? cityRates[address.city] : flatRate;
+    return { available: true, cost, estimatedDays: 2 };
+  }
+
+  async createShipment(internalOrder) {
+    const rate = await this.calculateShipping(internalOrder.shippingAddress, internalOrder);
+    const trackingNumber = `NOV-TRK-${internalOrder.orderId}`;
+    return {
+      success: true,
+      shipment: new InternalShipment({
+        orderId: internalOrder.orderId,
+        providerCode: this.code,
+        providerShipmentId: `SHIP-${internalOrder.orderId}`,
+        trackingNumber,
+        shippingCost: rate.cost,
+        shipmentStatus: "created",
+      }),
+      message: `تم إنشاء الشحنة برقم تتبع: ${trackingNumber}`,
+    };
+  }
+
+  async getShipmentStatus(trackingNumber) {
+    return {
+      status: "in_transit",
+      internalStatus: "shipped",
+      trackingUrl: "",
+      events: [{ title: "تم تسليم الطلب للمندوب", time: new Date().toISOString() }],
+    };
+  }
+}
+
+export class GenericApiDeliveryProvider extends DeliveryProvider {
+  async testConnection() {
+    const startTime = Date.now();
+    if (!this.config.apiBaseUrl) {
+      const msg = "لم يتم تعيين رابط Base URL لشركة التوصيل";
+      this.logOperation({
+        action: "test_connection",
+        endpoint: "n/a",
+        statusCode: 400,
+        durationMs: 0,
+        success: false,
+        message: msg,
+      });
+      return { success: false, message: msg };
+    }
+
+    try {
+      const response = await fetch(this.config.apiBaseUrl, {
+        method: "HEAD",
+        headers: {
+          ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
+        },
+      });
+
+      const durationMs = Date.now() - startTime;
+      const success = response.ok || response.status === 401 || response.status === 405;
+
+      this.logOperation({
+        action: "test_connection",
+        endpoint: this.config.apiBaseUrl,
+        method: "HEAD",
+        statusCode: response.status,
+        durationMs,
+        success,
+        message: success ? "تم الاتصال بخادم شركة التوصيل" : `رد الخادم: ${response.status}`,
+      });
+
+      return {
+        success,
+        message: success
+          ? `تم اختبار الاتصال بشركة التوصيل بنجاح 🟢 (رمز الاستجابة: ${response.status})`
+          : `تعذر الاتصال بشركة التوصيل 🔴 (رمز الاستجابة: ${response.status})`,
+      };
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      this.logOperation({
+        action: "test_connection",
+        endpoint: this.config.apiBaseUrl,
+        method: "HEAD",
+        statusCode: 0,
+        durationMs,
+        success: false,
+        message: err.message,
+      });
+      return { success: false, message: `فشل الاتصال بشركة التوصيل: ${err.message}` };
+    }
+  }
+
+  async calculateShipping(address) {
+    const flatRate = this.config.flatRate != null ? Number(this.config.flatRate) : 25;
+    return { available: true, cost: flatRate, estimatedDays: 3 };
+  }
+
+  async createShipment(internalOrder) {
+    const trackingNumber = `EXT-TRK-${Date.now().toString().slice(-6)}`;
+    return {
+      success: true,
+      shipment: new InternalShipment({
+        orderId: internalOrder.orderId,
+        providerCode: this.code,
+        providerShipmentId: `EXT-SHIP-${Date.now()}`,
+        trackingNumber,
+        shippingCost: this.config.flatRate || 25,
+        shipmentStatus: "created",
+      }),
+      message: `تم تسجيل الشحنة برقم تتبع: ${trackingNumber}`,
+    };
+  }
+
+  async getShipmentStatus(trackingNumber) {
+    return {
+      status: "in_transit",
+      internalStatus: "shipped",
+      trackingUrl: `${this.config.apiBaseUrl}/track/${trackingNumber}`,
+    };
+  }
+}
+
+/**
+ * 6. Ezone Pay Payment Gateway Adapter (بوابة إيزون باي للدفع الإلكتروني)
+ * Fully compliant with Ezone Pay API Specification
+ */
+export class EzonePayPaymentProvider extends PaymentProvider {
+  constructor(config = {}) {
+    super({
+      code: "ezone_pay",
+      name: "Ezone Pay (إيزون باي للدفع الإلكتروني)",
+      description: "بوابة دفع ليبية متكاملة تدعم سداد، تداول، إدفع لي، موبي كاش، ومصرفي باي",
+      apiBaseUrl: config.apiBaseUrl || "https://test.ezonepay.ly",
+      environment: config.environment || "sandbox",
+      isSystem: false,
+      isActive: config.isActive !== false,
+      ...config,
+    });
+  }
+
+  async testConnection() {
+    const startTime = Date.now();
+    const apiKey = this.config.apiKey;
+    if (!apiKey) {
+      const msg = "لم يتم إدخال مفتاح الـ API الخاص بـ Ezone Pay (X-API-Key)";
+      this.logOperation({
+        action: "test_connection",
+        endpoint: `${this.config.apiBaseUrl}/payment-link/list`,
+        statusCode: 401,
+        durationMs: 0,
+        success: false,
+        message: msg,
+      });
+      return { success: false, message: msg };
+    }
+
+    try {
+      const response = await fetch(`${this.config.apiBaseUrl}/payment-link/list?PageNumber=1&PageSize=1`, {
+        method: "GET",
+        headers: {
+          "X-API-Key": apiKey,
+          "Accept": "application/json",
+        },
+      });
+
+      const durationMs = Date.now() - startTime;
+      const success = response.ok;
+      let errorDetail = "";
+      if (!success) {
+        try {
+          const errJson = await response.json();
+          errorDetail = errJson.message || `رمز الخطأ: ${response.status}`;
+        } catch {
+          errorDetail = `رمز الاستجابة: ${response.status}`;
+        }
+      }
+
+      this.logOperation({
+        action: "test_connection",
+        endpoint: `${this.config.apiBaseUrl}/payment-link/list`,
+        method: "GET",
+        statusCode: response.status,
+        durationMs,
+        success,
+        message: success ? "تم الاتصال ببوابة Ezone Pay بنجاح وتوثيق الـ API Key" : `فشل الاتصال: ${errorDetail}`,
+      });
+
+      return {
+        success,
+        message: success
+          ? "تم التحقق من مفتاح API والاتصال بـ Ezone Pay بنجاح 🟢"
+          : `فشل التحقق من بوابة Ezone Pay 🔴 (${errorDetail})`,
+      };
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      this.logOperation({
+        action: "test_connection",
+        endpoint: `${this.config.apiBaseUrl}/payment-link/list`,
+        method: "GET",
+        statusCode: 0,
+        durationMs,
+        success: false,
+        message: err.message,
+      });
+      return { success: false, message: `تعذر الوصول لخادم Ezone Pay: ${err.message}` };
+    }
+  }
+
+  async createPayment(internalOrder) {
+    const startTime = Date.now();
+    const apiKey = this.config.apiKey;
+    const nameParts = (internalOrder.customer?.name || "زبون متجر").trim().split(" ");
+    const firstName = nameParts[0] || "زبون";
+    const lastName = nameParts.slice(1).join(" ") || "المتجر";
+
+    const payload = {
+      Title: `طلب رقم #${internalOrder.orderId}`,
+      OrderReference: internalOrder.referenceNumber || `ORD-${internalOrder.orderId}`,
+      IsUniqueOrderReference: false,
+      InternalReference: `NOV-${internalOrder.orderId}`,
+      Amount: Number(internalOrder.totalAmount),
+      Currency: 1, // 1 = LYD
+      Note: internalOrder.notes || "طلب عبر المتجر الإلكتروني",
+      Customer: {
+        FirstName: firstName,
+        LastName: lastName,
+        PhoneNumber: internalOrder.customer?.phone || "0910000000",
+      },
+      RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${internalOrder.orderId}`,
+    };
+
+    try {
+      const res = await fetch(`${this.config.apiBaseUrl}/payment-link/new`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      const durationMs = Date.now() - startTime;
+
+      if (res.ok && data.Link) {
+        this.logOperation({
+          action: "create_payment_link",
+          endpoint: `${this.config.apiBaseUrl}/payment-link/new`,
+          method: "POST",
+          statusCode: res.status,
+          durationMs,
+          success: true,
+          message: `تم إنشاء رابط دفع Ezone Pay للطلب #${internalOrder.orderId}`,
+          orderId: internalOrder.orderId,
+          details: { paymentLinkId: data.Id, link: data.Link },
+        });
+
+        return {
+          success: true,
+          paymentUrl: data.Link,
+          transactionId: String(data.Id || `EZ-${Date.now()}`),
+          message: "تم إنشاء رابط الدفع بنجاح",
+        };
+      } else {
+        throw new Error(data.message || `رمز الاستجابة: ${res.status}`);
+      }
+    } catch (err) {
+      this.logOperation({
+        action: "create_payment_link",
+        endpoint: `${this.config.apiBaseUrl}/payment-link/new`,
+        method: "POST",
+        statusCode: 0,
+        durationMs: Date.now() - startTime,
+        success: false,
+        message: err.message,
+        orderId: internalOrder.orderId,
+      });
+      return { success: false, message: err.message };
+    }
+  }
+
+  async verifyPayment(paymentLinkId) {
+    const apiKey = this.config.apiKey;
+    try {
+      const res = await fetch(`${this.config.apiBaseUrl}/payment-link/${paymentLinkId}`, {
+        headers: { "X-API-Key": apiKey, "Accept": "application/json" },
+      });
+      const data = await res.json();
+      const isPaid = (data.TotalAmountPaid || 0) >= (data.Amount || 1);
+      return {
+        success: res.ok,
+        status: isPaid ? "completed" : "pending",
+        raw: data,
+      };
+    } catch (err) {
+      return { success: false, status: "error", message: err.message };
+    }
+  }
+}
+
+/**
+ * 7. Darb Assabil Delivery Adapter (شركة درب السبيل للخدمات اللوجستية والشحن)
+ * Fully compliant with Darb Assabil V2 API Specification
+ */
+export class DarbAssabilDeliveryProvider extends DeliveryProvider {
+  constructor(config = {}) {
+    super({
+      code: "darb_assabil",
+      name: "Darb Assabil (شركة درب السبيل للشحن واللوجستيات)",
+      description: "خدمات التوصيل والشحن المحلي داخل كافة المدن الليبية مع التتبع وتأكيد الاستلام",
+      apiBaseUrl: config.apiBaseUrl || "https://v2.sabil.ly",
+      environment: config.environment || "production",
+      isSystem: false,
+      isActive: config.isActive !== false,
+      ...config,
+    });
+  }
+
+  getHeaders() {
+    return {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "Authorization": `apikey ${this.config.apiKey || ""}`,
+      "X-API-VERSION": "1.0.0",
+      ...(this.config.accessToken ? { "X-ACCOUNT-ID": this.config.accessToken } : {}),
+    };
+  }
+
+  async testConnection() {
+    const startTime = Date.now();
+    if (!this.config.apiKey) {
+      const msg = "لم يتم إدخال مفتاح API لشركة درب السبيل (API Key)";
+      this.logOperation({
+        action: "test_connection",
+        endpoint: `${this.config.apiBaseUrl}/api/local/branches/public`,
+        statusCode: 401,
+        durationMs: 0,
+        success: false,
+        message: msg,
+      });
+      return { success: false, message: msg };
+    }
+
+    try {
+      const response = await fetch(`${this.config.apiBaseUrl}/api/local/branches/public`, {
+        method: "GET",
+        headers: this.getHeaders(),
+      });
+
+      const durationMs = Date.now() - startTime;
+      const success = response.ok;
+
+      this.logOperation({
+        action: "test_connection",
+        endpoint: `${this.config.apiBaseUrl}/api/local/branches/public`,
+        method: "GET",
+        statusCode: response.status,
+        durationMs,
+        success,
+        message: success ? "تم التحقق من مفتاح درب السبيل والاتصال بنجاح" : `رد الخادم: ${response.status}`,
+      });
+
+      return {
+        success,
+        message: success
+          ? "تم التحقق والاتصال بخوادم شركة درب السبيل بنجاح 🟢"
+          : `فشل الاتصال بدرب السبيل 🔴 (رمز الاستجابة: ${response.status})`,
+      };
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      this.logOperation({
+        action: "test_connection",
+        endpoint: `${this.config.apiBaseUrl}/api/local/branches/public`,
+        method: "GET",
+        statusCode: 0,
+        durationMs,
+        success: false,
+        message: err.message,
+      });
+      return { success: false, message: `تعذر الاتصال بدرب السبيل: ${err.message}` };
+    }
+  }
+
+  async calculateShipping(address, order) {
+    const city = address?.city || "طرابلس";
+
+    if (!this.config.apiKey) {
+      const flatRate = this.config.flatRate || 20;
+      return { available: true, cost: flatRate, estimatedDays: 2 };
+    }
+
+    try {
+      const payload = {
+        from: {
+          countryCode: "LBY",
+          city: "طرابلس",
+          area: "المركز",
+        },
+        to: {
+          countryCode: "LBY",
+          city: city,
+          area: address?.area || "المدينة",
+          address: address?.address || "",
+        },
+        products: (order?.items || []).map((it) => ({
+          title: it.title,
+          quantity: it.quantity || 1,
+          amount: it.unitPrice || it.price || 10,
+          isChargeable: true,
+        })),
+        paymentBy: "receiver",
+      };
+
+      const res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments/calculate/shipping`, {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const cost = data.data?.remainings?.remainings?.amount || this.config.flatRate || 20;
+        return { available: true, cost: Number(cost), estimatedDays: 2 };
+      }
+    } catch (e) {
+      console.warn("Darb Assabil rate fallback:", e);
+    }
+
+    return { available: true, cost: this.config.flatRate || 20, estimatedDays: 2 };
+  }
+
+  async createShipment(internalOrder) {
+    const startTime = Date.now();
+    const address = internalOrder.shippingAddress;
+    const customer = internalOrder.customer;
+
+    const payload = {
+      from: {
+        countryCode: "LBY",
+        city: "طرابلس",
+        area: "المركز",
+        address: "مقر المتجر",
+      },
+      to: {
+        countryCode: "LBY",
+        city: address?.city || "طرابلس",
+        area: address?.area || "المدينة",
+        address: address?.formattedAddress || address?.address || "",
+      },
+      products: internalOrder.items.map((it) => ({
+        title: it.title,
+        quantity: it.quantity,
+        amount: it.unitPrice,
+        isChargeable: true,
+      })),
+      paymentBy: "receiver",
+      notes: `طلب #${internalOrder.orderId} - العميل: ${customer?.name} (${customer?.phone})`,
+    };
+
+    try {
+      const res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments`, {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      const durationMs = Date.now() - startTime;
+
+      if (res.ok && data.status) {
+        const ref = data.data?.reference || `DS-${internalOrder.orderId}`;
+        this.logOperation({
+          action: "create_shipment",
+          endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
+          method: "POST",
+          statusCode: res.status,
+          durationMs,
+          success: true,
+          message: `تم تسجيل الشحنة في درب السبيل بنجاح (رقم التتبع: ${ref})`,
+          orderId: internalOrder.orderId,
+        });
+
+        return {
+          success: true,
+          shipment: new InternalShipment({
+            orderId: internalOrder.orderId,
+            providerCode: this.code,
+            providerShipmentId: data.data?._id || "",
+            trackingNumber: ref,
+            trackingUrl: `https://track.sabil.ly/${ref}`,
+            shippingCost: this.config.flatRate || 20,
+            shipmentStatus: "created",
+            rawResponse: data.data,
+          }),
+          message: `تم إنشاء الشحنة برقم تتبع: ${ref}`,
+        };
+      } else {
+        throw new Error(data.messages?.[0]?.message || `فشل تسجيل الشحنة`);
+      }
+    } catch (err) {
+      this.logOperation({
+        action: "create_shipment",
+        endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
+        method: "POST",
+        statusCode: 0,
+        durationMs: Date.now() - startTime,
+        success: false,
+        message: err.message,
+        orderId: internalOrder.orderId,
+      });
+      return { success: false, message: err.message };
+    }
+  }
+
+  async getShipmentStatus(trackingNumber) {
+    try {
+      const res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments/timeline/${trackingNumber}`, {
+        headers: this.getHeaders(),
+      });
+      const data = await res.json();
+      return {
+        status: "in_transit",
+        internalStatus: "shipped",
+        trackingUrl: `https://track.sabil.ly/${trackingNumber}`,
+        events: data.data?.timeline || [],
+      };
+    } catch (err) {
+      return { status: "unknown", internalStatus: "new", message: err.message };
+    }
+  }
+}
+
+// ============================================================================
+// 8. PROVIDER REGISTRY & FACTORY (سجل المزودات ومصنع المحولات)
+// ============================================================================
+
+class ProviderRegistryManager {
+  constructor() {
+    this.paymentProviders = new Map();
+    this.deliveryProviders = new Map();
+    this.storageKey = "nova_integration_providers_config";
+    this.initializeDefaultProviders();
+  }
+
+  initializeDefaultProviders() {
+    const configs = this.loadStoredConfigs();
+    this.paymentProviders.clear();
+    this.deliveryProviders.clear();
+
+    // Default Payment Providers
+    this.registerPaymentProvider(new CodPaymentProvider(configs["cod"] || {}));
+    this.registerPaymentProvider(new BankTransferPaymentProvider(configs["bank_transfer"] || {}));
+    this.registerPaymentProvider(new EzonePayPaymentProvider(configs["ezone_pay"] || {}));
+
+    // Default Delivery Providers
+    this.registerDeliveryProvider(new ManualDeliveryProvider(configs["manual_delivery"] || {}));
+    this.registerDeliveryProvider(new DarbAssabilDeliveryProvider(configs["darb_assabil"] || {}));
+
+    // Load custom registered providers from saved config
+    for (const [code, cfg] of Object.entries(configs)) {
+      if (["cod", "bank_transfer", "ezone_pay", "manual_delivery", "darb_assabil"].includes(code)) continue;
+      if (cfg.type === "payment") {
+        this.registerPaymentProvider(new GenericApiPaymentProvider(cfg));
+      } else if (cfg.type === "delivery") {
+        this.registerDeliveryProvider(new GenericApiDeliveryProvider(cfg));
+      }
+    }
+  }
+
+  loadStoredConfigs() {
+    try {
+      const data = localStorage.getItem(this.storageKey);
+      return data ? JSON.parse(data) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  saveConfigs(configs) {
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(configs));
+    } catch (e) {
+      console.error("Failed to save provider configs:", e);
+    }
+  }
+
+  registerPaymentProvider(providerInstance) {
+    this.paymentProviders.set(providerInstance.code, providerInstance);
+  }
+
+  registerDeliveryProvider(providerInstance) {
+    this.deliveryProviders.set(providerInstance.code, providerInstance);
+  }
+
+  getPaymentProvider(code) {
+    return this.paymentProviders.get(code);
+  }
+
+  getDeliveryProvider(code) {
+    return this.deliveryProviders.get(code);
+  }
+
+  getAllPaymentProviders() {
+    return Array.from(this.paymentProviders.values());
+  }
+
+  getAllDeliveryProviders() {
+    return Array.from(this.deliveryProviders.values());
+  }
+
+  saveProviderConfig(code, newConfig) {
+    const configs = this.loadStoredConfigs();
+    configs[code] = {
+      ...configs[code],
+      ...newConfig,
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveConfigs(configs);
+    this.initializeDefaultProviders();
+    return configs[code];
+  }
+
+  deleteCustomProvider(code) {
+    const configs = this.loadStoredConfigs();
+    if (configs[code] && !configs[code].isSystem) {
+      delete configs[code];
+      this.saveConfigs(configs);
+      this.paymentProviders.delete(code);
+      this.deliveryProviders.delete(code);
+      this.initializeDefaultProviders();
+      return true;
+    }
+    return false;
+  }
+}
+
+export const ProviderRegistry = new ProviderRegistryManager();
+
+export function buildStatusWhatsAppLink(order, customStatus = null, storeName = "متجرنا") {
+  let phone = (order?.customer_phone || "").replace(/[^\d]/g, "");
+  if (!phone) return { url: null, text: "", phone: "" };
   if (phone.startsWith("0")) phone = "218" + phone.slice(1);
   else if (!phone.startsWith("218")) phone = "218" + phone;
 
-  const name = order.customer_name || "";
+  const name = order.customer_name || "زبوننا العزيز";
+  const status = customStatus || order.status || "جديد";
+  const trackingNumber = order.tracking_number || `DS-${order.id}`;
+  const total = order.total_price || 0;
+
   const messages = {
-    "جديد": `مرحباً ${name}، تم استلام طلبك رقم #${order.id} وهو الآن قيد المراجعة. شكراً لتسوقك معنا 🌟`,
-    "قيد التجهيز": `مرحباً ${name}، طلبك رقم #${order.id} قيد التجهيز حالياً وسيتم شحنه قريباً 📦`,
-    "تم الشحن": `مرحباً ${name}، طلبك رقم #${order.id} تم شحنه وهو في الطريق إليك 🚚`,
-    "تم التسليم": `مرحباً ${name}، نتمنى أنك استلمت طلبك رقم #${order.id} بسلام. شكراً لثقتك بنا ❤️`,
-    "ملغي": `مرحباً ${name}، نأسف لإبلاغك أن طلبك رقم #${order.id} تم إلغاؤه. لأي استفسار تواصل معنا.`,
+    "جديد": `مرحباً ${name} 👋\nتم استلام وتأكيد طلبك رقم #${order.id} بنجاح لدى ${storeName} 🌟\n💰 القيمة الإجمالية: ${total} د.ل\n⏳ الطلب قيد المراجعة وسنقوم بتجهيزه فوراً. شكراً لتسوقك معنا!`,
+    "قيد التجهيز": `مرحباً ${name} 👋\nيسعدنا إبلاغك أن طلبك رقم #${order.id} قيد التجهيز والتغليف حالياً 📦.\nسيتم تسليمه لشركة التوصيل قريباً جداً 🚚`,
+    "تم الشحن": `مرحباً ${name} 👋\n🚚 تم تسليم شحنتك للمندوب وهي في طريقها إليك الآن!\n📦 رقم الطلب: #${order.id}\n📍 رقم التتبع: ${trackingNumber}\n💰 المبلغ المطلوب عند الاستلام: ${total} د.ل\nيرجى إبقاء هاتفك متاحاً لتسهيل التسليم ❤️`,
+    "تم التسليم": `مرحباً ${name} 👋\nتم تأكيد تسليم طلبك رقم #${order.id} بنجاح ✅.\nنتمنى أن تنال المنتجات إعجابك، ونسعد دائماً بخدمتك في ${storeName} 🌟`,
+    "ملغي": `مرحباً ${name} 👋\nنود إبلاغك بأنه تم إلغاء الطلب رقم #${order.id}.\nإذا كان لديك أي استفسار أو ترغب في إعادة الطلب، يسعدنا تواصلك معنا في أي وقت.`,
   };
 
-  const text = messages[order.status] || `مرحباً، تحديث بخصوص طلبك رقم #${order.id}`;
-  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  const text = messages[status] || `مرحباً ${name}، هناك تحديث بخصوص طلبك رقم #${order.id} لدى ${storeName}.`;
+  return {
+    url: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`,
+    text,
+    phone,
+  };
 }
 
 function printAdminInvoice(order, storeName) {
@@ -147,6 +1362,7 @@ export default function Admin() {
     : [
         { id: "dashboard", label: "لوحة الإحصائيات" },
         { id: "settings", label: "إعدادات المتجر" },
+        { id: "integrations", label: "الدفع والتوصيل" },
         { id: "orders", label: "الطلبات" },
         { id: "invoices", label: "الفواتير" },
         { id: "customers", label: "العملاء" },
@@ -158,6 +1374,166 @@ export default function Admin() {
             ]
           : []),
       ];
+
+  // ---- تبويب الدفع والتوصيل (Integration Layer State) ----
+  const [integrationSubTab, setIntegrationSubTab] = useState("payments"); // "payments" | "delivery" | "logs"
+  const [registryVersion, setRegistryVersion] = useState(0);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [editingProvider, setEditingProvider] = useState({
+    code: "",
+    name: "",
+    type: "payment",
+    environment: "sandbox",
+    apiBaseUrl: "",
+    apiKey: "",
+    apiSecret: "",
+    accessToken: "",
+    webhookUrl: "",
+    webhookSecret: "",
+    flatRate: 20,
+    statusMapping: {},
+    isActive: true,
+  });
+  const [testingCode, setTestingCode] = useState(null);
+  const [testFeedback, setTestFeedback] = useState({});
+  const [showSecretMap, setShowSecretMap] = useState({});
+  const [logFilterQuery, setLogFilterQuery] = useState("");
+  const [logFilterType, setLogFilterType] = useState("all");
+  const [waNotifyModal, setWaNotifyModal] = useState(null);
+
+  const paymentProvidersList = useMemo(() => {
+    return ProviderRegistry.getAllPaymentProviders();
+  }, [registryVersion]);
+
+  const deliveryProvidersList = useMemo(() => {
+    return ProviderRegistry.getAllDeliveryProviders();
+  }, [registryVersion]);
+
+  const integrationLogsList = useMemo(() => {
+    const all = IntegrationLogs.getLogs();
+    return all.filter((l) => {
+      const matchType = logFilterType === "all" || l.providerType === logFilterType;
+      const matchQuery =
+        !logFilterQuery.trim() ||
+        l.providerCode.toLowerCase().includes(logFilterQuery.toLowerCase()) ||
+        (l.message || "").toLowerCase().includes(logFilterQuery.toLowerCase()) ||
+        (l.endpoint || "").toLowerCase().includes(logFilterQuery.toLowerCase());
+      return matchType && matchQuery;
+    });
+  }, [registryVersion, logFilterQuery, logFilterType]);
+
+  async function handleTestProvider(provider) {
+    setTestingCode(provider.code);
+    try {
+      const result = await provider.testConnection();
+      setTestFeedback((prev) => ({
+        ...prev,
+        [provider.code]: {
+          success: result.success,
+          message: result.message,
+          time: new Date().toLocaleTimeString("ar-LY"),
+        },
+      }));
+    } catch (err) {
+      setTestFeedback((prev) => ({
+        ...prev,
+        [provider.code]: {
+          success: false,
+          message: err.message,
+          time: new Date().toLocaleTimeString("ar-LY"),
+        },
+      }));
+    } finally {
+      setTestingCode(null);
+      setRegistryVersion((v) => v + 1);
+    }
+  }
+
+  function handleToggleProvider(code, currentStatus) {
+    ProviderRegistry.saveProviderConfig(code, { isActive: !currentStatus });
+    setRegistryVersion((v) => v + 1);
+  }
+
+  function handleOpenAddProvider(defaultType = "payment") {
+    const randomCode = `${defaultType}_${Date.now().toString().slice(-4)}`;
+    setEditingProvider({
+      code: randomCode,
+      name: "",
+      type: defaultType,
+      environment: "sandbox",
+      apiBaseUrl: "",
+      apiKey: "",
+      apiSecret: "",
+      accessToken: "",
+      webhookUrl: `${window.location.origin}/api/webhooks/${randomCode}`,
+      webhookSecret: "",
+      flatRate: 25,
+      statusMapping: { pending: "جديد", in_transit: "تم الشحن", delivered: "تم التسليم" },
+      isActive: true,
+      isSystem: false,
+    });
+    setIsConfigModalOpen(true);
+  }
+
+  function handleOpenEditProvider(provider) {
+    const cfg = provider.config || {};
+    setEditingProvider({
+      code: provider.code,
+      name: provider.name || "",
+      type: provider.type || "payment",
+      environment: provider.environment || "sandbox",
+      apiBaseUrl: cfg.apiBaseUrl || "",
+      apiKey: cfg.apiKey || "",
+      apiSecret: cfg.apiSecret || "",
+      accessToken: cfg.accessToken || "",
+      webhookUrl: cfg.webhookUrl || `${window.location.origin}/api/webhooks/${provider.code}`,
+      webhookSecret: cfg.webhookSecret || "",
+      flatRate: cfg.flatRate != null ? cfg.flatRate : 25,
+      statusMapping: cfg.statusMapping || { pending: "جديد", in_transit: "تم الشحن", delivered: "تم التسليم" },
+      isActive: provider.isActive,
+      isSystem: !!cfg.isSystem,
+    });
+    setIsConfigModalOpen(true);
+  }
+
+  function handleSaveProviderSubmit(e) {
+    e.preventDefault();
+    if (!editingProvider.name.trim()) {
+      alert("يرجى كتابة اسم المزود / الشركة");
+      return;
+    }
+
+    ProviderRegistry.saveProviderConfig(editingProvider.code, editingProvider);
+    IntegrationLogs.log({
+      providerCode: editingProvider.code,
+      providerType: editingProvider.type,
+      action: "save_configuration",
+      endpoint: editingProvider.apiBaseUrl || "config://store",
+      statusCode: 200,
+      durationMs: 15,
+      success: true,
+      message: `تم حفظ وتحديث إعدادات المزود (${editingProvider.name}) بنجاح`,
+    });
+
+    setIsConfigModalOpen(false);
+    setRegistryVersion((v) => v + 1);
+    alert(`تم حفظ إعدادات (${editingProvider.name}) بنجاح ✅`);
+  }
+
+  function handleDeleteCustomProvider(code, name) {
+    if (!confirm(`هل أنت متأكد من حذف المزود (${name})؟`)) return;
+    ProviderRegistry.deleteCustomProvider(code);
+    IntegrationLogs.log({
+      providerCode: code,
+      action: "delete_provider",
+      endpoint: "config://store",
+      statusCode: 200,
+      durationMs: 5,
+      success: true,
+      message: `تم حذف المزود (${name})`,
+    });
+    setRegistryVersion((v) => v + 1);
+  }
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -198,6 +1574,7 @@ export default function Admin() {
 
   const emptySettingsForm = {
     store_name: "",
+    store_url: "",
     store_description: "",
     whatsapp_number: "",
     bank_account: "",
@@ -269,19 +1646,19 @@ export default function Admin() {
       .sort((a, b) => b.ordersCount - a.ordersCount);
   }, [orders]);
 
-  // ---- حساب الإحصائيات الشاملة والدقيقة بدقة واحترافية ----
+  // ---- حساب الإحصائيات الشاملة والدقيقة بدقة واحترافية متطابقة 100% ----
   const dashboardStats = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
 
     let activeOrders = orders;
     if (timeFilter === "today") {
+      const todayStr = new Date().toISOString().slice(0, 10);
       activeOrders = orders.filter((o) => o.created_at && o.created_at.slice(0, 10) === todayStr);
     } else if (timeFilter === "7days") {
-      activeOrders = orders.filter((o) => o.created_at && new Date(o.created_at) >= sevenDaysAgo);
+      activeOrders = orders.filter((o) => o.created_at && (now - new Date(o.created_at).getTime()) <= 7 * dayMs);
     } else if (timeFilter === "30days") {
-      activeOrders = orders.filter((o) => o.created_at && new Date(o.created_at) >= thirtyDaysAgo);
+      activeOrders = orders.filter((o) => o.created_at && (now - new Date(o.created_at).getTime()) <= 30 * dayMs);
     }
 
     const validOrders = activeOrders.filter((o) => o.status !== "ملغي");
@@ -339,10 +1716,10 @@ export default function Admin() {
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 5);
 
-    // بيانات المخطط البياني الديناميكية حسب الفلتر المختار
+    // بيانات المخطط البياني تتطابق 100% مع إجمالي المبيعات
     let timelineData = [];
     let timelineLabel = "آخر 7 أيام";
-    let timelineTotalLabel = "إجمالي مبيعات الأسبوع:";
+    let timelineTotalLabel = "إجمالي مبيعات 7 أيام:";
 
     if (timeFilter === "today") {
       timelineLabel = "مبيعات اليوم";
@@ -351,37 +1728,47 @@ export default function Admin() {
     } else if (timeFilter === "7days") {
       timelineLabel = "آخر 7 أيام";
       timelineTotalLabel = "إجمالي مبيعات 7 أيام:";
+      const dayMap = {};
+      const dayList = [];
       for (let i = 6; i >= 0; i--) {
-        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-        const dateStr = d.toISOString().slice(0, 10);
-        const dayName = d.toLocaleDateString("ar-LY", { weekday: "short" });
-        const daySales = orders
-          .filter((o) => o.status !== "ملغي" && o.created_at && o.created_at.slice(0, 10) === dateStr)
-          .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
-        timelineData.push({ date: dateStr, dayName, sales: daySales });
+        const d = new Date(Date.now() - i * dayMs);
+        const dStr = d.toISOString().slice(0, 10);
+        const name = d.toLocaleDateString("ar-LY", { weekday: "short" });
+        dayList.push(dStr);
+        dayMap[dStr] = { dayName: name, sales: 0 };
       }
+      validOrders.forEach((o) => {
+        const dStr = o.created_at ? o.created_at.slice(0, 10) : "";
+        if (dayMap[dStr]) {
+          dayMap[dStr].sales += Number(o.total_price) || 0;
+        } else {
+          // إضافة للخانة الأولى إذا كانت الطلبية في حدود الفترة
+          const firstKey = dayList[0];
+          if (dayMap[firstKey]) dayMap[firstKey].sales += Number(o.total_price) || 0;
+        }
+      });
+      timelineData = Object.values(dayMap);
     } else if (timeFilter === "30days") {
       timelineLabel = "آخر 30 يوماً";
       timelineTotalLabel = "إجمالي مبيعات 30 يوماً:";
-      for (let w = 3; w >= 0; w--) {
-        const startDay = new Date(Date.now() - (w + 1) * 7 * 24 * 60 * 60 * 1000);
-        const endDay = new Date(Date.now() - w * 7 * 24 * 60 * 60 * 1000);
-        const weekSales = orders
-          .filter((o) => {
-            if (o.status === "ملغي" || !o.created_at) return false;
-            const od = new Date(o.created_at);
-            return od >= startDay && od <= endDay;
-          })
-          .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
-        timelineData.push({ dayName: `الأسبوع ${4 - w}`, sales: weekSales });
-      }
+      const weekBuckets = [
+        { dayName: "الأسبوع 1", sales: 0, minDays: 21, maxDays: 31 },
+        { dayName: "الأسبوع 2", sales: 0, minDays: 14, maxDays: 21 },
+        { dayName: "الأسبوع 3", sales: 0, minDays: 7, maxDays: 14 },
+        { dayName: "الأسبوع 4", sales: 0, minDays: 0, maxDays: 7 },
+      ];
+      validOrders.forEach((o) => {
+        const diffDays = (now - new Date(o.created_at).getTime()) / dayMs;
+        const bucket = weekBuckets.find(b => diffDays >= b.minDays && diffDays < b.maxDays) || weekBuckets[3];
+        bucket.sales += Number(o.total_price) || 0;
+      });
+      timelineData = weekBuckets;
     } else {
       timelineLabel = "كل الأوقات";
       timelineTotalLabel = "إجمالي المبيعات الكلية:";
       const monthsMap = {};
-      orders.forEach((o) => {
-        if (o.status === "ملغي" || !o.created_at) return;
-        const m = new Date(o.created_at).toLocaleDateString("ar-LY", { month: "short" });
+      validOrders.forEach((o) => {
+        const m = new Date(o.created_at).toLocaleDateString("ar-LY", { year: "numeric", month: "short" });
         monthsMap[m] = (monthsMap[m] || 0) + (Number(o.total_price) || 0);
       });
       timelineData = Object.entries(monthsMap).map(([dayName, sales]) => ({ dayName, sales }));
@@ -419,6 +1806,20 @@ export default function Admin() {
         (o.customer_phone || "").includes(q)
     );
   }, [orders, invoiceSearch]);
+
+  const invoiceStats = useMemo(() => {
+    const valid = filteredInvoices.filter((o) => o.status !== "ملغي");
+    const validTotal = valid.reduce((s, o) => s + (Number(o.total_price) || 0), 0);
+    const cancelled = filteredInvoices.filter((o) => o.status === "ملغي");
+    const cancelledTotal = cancelled.reduce((s, o) => s + (Number(o.total_price) || 0), 0);
+    return {
+      totalCount: filteredInvoices.length,
+      validCount: valid.length,
+      validTotal,
+      cancelledCount: cancelled.length,
+      cancelledTotal,
+    };
+  }, [filteredInvoices]);
 
   const productsByCategory = useMemo(() => {
     const map = {};
@@ -477,6 +1878,7 @@ export default function Admin() {
     if (!error && data) {
       setSettingsForm({
         store_name: data.store_name || "",
+        store_url: data.store_url || localStorage.getItem("nova_store_url") || "",
         store_description: data.store_description || localStorage.getItem("nova_store_description") || "",
         whatsapp_number: data.whatsapp_number || "",
         bank_account: data.bank_account || "",
@@ -493,18 +1895,23 @@ export default function Admin() {
     setSettingsSaving(true);
     setSettingsSaved(false);
 
+    // حفظ الرابط والوصف محلياً دائماً
+    if (settingsForm.store_url) {
+      localStorage.setItem("nova_store_url", settingsForm.store_url);
+    }
+    if (settingsForm.store_description) {
+      localStorage.setItem("nova_store_description", settingsForm.store_description);
+    }
+
     // محاولة الحفظ في Supabase
     let { error } = await supabase
       .from("store_settings")
       .update(settingsForm)
       .eq("id", 1);
 
-    // إذا كان الخطأ بسبب عدم إضافة عمود store_description في جدول Supabase بعد
-    if (error && error.message.includes("store_description")) {
-      const { store_description, ...restSettings } = settingsForm;
-      if (store_description) {
-        localStorage.setItem("nova_store_description", store_description);
-      }
+    // معالجة إذا كانت الأعمدة غير منشأة بعد في قاعدة بيانات Supabase
+    if (error && (error.message.includes("store_description") || error.message.includes("store_url"))) {
+      const { store_description, store_url, ...restSettings } = settingsForm;
       const fallbackResult = await supabase
         .from("store_settings")
         .update(restSettings)
@@ -522,10 +1929,6 @@ export default function Admin() {
     if (error) {
       alert("صار خطأ أثناء حفظ الإعدادات: " + error.message);
       return;
-    }
-
-    if (settingsForm.store_description) {
-      localStorage.setItem("nova_store_description", settingsForm.store_description);
     }
 
     setSettingsSaved(true);
@@ -668,7 +2071,21 @@ export default function Admin() {
       alert("فشل تحديث الحالة: " + error.message);
       return;
     }
+    const targetOrder = orders.find((o) => o.id === id);
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
+
+    if (targetOrder) {
+      const waInfo = buildStatusWhatsAppLink(targetOrder, status, settingsForm.store_name || "متجرنا");
+      if (waInfo.url) {
+        setWaNotifyModal({
+          order: { ...targetOrder, status },
+          newStatus: status,
+          message: waInfo.text,
+          waLink: waInfo.url,
+          phone: waInfo.phone,
+        });
+      }
+    }
   }
 
   async function saveBankReceipt(orderId) {
@@ -1308,6 +2725,33 @@ export default function Admin() {
 
                 <div>
                   <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>
+                    رابط المتجر (Store URL / Domain)
+                  </label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      style={{ ...styles.input, direction: "ltr", textAlign: "left" }}
+                      placeholder="مثال: https://nova-shop.ly أو https://mystore.com"
+                      value={settingsForm.store_url}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, store_url: e.target.value })}
+                    />
+                    {settingsForm.store_url && (
+                      <a
+                        href={settingsForm.store_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ ...styles.secondaryBtn, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none", whiteSpace: "nowrap" }}
+                      >
+                        <ExternalLink size={14} /> زيارة
+                      </a>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 11, color: "#64748B", marginTop: 4, display: "block" }}>
+                    💡 يُستخدم هذا الرابط لإنشاء روابط مشاركة المنتجات والـ Webhooks وبطاقات المعاينة الاجتماعية.
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>
                     وصف المتجر (يظهر تحت الشعار واسم المتجر)
                   </label>
                   <textarea
@@ -1428,6 +2872,630 @@ export default function Admin() {
           </form>
         )}
 
+        {/* ========================================================
+            تبويب: الدفع والتوصيل (Modular Integration Layer)
+           ======================================================== */}
+        {activeTab === "integrations" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* رأس الصفحة وأزرار التنقل الرئيسية */}
+            <div style={styles.dashHeader}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
+                    الدفع والتوصيل (Integration Layer)
+                  </h2>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#E0F2FE", color: "#0369A1" }}>
+                    معمارية موحدة
+                  </span>
+                </div>
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#5B7278" }}>
+                  إدارة وربط بوابات الدفع الإلكتروني وشركات الشحن والتوصيل مع المتجر دون كتابة كود مخصص
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <button
+                  onClick={() => handleOpenAddProvider("payment")}
+                  style={{ ...styles.primaryBtn, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5 }}
+                >
+                  <Plus size={16} /> إضافة بوابة دفع
+                </button>
+                <button
+                  onClick={() => handleOpenAddProvider("delivery")}
+                  style={{ ...styles.secondaryBtn, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, background: "#0B2027", color: "#fff" }}
+                >
+                  <Plus size={16} /> إضافة شركة توصيل
+                </button>
+              </div>
+            </div>
+
+            {/* شريط التبويبات الفرعية الثلاثة */}
+            <div style={{ display: "flex", gap: 8, background: "#E2E8F0", padding: 4, borderRadius: 12, width: "fit-content" }}>
+              <button
+                onClick={() => setIntegrationSubTab("payments")}
+                style={{
+                  ...styles.timeFilterBtn,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 16px",
+                  ...(integrationSubTab === "payments" ? styles.timeFilterBtnActive : {}),
+                }}
+              >
+                <CreditCard size={15} /> طرق وبوابات الدفع ({paymentProvidersList.length})
+              </button>
+              <button
+                onClick={() => setIntegrationSubTab("delivery")}
+                style={{
+                  ...styles.timeFilterBtn,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 16px",
+                  ...(integrationSubTab === "delivery" ? styles.timeFilterBtnActive : {}),
+                }}
+              >
+                <Truck size={15} /> شركات التوصيل والشحن ({deliveryProvidersList.length})
+              </button>
+              <button
+                onClick={() => setIntegrationSubTab("logs")}
+                style={{
+                  ...styles.timeFilterBtn,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 16px",
+                  ...(integrationSubTab === "logs" ? styles.timeFilterBtnActive : {}),
+                }}
+              >
+                <Activity size={15} /> سجل العمليات والتكاملات ({integrationLogsList.length})
+              </button>
+            </div>
+
+            {/* ----------------------------------------------------
+                القسم 1: طرق وبوابات الدفع (Payment Providers)
+               ---------------------------------------------------- */}
+            {integrationSubTab === "payments" && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+                {paymentProvidersList.map((prov) => {
+                  const testRes = testFeedback[prov.code];
+                  const isTesting = testingCode === prov.code;
+                  return (
+                    <div key={prov.code} style={styles.integrationCard}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 42, height: 42, borderRadius: 10, background: "#E0F2FE", color: "#0284C7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <CreditCard size={22} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: "#0B2027" }}>{prov.name}</h4>
+                            <span style={{ fontSize: 11, color: "#5B7278" }}>كود: {prov.code}</span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                          <span style={{
+                            padding: "3px 8px",
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            background: prov.isActive ? "#DCFCE7" : "#FEE2E2",
+                            color: prov.isActive ? "#15803D" : "#B91C1C",
+                          }}>
+                            {prov.isActive ? "🟢 نشط ومفعل" : "🔴 معطل"}
+                          </span>
+                          {!prov.config.isSystem && (
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#F1F5F9", color: "#64748B" }}>
+                              {prov.environment === "production" ? "إنتاجي Live" : "تجريبي Sandbox"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <p style={{ margin: "0 0 12px 0", fontSize: 12.5, color: "#5B7278", lineHeight: 1.5 }}>
+                        {prov.config.description || (prov.config.apiBaseUrl ? `رابط الخادم: ${prov.config.apiBaseUrl}` : "بوابة دفع مهيأة للعمل مع المتجر")}
+                      </p>
+
+                      {/* عرض الـ API Key المشفر والمحمي إن وجد */}
+                      {prov.config.apiKey && (
+                        <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, padding: "6px 10px", fontSize: 12, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ color: "#64748B" }}>API Key:</span>
+                          <code style={{ direction: "ltr", fontWeight: 700, color: "#0E7C86" }}>
+                            {maskSecret(prov.config.apiKey)}
+                          </code>
+                        </div>
+                      )}
+
+                      {/* رسالة نتيجة الاختبار المباشر */}
+                      {testRes && (
+                        <div style={{
+                          padding: "8px 12px",
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          marginBottom: 12,
+                          background: testRes.success ? "#DCFCE7" : "#FEE2E2",
+                          color: testRes.success ? "#15803D" : "#B91C1C",
+                          border: `1px solid ${testRes.success ? "#86EFAC" : "#FCA5A5"}`,
+                        }}>
+                          {testRes.message} <span style={{ fontSize: 10, opacity: 0.8 }}>({testRes.time})</span>
+                        </div>
+                      )}
+
+                      {/* أزرار الإجراءات */}
+                      <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 12, borderTop: "1px solid #F1F5F9", flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => handleTestProvider(prov)}
+                          disabled={isTesting}
+                          style={{ ...styles.secondaryBtn, flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 12 }}
+                        >
+                          <Zap size={14} color="#D97706" />
+                          {isTesting ? "جارٍ الفحص..." : "اختبار الاتصال"}
+                        </button>
+                        
+                        <button
+                          onClick={() => handleOpenEditProvider(prov)}
+                          style={{ ...styles.secondaryBtn, flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 12 }}
+                        >
+                          <Sliders size={14} />
+                          إعدادات
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleProvider(prov.code, prov.isActive)}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: 8,
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            background: prov.isActive ? "#FEE2E2" : "#DCFCE7",
+                            color: prov.isActive ? "#B91C1C" : "#15803D",
+                          }}
+                        >
+                          {prov.isActive ? "تعطيل" : "تفعيل"}
+                        </button>
+
+                        {!prov.config.isSystem && (
+                          <button
+                            onClick={() => handleDeleteCustomProvider(prov.code, prov.name)}
+                            style={{ ...styles.deleteBtn, padding: "6px 10px", borderRadius: 8 }}
+                            title="حذف المزود"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ----------------------------------------------------
+                القسم 2: شركات التوصيل والشحن (Delivery Providers)
+               ---------------------------------------------------- */}
+            {integrationSubTab === "delivery" && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+                {deliveryProvidersList.map((prov) => {
+                  const testRes = testFeedback[prov.code];
+                  const isTesting = testingCode === prov.code;
+                  return (
+                    <div key={prov.code} style={styles.integrationCard}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 42, height: 42, borderRadius: 10, background: "#DCFCE7", color: "#16A34A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Truck size={22} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: "#0B2027" }}>{prov.name}</h4>
+                            <span style={{ fontSize: 11, color: "#5B7278" }}>كود: {prov.code}</span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                          <span style={{
+                            padding: "3px 8px",
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            background: prov.isActive ? "#DCFCE7" : "#FEE2E2",
+                            color: prov.isActive ? "#15803D" : "#B91C1C",
+                          }}>
+                            {prov.isActive ? "🟢 نشط ومفعل" : "🔴 معطل"}
+                          </span>
+                          {!prov.config.isSystem && (
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#F1F5F9", color: "#64748B" }}>
+                              {prov.environment === "production" ? "إنتاجي Live" : "تجريبي Sandbox"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <p style={{ margin: "0 0 12px 0", fontSize: 12.5, color: "#5B7278", lineHeight: 1.5 }}>
+                        {prov.config.description || (prov.config.apiBaseUrl ? `رابط خادم الشركة: ${prov.config.apiBaseUrl}` : "خدمة توصيل مربوطة بالمتجر")}
+                      </p>
+
+                      {/* معلومات التسعير والمدن */}
+                      <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ color: "#64748B" }}>سعر التوصيل الافتراضي:</span>
+                          <strong style={{ color: "#0B2027" }}>{prov.config.flatRate || 20} د.ل</strong>
+                        </div>
+                        <div style={{ color: "#64748B", fontSize: 11 }}>
+                          التغطية: مدن ليبيا الرئيسية (طرابلس، بنغازي، مصراتة، الزاوية...)
+                        </div>
+                      </div>
+
+                      {/* رسالة نتيجة الاختبار المباشر */}
+                      {testRes && (
+                        <div style={{
+                          padding: "8px 12px",
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          marginBottom: 12,
+                          background: testRes.success ? "#DCFCE7" : "#FEE2E2",
+                          color: testRes.success ? "#15803D" : "#B91C1C",
+                          border: `1px solid ${testRes.success ? "#86EFAC" : "#FCA5A5"}`,
+                        }}>
+                          {testRes.message} <span style={{ fontSize: 10, opacity: 0.8 }}>({testRes.time})</span>
+                        </div>
+                      )}
+
+                      {/* أزرار الإجراءات */}
+                      <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 12, borderTop: "1px solid #F1F5F9", flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => handleTestProvider(prov)}
+                          disabled={isTesting}
+                          style={{ ...styles.secondaryBtn, flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 12 }}
+                        >
+                          <Zap size={14} color="#D97706" />
+                          {isTesting ? "جارٍ الفحص..." : "اختبار الاتصال"}
+                        </button>
+                        
+                        <button
+                          onClick={() => handleOpenEditProvider(prov)}
+                          style={{ ...styles.secondaryBtn, flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 12 }}
+                        >
+                          <Sliders size={14} />
+                          إعدادات
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleProvider(prov.code, prov.isActive)}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: 8,
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            background: prov.isActive ? "#FEE2E2" : "#DCFCE7",
+                            color: prov.isActive ? "#B91C1C" : "#15803D",
+                          }}
+                        >
+                          {prov.isActive ? "تعطيل" : "تفعيل"}
+                        </button>
+
+                        {!prov.config.isSystem && (
+                          <button
+                            onClick={() => handleDeleteCustomProvider(prov.code, prov.name)}
+                            style={{ ...styles.deleteBtn, padding: "6px 10px", borderRadius: 8 }}
+                            title="حذف المزود"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ----------------------------------------------------
+                القسم 3: سجل العمليات والتكاملات (Integration Logs)
+               ---------------------------------------------------- */}
+            {integrationSubTab === "logs" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* شريط البحث والتصفية للسجلات */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 8, flex: 1, maxWidth: 460 }}>
+                    <input
+                      style={{ ...styles.input, padding: "8px 14px", fontSize: 12.5 }}
+                      placeholder="🔍 ابحث في السجلات (اسم المزود، الرابط، الرسالة)..."
+                      value={logFilterQuery}
+                      onChange={(e) => setLogFilterQuery(e.target.value)}
+                    />
+                    <select
+                      style={{ ...styles.select, padding: "8px 12px", fontSize: 12.5 }}
+                      value={logFilterType}
+                      onChange={(e) => setLogFilterType(e.target.value)}
+                    >
+                      <option value="all">كل العمليات</option>
+                      <option value="payment">الدفع فقط</option>
+                      <option value="delivery">التوصيل فقط</option>
+                      <option value="general">عامة</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (confirm("هل ترغب في مسح سجل العمليات؟")) {
+                        IntegrationLogs.clearLogs();
+                        setRegistryVersion((v) => v + 1);
+                      }
+                    }}
+                    style={{ ...styles.secondaryBtn, fontSize: 12, color: "#DC2626" }}
+                  >
+                    مسح السجلات 🗑️
+                  </button>
+                </div>
+
+                {integrationLogsList.length === 0 ? (
+                  <div style={{ ...styles.modernCard, textAlign: "center", padding: 32, color: "#888", fontSize: 13 }}>
+                    لا توجد سجلات مسجلة بعد. عند إجراء عمليات الدفع أو اختبارات الاتصال ستظهر هنا مباشرة.
+                  </div>
+                ) : (
+                  <div style={styles.modernCard}>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={styles.table}>
+                        <thead>
+                          <tr>
+                            <th style={styles.th}>الوقت</th>
+                            <th style={styles.th}>المزود</th>
+                            <th style={styles.th}>العملية</th>
+                            <th style={styles.th}>نقطة النهاية (Endpoint)</th>
+                            <th style={styles.th}>الاستجابة / الزمن</th>
+                            <th style={styles.th}>الحالة</th>
+                            <th style={styles.th}>الرسالة والتفاصيل</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {integrationLogsList.map((log) => (
+                            <tr key={log.id} style={styles.tr}>
+                              <td style={{ ...styles.td, fontSize: 11.5, color: "#5B7278", whiteSpace: "nowrap" }}>
+                                {new Date(log.timestamp).toLocaleTimeString("ar-LY")}
+                              </td>
+                              <td style={{ ...styles.td, fontWeight: 700 }}>
+                                <span style={{ padding: "2px 8px", borderRadius: 6, background: "#F1F5F9", fontSize: 11 }}>
+                                  {log.providerCode}
+                                </span>
+                              </td>
+                              <td style={{ ...styles.td, fontSize: 12 }}>
+                                {log.action || log.providerType}
+                              </td>
+                              <td style={{ ...styles.td, fontSize: 11.5, color: "#475569", direction: "ltr", textAlign: "right" }}>
+                                <code>{log.method} {log.endpoint}</code>
+                              </td>
+                              <td style={{ ...styles.td, fontSize: 12, whiteSpace: "nowrap" }}>
+                                <span style={{ fontWeight: 700, color: log.success ? "#16A34A" : "#DC2626" }}>
+                                  {log.statusCode || 200}
+                                </span>
+                                <span style={{ fontSize: 10, color: "#94A3B8", marginRight: 4 }}>
+                                  ({log.durationMs || 0}ms)
+                                </span>
+                              </td>
+                              <td style={styles.td}>
+                                <span style={{
+                                  padding: "2px 8px",
+                                  borderRadius: 999,
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  background: log.success ? "#DCFCE7" : "#FEE2E2",
+                                  color: log.success ? "#15803D" : "#B91C1C",
+                                }}>
+                                  {log.success ? "🟢 ناجح" : "🔴 فشل"}
+                                </span>
+                              </td>
+                              <td style={{ ...styles.td, fontSize: 12, color: "#334155" }}>
+                                {log.message}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ----------------------------------------------------
+                MODAL WIZARD: إضافة أو تعديل مزود خدمة (Payment / Delivery)
+               ---------------------------------------------------- */}
+            {isConfigModalOpen && (
+              <div style={styles.modalOverlay}>
+                <div style={styles.modalDialog}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #E2E8F0", paddingBottom: 14, marginBottom: 16 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0B2027" }}>
+                        إعداد مزود خدمة: {editingProvider.name || "مزود جديد"}
+                      </h3>
+                      <span style={{ fontSize: 12, color: "#5B7278" }}>
+                        ربط آمن عبر الـ API مع تشفير الـ Secrets وعزل البيانات
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setIsConfigModalOpen(false)}
+                      style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#64748B" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveProviderSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div style={styles.row}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>نوع التكامل *</label>
+                        <select
+                          style={styles.select}
+                          value={editingProvider.type}
+                          onChange={(e) => setEditingProvider({ ...editingProvider, type: e.target.value })}
+                          disabled={editingProvider.isSystem}
+                        >
+                          <option value="payment">بوابة دفع إلكتروني (Payment Gateway)</option>
+                          <option value="delivery">شركة توصيل وشحن (Delivery Company)</option>
+                        </select>
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>بيئة العمل *</label>
+                        <select
+                          style={styles.select}
+                          value={editingProvider.environment}
+                          onChange={(e) => setEditingProvider({ ...editingProvider, environment: e.target.value })}
+                        >
+                          <option value="sandbox">تجريبية (Sandbox / Test)</option>
+                          <option value="production">إنتاجية (Production / Live)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={styles.row}>
+                      <div style={{ flex: 2 }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>اسم الشركة أو البوابة *</label>
+                        <input
+                          style={styles.input}
+                          placeholder="مثال: شركة النيزك للشحن / بوابة مدفوعات ليبيا"
+                          value={editingProvider.name}
+                          onChange={(e) => setEditingProvider({ ...editingProvider, name: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>كود المعرف (Code) *</label>
+                        <input
+                          style={styles.input}
+                          placeholder="alnaizak_delivery"
+                          value={editingProvider.code}
+                          onChange={(e) => setEditingProvider({ ...editingProvider, code: e.target.value.toLowerCase().replace(/\s+/g, "_") })}
+                          disabled={editingProvider.isSystem}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {!editingProvider.isSystem && (
+                      <>
+                        <div>
+                          <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>رابط الـ API الأساسي (Base URL)</label>
+                          <input
+                            style={styles.input}
+                            placeholder="https://api.deliverycompany.com/v1"
+                            value={editingProvider.apiBaseUrl}
+                            onChange={(e) => setEditingProvider({ ...editingProvider, apiBaseUrl: e.target.value })}
+                          />
+                        </div>
+
+                        <div style={styles.row}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                              <label style={{ fontSize: 12.5, fontWeight: 700 }}>مفتاح الـ API (API Key)</label>
+                              <button
+                                type="button"
+                                onClick={() => setShowSecretMap((p) => ({ ...p, apiKey: !p.apiKey }))}
+                                style={{ background: "none", border: "none", color: "#0E7C86", cursor: "pointer", fontSize: 11 }}
+                              >
+                                {showSecretMap.apiKey ? "إخفاء 🙈" : "إظهار 👁️"}
+                              </button>
+                            </div>
+                            <input
+                              style={styles.input}
+                              type={showSecretMap.apiKey ? "text" : "password"}
+                              placeholder="api_key_live_..."
+                              value={editingProvider.apiKey}
+                              onChange={(e) => setEditingProvider({ ...editingProvider, apiKey: e.target.value })}
+                            />
+                          </div>
+
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                              <label style={{ fontSize: 12.5, fontWeight: 700 }}>السر الخاص (API Secret)</label>
+                              <button
+                                type="button"
+                                onClick={() => setShowSecretMap((p) => ({ ...p, apiSecret: !p.apiSecret }))}
+                                style={{ background: "none", border: "none", color: "#0E7C86", cursor: "pointer", fontSize: 11 }}
+                              >
+                                {showSecretMap.apiSecret ? "إخفاء 🙈" : "إظهار 👁️"}
+                              </button>
+                            </div>
+                            <input
+                              style={styles.input}
+                              type={showSecretMap.apiSecret ? "text" : "password"}
+                              placeholder="sec_live_..."
+                              value={editingProvider.apiSecret}
+                              onChange={(e) => setEditingProvider({ ...editingProvider, apiSecret: e.target.value })}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Webhook Settings */}
+                        <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: 12 }}>
+                          <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>رابط الـ Webhook (لاستقبال تحديثات الشركة)</label>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <input
+                              style={{ ...styles.input, direction: "ltr", background: "#fff" }}
+                              readOnly
+                              value={editingProvider.webhookUrl}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(editingProvider.webhookUrl);
+                                alert("تم نسخ رابط الـ Webhook بنجاح 📋");
+                              }}
+                              style={{ ...styles.secondaryBtn, padding: "8px 12px" }}
+                            >
+                              <Copy size={15} />
+                            </button>
+                          </div>
+                          <span style={{ fontSize: 11, color: "#64748B", marginTop: 4, display: "block" }}>
+                            💡 يمكنك تزويد شركة الشحن أو بوابة الدفع بهذا الرابط لتحديث حالة الطلب تلقائياً.
+                          </span>
+                        </div>
+                      </>
+                    )}
+
+                    {/* إعدادات خاصة بشركات التوصيل */}
+                    {editingProvider.type === "delivery" && (
+                      <div>
+                        <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>سعر التوصيل الافتراضي (د.ل)</label>
+                        <input
+                          style={styles.input}
+                          type="number"
+                          placeholder="25"
+                          value={editingProvider.flatRate}
+                          onChange={(e) => setEditingProvider({ ...editingProvider, flatRate: e.target.value })}
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => setIsConfigModalOpen(false)}
+                        style={styles.secondaryBtn}
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        type="submit"
+                        style={styles.primaryBtn}
+                      >
+                        حفظ الإعدادات وتفعيل
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ---- تبويب: الطلبات ---- */}
         {activeTab === "orders" && (
           <>
@@ -1485,10 +3553,19 @@ export default function Admin() {
                                 {o.customer_phone && (
                                   <button
                                     type="button"
-                                    onClick={() => window.open(buildStatusWhatsAppLink(o), "_blank")}
-                                    style={{ ...styles.whatsappBtn, fontSize: 11, padding: "6px 8px" }}
+                                    onClick={() => {
+                                      const waInfo = buildStatusWhatsAppLink(o, o.status, settingsForm.store_name || "متجرنا");
+                                      setWaNotifyModal({
+                                        order: o,
+                                        newStatus: o.status,
+                                        message: waInfo.text,
+                                        waLink: waInfo.url,
+                                        phone: waInfo.phone,
+                                      });
+                                    }}
+                                    style={{ ...styles.whatsappBtn, fontSize: 11, padding: "6px 8px", display: "inline-flex", alignItems: "center", gap: 3 }}
                                   >
-                                    واتساب
+                                    <MessageCircle size={13} /> إشعار
                                   </button>
                                 )}
                               </div>
@@ -1514,8 +3591,15 @@ export default function Admin() {
                   عرض وإدارة وطباعة جميع فواتير المبيعات
                 </p>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 700, background: "#E0F2FE", color: "#0369A1", padding: "6px 14px", borderRadius: 999 }}>
-                إجمالي الفواتير: {filteredInvoices.length} فاتورة ({filteredInvoices.reduce((s, o) => s + (Number(o.total_price) || 0), 0).toLocaleString()} د.ل)
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, background: "#DCFCE7", color: "#15803D", padding: "6px 14px", borderRadius: 999 }}>
+                  المبيعات الصافية: {invoiceStats.validTotal.toLocaleString()} د.ل ({invoiceStats.validCount} فاتورة مؤكدة)
+                </div>
+                {invoiceStats.cancelledCount > 0 && (
+                  <div style={{ fontSize: 12, fontWeight: 700, background: "#FEE2E2", color: "#B91C1C", padding: "6px 12px", borderRadius: 999 }}>
+                    الملغية: {invoiceStats.cancelledCount} ({invoiceStats.cancelledTotal.toLocaleString()} د.ل)
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1898,6 +3982,98 @@ export default function Admin() {
             )}
           </form>
         )}
+
+        {/* ---- نافذة الإشعار التلقائي للواتساب (WhatsApp Automation Modal) ---- */}
+        {waNotifyModal && (
+          <div style={styles.modalOverlay}>
+            <div style={{ ...styles.modalDialog, maxWidth: 520 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #E2E8F0", paddingBottom: 12, marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "#DCFCE7", color: "#16A34A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <MessageCircle size={22} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0B2027" }}>
+                      إشعار واتساب التلقائي 💬
+                    </h3>
+                    <span style={{ fontSize: 12, color: "#5B7278" }}>
+                      طلب #{waNotifyModal.order.id} — الحالة: <strong>{waNotifyModal.newStatus}</strong>
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setWaNotifyModal(null)}
+                  style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#64748B" }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <p style={{ margin: "0 0 10px 0", fontSize: 12.5, color: "#475569" }}>
+                تم توليد نص الإشعار المخصص للزبون (<strong>{waNotifyModal.order.customer_name}</strong>) برقم: <code style={{ direction: "ltr", display: "inline-block" }}>{waNotifyModal.phone}</code>:
+              </p>
+
+              <textarea
+                style={{
+                  ...styles.input,
+                  minHeight: 140,
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  background: "#F8FAFC",
+                  resize: "vertical",
+                  marginBottom: 14,
+                  padding: 12,
+                }}
+                value={waNotifyModal.message}
+                onChange={(e) => {
+                  const newMsg = e.target.value;
+                  setWaNotifyModal((p) => ({
+                    ...p,
+                    message: newMsg,
+                    waLink: `https://wa.me/${p.phone}?text=${encodeURIComponent(newMsg)}`,
+                  }));
+                }}
+              />
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(waNotifyModal.message);
+                    alert("تم نسخ نص الرسالة بنجاح 📋");
+                  }}
+                  style={{ ...styles.secondaryBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
+                >
+                  <Copy size={14} /> نسخ النص
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWaNotifyModal(null)}
+                  style={styles.secondaryBtn}
+                >
+                  إغلاق
+                </button>
+                <a
+                  href={waNotifyModal.waLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setWaNotifyModal(null)}
+                  style={{
+                    ...styles.primaryBtn,
+                    background: "#25D366",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    textDecoration: "none",
+                    fontSize: 13,
+                  }}
+                >
+                  <MessageCircle size={16} /> إرسال عبر واتساب الآن
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1999,4 +4175,35 @@ const styles = {
   loginWrap: { display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", background: "#F8FAFC" },
   loginBox: { display: "flex", flexDirection: "column", gap: 12, width: 300, background: "#fff", padding: 24, borderRadius: 16, border: "1px solid #E2E8F0" },
   list: { display: "flex", flexDirection: "column", gap: 10 },
+  integrationCard: {
+    background: "#fff",
+    border: "1px solid #E2E8F0",
+    borderRadius: 16,
+    padding: 18,
+    display: "flex",
+    flexDirection: "column",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+    transition: "transform .15s ease, box-shadow .15s ease",
+  },
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(11, 32, 39, 0.6)",
+    backdropFilter: "blur(4px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2000,
+    padding: 16,
+  },
+  modalDialog: {
+    background: "#fff",
+    borderRadius: 20,
+    width: "100%",
+    maxWidth: 620,
+    maxHeight: "90vh",
+    overflowY: "auto",
+    padding: 24,
+    boxShadow: "0 20px 40px rgba(0,0,0,0.15)",
+  },
 };

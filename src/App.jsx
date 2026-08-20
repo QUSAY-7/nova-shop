@@ -28,6 +28,8 @@ import {
   Trash2,
   Wallet,
   WalletMinimal,
+  Share2,
+  ExternalLink,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -63,6 +65,101 @@ const FAQ = [
   { q: "كيف أطلب أكثر من منتج بنفس الوقت؟", a: "أضف كل منتج تريده للسلة بالكمية المطلوبة، وعند إتمام الطلب سيصلنا طلب واحد يجمعهم كلهم." },
 ];
 
+export const FacebookIcon = ({ size = 20, color = "currentColor", style = {} }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+  </svg>
+);
+
+export const InstagramIcon = ({ size = 20, color = "currentColor", style = {} }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+    <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+  </svg>
+);
+
+function updateMetaTag(propertyOrName, content, isProperty = true) {
+  const selector = isProperty ? `meta[property="${propertyOrName}"]` : `meta[name="${propertyOrName}"]`;
+  let element = document.querySelector(selector);
+  if (!element) {
+    element = document.createElement("meta");
+    if (isProperty) {
+      element.setAttribute("property", propertyOrName);
+    } else {
+      element.setAttribute("name", propertyOrName);
+    }
+    document.head.appendChild(element);
+  }
+  element.setAttribute("content", content || "");
+}
+
+export function applySEOMeta({
+  title,
+  description,
+  image,
+  url,
+  price,
+  currency = "LYD",
+  type = "website",
+}) {
+  if (title) document.title = title;
+  if (description) updateMetaTag("description", description, false);
+
+  updateMetaTag("og:title", title);
+  updateMetaTag("og:description", description);
+  updateMetaTag("og:type", type);
+  updateMetaTag("og:url", url || window.location.href);
+  if (image) updateMetaTag("og:image", image);
+  if (price) {
+    updateMetaTag("product:price:amount", String(price));
+    updateMetaTag("product:price:currency", currency);
+  }
+
+  // Twitter Cards
+  updateMetaTag("twitter:card", "summary_large_image", false);
+  updateMetaTag("twitter:title", title, false);
+  updateMetaTag("twitter:description", description, false);
+  if (image) updateMetaTag("twitter:image", image, false);
+
+  // Schema.org JSON-LD Structured Data
+  let script = document.getElementById("schema-product-jsonld");
+  if (!script) {
+    script = document.createElement("script");
+    script.id = "schema-product-jsonld";
+    script.type = "application/ld+json";
+    document.head.appendChild(script);
+  }
+
+  const structuredData =
+    type === "product"
+      ? {
+          "@context": "https://schema.org/",
+          "@type": "Product",
+          name: title,
+          image: image ? [image] : [],
+          description: description,
+          offers: {
+            "@type": "Offer",
+            url: url || window.location.href,
+            priceCurrency: currency,
+            price: price || "0",
+            availability: "https://schema.org/InStock",
+            itemCondition: "https://schema.org/NewCondition",
+          },
+        }
+      : {
+          "@context": "https://schema.org",
+          "@type": "Store",
+          name: title,
+          description: description,
+          url: url || window.location.href,
+          image: image,
+        };
+
+  script.textContent = JSON.stringify(structuredData);
+}
+
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -94,6 +191,7 @@ export default function App() {
   // ---- معرض صور المنتج ----
   const [galleryProduct, setGalleryProduct] = useState(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
+  const [shareModalProduct, setShareModalProduct] = useState(null);
 
   // ---- طلباتي السابقة (نظام تأكيد عبر واتساب وحفظ تلقائي) ----
   const [myOrdersOpen, setMyOrdersOpen] = useState(false);
@@ -108,6 +206,28 @@ export default function App() {
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [myOrdersSearched, setMyOrdersSearched] = useState(false);
   const [invoiceOrder, setInvoiceOrder] = useState(null);
+
+  // تحديث محركات البحث (SEO & Open Graph) تلقائياً عند تغيير المتجر أو المنتج النشط
+  useEffect(() => {
+    if (galleryProduct) {
+      applySEOMeta({
+        title: `${galleryProduct.title} | ${settings?.store_name || "NOVA SHOP"} - ${galleryProduct.price} د.ل`,
+        description: galleryProduct.description || `تسوق ${galleryProduct.title} بأفضل سعر وجودة مضمونة في ليبيا.`,
+        image: galleryProduct.image || (galleryProduct.images && galleryProduct.images[0]),
+        price: galleryProduct.price,
+        type: "product",
+        url: `${window.location.origin}${window.location.pathname}?product=${galleryProduct.id}`,
+      });
+    } else if (settings) {
+      applySEOMeta({
+        title: settings.store_name || "NOVA SHOP - أفضل متجر إلكتروني في ليبيا",
+        description: settings.store_description || localStorage.getItem("nova_store_description") || "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات مع توصيل سريع لجميع المدن الليبية.",
+        image: settings.logo_url,
+        type: "website",
+        url: window.location.origin,
+      });
+    }
+  }, [galleryProduct, settings]);
 
   // تحميل طلبات الجهاز المحفوظة تلقائياً
   useEffect(() => {
@@ -148,12 +268,14 @@ export default function App() {
       if (error) {
         setLoadError(error.message);
       } else {
-        setProducts(data || []);
-        // فتح منتج معين تلقائياً لو الرابط يحتوي على ?product=ID
+        const prodList = data || [];
+        setProducts(prodList);
+
+        // فتح منتج معين تلقائياً لو الرابط يحتوي على ?product=ID أو #product-ID
         const params = new URLSearchParams(window.location.search);
-        const sharedId = params.get("product");
+        const sharedId = params.get("product") || (window.location.hash.startsWith("#product-") ? window.location.hash.replace("#product-", "") : null);
         if (sharedId) {
-          const found = (data || []).find((p) => String(p.id) === String(sharedId));
+          const found = prodList.find((p) => String(p.id) === String(sharedId) || String(p.code) === String(sharedId));
           if (found) {
             setGalleryProduct(found);
             setGalleryIndex(0);
@@ -342,13 +464,28 @@ export default function App() {
     setQty(key, line.qty - 1, line);
   };
 
-  const handleShare = (product) => {
-    const url = `${window.location.origin}${window.location.pathname}?product=${product.id}`;
-    navigator.clipboard.writeText(url).then(() => {
-      alert("تم نسخ رابط المنتج ✅");
-    }).catch(() => {
-      alert("تعذر نسخ الرابط، حاول مرة أخرى");
-    });
+  const handleShare = async (product) => {
+    const baseUrl = (settings?.store_url || localStorage.getItem("nova_store_url") || `${window.location.origin}${window.location.pathname}`).replace(/\/$/, "");
+    const url = baseUrl.includes("?") ? `${baseUrl}&product=${product.id}` : `${baseUrl}?product=${product.id}`;
+    const storeName = settings?.store_name || "NOVA SHOP";
+    const shareData = {
+      title: `${product.title} | ${storeName}`,
+      text: `شاهد "${product.title}" بسعر ${product.price} د.ل فقط من متجر ${storeName}! ✨`,
+      url: url,
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.warn("Share fallback:", err);
+        }
+      }
+    }
+
+    setShareModalProduct(product);
   };
 
   const saveOrder = async () => {
@@ -366,13 +503,20 @@ export default function App() {
       price: getEffectivePrice(l.product, l.variant),
     }));
 
+    const paymentLabel =
+      payment === "cash"
+        ? "كاش عند الاستلام"
+        : payment === "bank"
+        ? "تحويل بنكي"
+        : "Ezone Pay (دفع إلكتروني)";
+
     const { data: insertedOrder, error } = await supabase
       .from("orders")
       .insert([
         {
           items,
           total_price: totalPrice,
-          payment_method: payment === "cash" ? "كاش" : "تحويل بنكي",
+          payment_method: paymentLabel,
           customer_name: customerName,
           customer_phone: customerPhone,
           customer_address: customerAddress,
@@ -394,6 +538,51 @@ export default function App() {
       setLocalOrders(updated);
     } catch (e) {
       console.error("فشل حفظ الطلب محلياً", e);
+    }
+
+    // معالجة الدفع الإلكتروني عبر Ezone Pay إذا تم اختياره
+    if (payment === "ezone") {
+      try {
+        const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
+        const ezoneCfg = storedConfigs["ezone_pay"];
+        if (ezoneCfg && ezoneCfg.apiKey) {
+          const nameParts = (customerName || "زبون").trim().split(" ");
+          const ezonePayload = {
+            Title: `طلب متجر #${insertedOrder.id}`,
+            OrderReference: `ORD-${insertedOrder.id}`,
+            IsUniqueOrderReference: false,
+            InternalReference: `NOVA-${insertedOrder.id}`,
+            Amount: Number(totalPrice),
+            Currency: 1, // 1 = LYD
+            Note: "طلب شراء عبر المتجر الإلكتروني",
+            Customer: {
+              FirstName: nameParts[0] || "زبون",
+              LastName: nameParts.slice(1).join(" ") || "المتجر",
+              PhoneNumber: customerPhone || "0910000000",
+            },
+            RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
+          };
+
+          const ezoneRes = await fetch(`${ezoneCfg.apiBaseUrl || "https://test.ezonepay.ly"}/payment-link/new`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": ezoneCfg.apiKey,
+              "Accept": "application/json",
+            },
+            body: JSON.stringify(ezonePayload),
+          });
+
+          if (ezoneRes.ok) {
+            const ezoneData = await ezoneRes.json();
+            if (ezoneData.Link) {
+              window.location.href = ezoneData.Link;
+            }
+          }
+        }
+      } catch (ezErr) {
+        console.warn("Ezone checkout redirection:", ezErr);
+      }
     }
 
     // خصم الكمية من المخزون
@@ -501,7 +690,15 @@ export default function App() {
     });
     lines.push("");
     lines.push(`الإجمالي: ${totalPrice} د.ل`);
-    lines.push(`طريقة الدفع: ${payment === "cash" ? "كاش عند الاستلام" : "تحويل بنكي"}`);
+    lines.push(
+      `طريقة الدفع: ${
+        payment === "cash"
+          ? "كاش عند الاستلام"
+          : payment === "bank"
+          ? "تحويل بنكي"
+          : "دفع إلكتروني عبر Ezone Pay"
+      }`
+    );
     if (payment === "bank") lines.push(`رقم الحساب: ${settings?.bank_account || ""}`);
     return encodeURIComponent(lines.join("\n"));
   };
@@ -892,10 +1089,36 @@ export default function App() {
                 </a>
               ))}
             </nav>
-            <div className="drawer-foot">
+            <div className="drawer-foot" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               <a href={`https://wa.me/${settings?.whatsapp_number || ""}`} target="_blank" rel="noreferrer" className="wa-link">
                 <MessageCircle size={18} /> تواصل عبر واتساب
               </a>
+              {(settings?.facebook_url || settings?.instagram_url) && (
+                <div style={{ display: "flex", gap: "8px", justifyContent: "center", paddingTop: "8px", borderTop: "1px solid var(--line)" }}>
+                  {settings?.facebook_url && (
+                    <a
+                      href={settings.facebook_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ width: "36px", height: "36px", borderRadius: "50%", background: "#1877F2", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}
+                      aria-label="فيسبوك"
+                    >
+                      <FacebookIcon size={18} />
+                    </a>
+                  )}
+                  {settings?.instagram_url && (
+                    <a
+                      href={settings.instagram_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ width: "36px", height: "36px", borderRadius: "50%", background: "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}
+                      aria-label="إنستقرام"
+                    >
+                      <InstagramIcon size={18} />
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1204,12 +1427,15 @@ export default function App() {
                 </div>
                 <div className="field-block">
                   <span className="field-label">طريقة الدفع</span>
-                  <div className="payment-grid">
+                  <div className="payment-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
                     <button onClick={() => setPayment("cash")} className={`pay-btn ${payment === "cash" ? "active" : ""}`}>
                       <Banknote /> كاش
                     </button>
                     <button onClick={() => setPayment("bank")} className={`pay-btn ${payment === "bank" ? "active" : ""}`}>
                       <Landmark /> تحويل بنكي
+                    </button>
+                    <button onClick={() => setPayment("ezone")} className={`pay-btn ${payment === "ezone" ? "active" : ""}`}>
+                      <CreditCard /> إيزون باي
                     </button>
                   </div>
                   {payment === "bank" && (
@@ -1218,6 +1444,11 @@ export default function App() {
                       <button onClick={copyAccount} className="copy-btn">
                         {copied ? <Check className="ok" /> : <Copy />}
                       </button>
+                    </div>
+                  )}
+                  {payment === "ezone" && (
+                    <div className="bank-box" style={{ background: "#F0F7FF", border: "1px solid #BFDBFE", color: "#1E40AF", fontSize: "11.5px", lineHeight: "1.5" }}>
+                      <span>💳 <strong>الدفع الإلكتروني المباشر:</strong> يدعم سداد، تداول، إدفع لي، موبي كاش، ومصرفي باي.</span>
                     </div>
                   )}
                 </div>
@@ -1232,13 +1463,26 @@ export default function App() {
                     target="_blank"
                     rel="noreferrer"
                     className="cta-button"
+                    style={{
+                      background: payment === "ezone" ? "#2563EB" : undefined,
+                    }}
                     onClick={async (e) => {
                       e.preventDefault();
                       const ok = await saveOrder();
-                      if (ok) window.open(waLink, "_blank", "noopener,noreferrer");
+                      if (ok && payment !== "ezone") {
+                        window.open(waLink, "_blank", "noopener,noreferrer");
+                      }
                     }}
                   >
-                    <MessageCircle size={18} /> إتمام الطلب عبر واتساب
+                    {payment === "ezone" ? (
+                      <>
+                        <CreditCard size={18} /> إتمام الطلب والانتقال للدفع الآمن
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle size={18} /> إتمام الطلب عبر واتساب
+                      </>
+                    )}
                   </a>
                 </div>
               </>
@@ -1530,12 +1774,103 @@ export default function App() {
       </section>
 
       {/* ===== Footer ===== */}
-      <footer id="contact" className="footer">
-        <p className="footer-name">VELTRIX SHOP</p>
-        <p className="footer-tag">مدعوم من فيلتريكس شوب — حلول متاجر إلكترونية احترافية</p>
-        <a href="https://wa.me/218931739453" target="_blank" rel="noreferrer" className="footer-wa">
-          <MessageCircle /> تواصل معنا
-        </a>
+      <footer id="contact" className="footer" style={{ borderTop: "1px solid var(--line)", background: "var(--surface)", marginTop: "40px" }}>
+        <p className="footer-name" style={{ fontSize: "19px", fontWeight: 800, color: "var(--teal-dark)" }}>
+          {settings?.store_name || "NOVA SHOP"}
+        </p>
+        <p className="footer-tag" style={{ maxWidth: "480px", margin: "6px auto 16px", lineHeight: 1.6 }}>
+          {settings?.store_description || localStorage.getItem("nova_store_description") || "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة مع شحن لكافة المدن الليبية."}
+        </p>
+
+        {/* أيقونات التواصل الاجتماعي: واتساب، فيسبوك، إنستقرام */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", margin: "16px 0", flexWrap: "wrap" }}>
+          {settings?.whatsapp_number && (
+            <a
+              href={`https://wa.me/${settings.whatsapp_number}`}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                width: "42px",
+                height: "42px",
+                borderRadius: "50%",
+                background: "#25D366",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 4px 12px rgba(37, 211, 102, 0.25)",
+                transition: "transform .15s",
+              }}
+              title="تواصل معنا عبر واتساب"
+            >
+              <MessageCircle size={22} />
+            </a>
+          )}
+
+          {settings?.facebook_url && (
+            <a
+              href={settings.facebook_url}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                width: "42px",
+                height: "42px",
+                borderRadius: "50%",
+                background: "#1877F2",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 4px 12px rgba(24, 119, 242, 0.25)",
+                transition: "transform .15s",
+              }}
+              title="صفحتنا على فيسبوك"
+            >
+              <FacebookIcon size={20} />
+            </a>
+          )}
+
+          {settings?.instagram_url && (
+            <a
+              href={settings.instagram_url}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                width: "42px",
+                height: "42px",
+                borderRadius: "50%",
+                background: "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 4px 12px rgba(221, 42, 123, 0.25)",
+                transition: "transform .15s",
+              }}
+              title="حسابنا على إنستقرام"
+            >
+              <InstagramIcon size={20} />
+            </a>
+          )}
+        </div>
+
+        {/* رابط المتجر */}
+        {(settings?.store_url || localStorage.getItem("nova_store_url")) && (
+          <div style={{ marginTop: "10px" }}>
+            <a
+              href={settings?.store_url || localStorage.getItem("nova_store_url")}
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: "12px", color: "var(--teal)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "4px" }}
+            >
+              <ExternalLink size={13} /> {settings?.store_url || localStorage.getItem("nova_store_url")}
+            </a>
+          </div>
+        )}
+
+        <p style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: "16px" }}>
+          جميع الحقوق محفوظة © {new Date().getFullYear()} {settings?.store_name || "NOVA SHOP"}
+        </p>
       </footer>
 
       {/* ===== Sticky mobile/tablet order bar ===== */}
@@ -1569,11 +1904,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* ===== Product image gallery modal ===== */}
+      {/* ===== Product image gallery modal with SEO & Sharing ===== */}
       {galleryProduct && (
         <div className="gallery-overlay">
           <div className="gallery-backdrop" onClick={closeGallery} />
-          <div className="gallery-box">
+          <div className="gallery-box" style={{ maxWidth: "440px" }}>
             <button className="gallery-close" onClick={closeGallery} aria-label="إغلاق">
               <X size={16} />
             </button>
@@ -1603,6 +1938,129 @@ export default function App() {
                 ))}
               </div>
             )}
+
+            {/* تفاصيل المنتج وزر المشاركة في المودال */}
+            <div style={{ padding: "14px 18px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FAFBFB" }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: "14.5px", fontWeight: 800, color: "var(--teal-dark)" }}>
+                  {galleryProduct.title}
+                </h4>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--teal)" }}>
+                  {galleryProduct.price} د.ل
+                </span>
+              </div>
+              <button
+                onClick={() => handleShare(galleryProduct)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "7px 14px",
+                  borderRadius: "999px",
+                  background: "var(--teal)",
+                  color: "#fff",
+                  border: "none",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                <Share2 size={14} /> مشاركة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Social Sharing Preview Modal (مشاركة المنتج في السوشيال ميديا) ===== */}
+      {shareModalProduct && (
+        <div className="gallery-overlay">
+          <div className="gallery-backdrop" onClick={() => setShareModalProduct(null)} />
+          <div className="gallery-box" style={{ maxWidth: "380px", padding: "20px", borderRadius: "20px" }}>
+            <button className="gallery-close" onClick={() => setShareModalProduct(null)} aria-label="إغلاق">
+              <X size={16} />
+            </button>
+
+            <div style={{ textAlign: "center", marginBottom: "16px" }}>
+              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#E0F2FE", color: "#0284C7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
+                <Share2 size={22} />
+              </div>
+              <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: 800, color: "var(--teal-dark)" }}>
+                مشاركة المنتج
+              </h3>
+              <p style={{ margin: 0, fontSize: "12px", color: "var(--muted)" }}>
+                شارك رابط ({shareModalProduct.title}) مع أصدقائك أو عبر وسائل التواصل
+              </p>
+            </div>
+
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "10px", display: "flex", gap: "10px", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ width: 48, height: 48, borderRadius: "8px", overflow: "hidden", flexShrink: 0 }}>
+                <ProductThumb product={shareModalProduct} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: "12.5px", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {shareModalProduct.title}
+                </p>
+                <span style={{ fontSize: "12px", color: "var(--teal)", fontWeight: 800 }}>
+                  {shareModalProduct.price} د.ل
+                </span>
+              </div>
+            </div>
+
+            {(() => {
+              const baseUrl = (settings?.store_url || localStorage.getItem("nova_store_url") || `${window.location.origin}${window.location.pathname}`).replace(/\/$/, "");
+              const url = baseUrl.includes("?") ? `${baseUrl}&product=${shareModalProduct.id}` : `${baseUrl}?product=${shareModalProduct.id}`;
+              const storeName = settings?.store_name || "نوفا";
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(`شاهد "${shareModalProduct.title}" بسعر ${shareModalProduct.price} د.ل فقط على متجر ${storeName}! ✨\n${url}`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="cta-button"
+                    style={{ background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", textDecoration: "none", fontSize: "13px" }}
+                    onClick={() => setShareModalProduct(null)}
+                  >
+                    <MessageCircle size={17} /> مشاركة عبر واتساب
+                  </a>
+
+                  <a
+                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="cta-button"
+                    style={{ background: "#1877F2", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", textDecoration: "none", fontSize: "13px" }}
+                    onClick={() => setShareModalProduct(null)}
+                  >
+                    <ExternalLink size={17} /> مشاركة على فيسبوك
+                  </a>
+
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(url);
+                      alert("تم نسخ رابط المنتج بنجاح 📋");
+                      setShareModalProduct(null);
+                    }}
+                    style={{
+                      padding: "11px",
+                      borderRadius: "999px",
+                      background: "var(--teal-light)",
+                      color: "var(--teal-dark)",
+                      border: "none",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <Copy size={16} /> نسخ رابط المنتج
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
