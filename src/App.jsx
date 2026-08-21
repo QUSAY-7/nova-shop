@@ -546,34 +546,44 @@ export default function App() {
           })
           .eq("id", insertedOrder.id);
 
-        // إرسال حمولة الشحنة لخوادم درب السبيل في الخلفية
+        // إرسال حمولة الشحنة لخوادم درب السبيل عبر الدالة السحابية الوسيطة
         try {
-          const rawKey = (darbCfg.apiKey || "").trim();
-          const authVal = rawKey.startsWith("Bearer ")
-            ? rawKey
-            : rawKey.startsWith("apikey ")
-            ? rawKey
-            : `apikey ${rawKey}`;
-
-          fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/local/shipments`, {
+          fetch("/api/dispatch-shipment", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "application/json",
-              "Authorization": authVal,
-              "X-API-VERSION": "1.0.0",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              receiver: {
-                name: customerName,
-                phone: customerPhone,
-                address: customerAddress,
-              },
-              paymentMethod: paymentLabel,
-              totalAmount: totalPrice,
-              notes: `طلب #${insertedOrder.id} - ${paymentLabel}`,
+              order: { ...insertedOrder, items, total_price: totalPrice, payment_method: paymentLabel },
+              config: darbCfg,
             }),
-          }).catch(() => {});
+          }).catch(() => {
+            // المحاولة المباشرة في حال العمل على بيئة تجريبية
+            const rawKey = (darbCfg.apiKey || "").trim();
+            const authVal = rawKey.startsWith("Bearer ")
+              ? rawKey
+              : rawKey.startsWith("apikey ")
+              ? rawKey
+              : `apikey ${rawKey}`;
+
+            fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/local/shipments`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": authVal,
+                "X-API-VERSION": "1.0.0",
+              },
+              body: JSON.stringify({
+                receiver: {
+                  name: customerName,
+                  phone: customerPhone,
+                  address: customerAddress,
+                },
+                paymentMethod: paymentLabel,
+                totalAmount: totalPrice,
+                notes: `طلب #${insertedOrder.id} - ${paymentLabel}`,
+              }),
+            }).catch(() => {});
+          });
         } catch {}
       }
     } catch (deliveryDispatchErr) {

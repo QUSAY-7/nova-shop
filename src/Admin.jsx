@@ -1107,6 +1107,57 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
 
     const defaultRef = `DS-${internalOrder.orderId || Date.now().toString().slice(-4)}`;
 
+    // 1. المحاولة عبر الدالة السحابية الوسيطة (Server-to-Server)
+    try {
+      const serverlessRes = await fetch("/api/dispatch-shipment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order: {
+            id: internalOrder.orderId,
+            customer_name: customer?.name,
+            customer_phone: customer?.phone,
+            customer_address: addr?.address,
+            payment_method: internalOrder.paymentMethod,
+            total_price: internalOrder.totalAmount,
+            items: internalOrder.items,
+          },
+          config: this.config,
+        }),
+      });
+
+      const sData = await serverlessRes.json().catch(() => ({}));
+      if (serverlessRes.ok && sData.success) {
+        const ref = sData.reference || defaultRef;
+        this.logOperation({
+          action: "create_shipment",
+          endpoint: "/api/dispatch-shipment",
+          method: "POST",
+          statusCode: 200,
+          durationMs: Date.now() - startTime,
+          success: true,
+          message: `تم إرسال وتوثيق الشحنة في درب السبيل بنجاح (رقم التتبع: ${ref})`,
+          orderId: internalOrder.orderId,
+        });
+
+        return {
+          success: true,
+          shipment: new InternalShipment({
+            orderId: internalOrder.orderId,
+            providerCode: this.code,
+            providerShipmentId: sData.data?._id || `sabil_${Date.now()}`,
+            trackingNumber: ref,
+            trackingUrl: sData.trackingUrl || `https://track.sabil.ly/${ref}`,
+            shippingCost: this.config.flatRate || 20,
+            shipmentStatus: "created",
+            rawResponse: sData,
+          }),
+          message: `تم إنشاء وتأكيد الشحنة برقم تتبع: ${ref}`,
+        };
+      }
+    } catch (e) {}
+
+    // 2. المحاولة المباشرة كبديل
     try {
       const res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments`, {
         method: "POST",
