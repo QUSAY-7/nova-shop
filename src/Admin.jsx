@@ -1023,234 +1023,118 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
     }
   }
 
-  async calculateShipping(address, order) {
-    const city = address?.city || "طرابلس";
-
-    if (!this.config.apiKey) {
-      const flatRate = this.config.flatRate || 20;
-      return { available: true, cost: flatRate, estimatedDays: 2 };
-    }
-
-    try {
-      const payload = {
-        from: {
-          countryCode: "LBY",
-          city: "طرابلس",
-          area: "المركز",
-        },
-        to: {
-          countryCode: "LBY",
-          city: city,
-          area: address?.area || "المدينة",
-          address: address?.address || "",
-        },
-        products: (order?.items || []).map((it) => ({
-          title: it.title,
-          quantity: it.quantity || 1,
-          amount: it.unitPrice || it.price || 10,
-          isChargeable: true,
-        })),
-        paymentBy: "receiver",
-      };
-
-      const res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments/calculate/shipping`, {
-        method: "POST",
-        headers: this.getHeaders(),
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const cost = data.data?.remainings?.remainings?.amount || this.config.flatRate || 20;
-        return { available: true, cost: Number(cost), estimatedDays: 2 };
-      }
-    } catch (e) {
-      console.warn("Darb Assabil rate fallback:", e);
-    }
-
+ async calculateShipping(address, order) {
+    // تقدير أولي فقط لعرضه للزبون قبل الطلب — لا يحتاج مفتاح API ولا يُرسل من المتصفح
     return { available: true, cost: this.config.flatRate || 20, estimatedDays: 2 };
-  }
+  } 
 
   async createShipment(internalOrder) {
     const startTime = Date.now();
     const address = internalOrder.shippingAddress;
     const customer = internalOrder.customer;
-    const headers = this.getHeaders();
 
-    // 1. تنسيق رقم الهاتف الليبي بالصيغة الدولية (+218)
-    let rawPhone = (customer?.phone || "").replace(/[^0-9+]/g, "");
-    if (rawPhone.startsWith("0")) {
-      rawPhone = "+218" + rawPhone.slice(1);
-    } else if (!rawPhone.startsWith("+") && rawPhone.length > 0) {
-      rawPhone = "+218" + rawPhone;
-    }
-    if (!rawPhone) rawPhone = "+218910301107";
-
-    let contactId = null;
-    let serviceId = null;
-
-    // 2. تسجيل / جلب معرف الزبون (Contact ID)
     try {
-      const contactRes = await fetch(`${this.config.apiBaseUrl}/api/contacts`, {
+      const res = await fetch("/api/dispatch-shipment", {
         method: "POST",
-        headers,
-        body: JSON.stringify({ name: customer?.name || "زبون المتجر", phone: rawPhone }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order: {
+            id: internalOrder.orderId,
+            customer_name: customer?.name || "زبون المتجر",
+            customer_phone: customer?.phone || "",
+            customer_address: address?.formattedAddress || address?.address || "طرابلس",
+            items: (internalOrder.items || []).map((it) => ({
+              title: it.title,
+              qty: it.quantity,
+              price: it.unitPrice,
+            })),
+          },
+        }),
       });
-      const contactData = await contactRes.json().catch(() => ({}));
-      if (contactRes.ok && contactData?.data?._id) {
-        contactId = contactData.data._id;
-      } else if (!contactRes.ok) {
-        console.warn("Darb Assabil Contact creation failed:", contactRes.status, contactData);
+
+      const data = await res.json().catch(() => ({}));
+      const durationMs = Date.now() - startTime;
+
+      if (!res.ok || !data.success) {
+        const errorDetail = data.error || `رمز الاستجابة: ${res.status}`;
+        this.logOperation({
+          action: "create_shipment",
+          endpoint: "/api/dispatch-shipment",
+          method: "POST",
+          statusCode: res.status,
+          durationMs,
+          success: false,
+          message: `فشل إنشاء الشحنة في درب السبيل: ${errorDetail}`,
+          orderId: internalOrder.orderId,
+          details: data,
+        });
+        return {
+          success: false,
+          message: `فشل إنشاء الشحنة لدى درب السبيل 🔴 (${errorDetail})`,
+        };
       }
-    } catch (cErr) {
-      console.warn("Darb Assabil Contact error:", cErr);
-    }
 
-    // 3. جلب كود الخدمة المتاحة (Service ID)
-    try {
-      const serviceRes = await fetch(`${this.config.apiBaseUrl}/api/local/service/rates/public`, {
-        method: "GET",
-        headers,
-      });
-      const serviceData = await serviceRes.json().catch(() => ({}));
-      if (serviceRes.ok) {
-        if (serviceData?.data?.results?.[0]?._id) {
-          serviceId = serviceData.data.results[0]._id;
-        } else if (Array.isArray(serviceData?.data) && serviceData.data[0]?._id) {
-          serviceId = serviceData.data[0]._id;
-        }
+      const ref = data.data?.data?.reference || data.data?.data?.trackingNumber;
+      if (!ref) {
+        this.logOperation({
+          action: "create_shipment",
+          endpoint: "/api/dispatch-shipment",
+          method: "POST",
+          statusCode: res.status,
+          durationMs,
+          success: false,
+          message: "رد السيرفر لا يحتوي على رقم تتبع صالح",
+          orderId: internalOrder.orderId,
+          details: data,
+        });
+        return {
+          success: false,
+          message: "تم إرسال الطلب لكن لم يرجع رقم تتبع من درب السبيل — راجع الدعم الفني.",
+        };
       }
-    } catch (sErr) {
-      console.warn("Darb Assabil Service rates error:", sErr);
-    }
 
-    // 4. تجهيز حمولة الشحنة
-    const payload = {
-      from: { countryCode: "LBY", city: "طرابلس", area: "المركز", address: "مقر المتجر" },
-      to: {
-        countryCode: "LBY",
-        city: address?.city || "طرابلس",
-        area: address?.area || "المدينة",
-        address: address?.formattedAddress || address?.address || "طرابلس",
-      },
-      products: (internalOrder.items || []).map((it) => ({
-        title: it.title || "منتج",
-        quantity: it.quantity || 1,
-        amount: Number(it.unitPrice) || 10,
-        currency: "lyd",
-        isChargeable: true,
-      })),
-      paymentBy: "receiver",
-      notes: `طلب #${internalOrder.orderId} - العميل: ${customer?.name || "زبون"} (${customer?.phone || ""}) - الدفع: ${internalOrder.paymentMethod || "كاش"}`,
-    };
-    if (contactId) payload.contacts = [contactId];
-    if (serviceId) payload.service = serviceId;
-
-    // 5. تنفيذ الطلب — بدون أي fallback وهمي
-    let res;
-    let data;
-    try {
-      res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments`, {
+      this.logOperation({
+        action: "create_shipment",
+        endpoint: "/api/dispatch-shipment",
         method: "POST",
-        headers,
-        body: JSON.stringify(payload),
+        statusCode: res.status,
+        durationMs,
+        success: true,
+        message: `تم تسجيل الشحنة في درب السبيل بنجاح (رقم التتبع: ${ref})`,
+        orderId: internalOrder.orderId,
       });
-      data = await res.json().catch(() => ({}));
+
+      return {
+        success: true,
+        shipment: new InternalShipment({
+          orderId: internalOrder.orderId,
+          providerCode: this.code,
+          providerShipmentId: data.data?.data?._id || "",
+          trackingNumber: ref,
+          trackingUrl: `https://track.sabil.ly/${ref}`,
+          shippingCost: this.config.flatRate || 20,
+          shipmentStatus: "created",
+          rawResponse: data.data,
+        }),
+        message: `تم إنشاء الشحنة برقم تتبع: ${ref}`,
+      };
     } catch (networkErr) {
       const durationMs = Date.now() - startTime;
       this.logOperation({
         action: "create_shipment",
-        endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
+        endpoint: "/api/dispatch-shipment",
         method: "POST",
         statusCode: 0,
         durationMs,
         success: false,
-        message: `فشل الاتصال بدرب السبيل: ${networkErr.message}`,
+        message: `فشل الاتصال بخادم المتجر: ${networkErr.message}`,
         orderId: internalOrder.orderId,
       });
       return {
         success: false,
-        message: `تعذر الاتصال بشركة درب السبيل: ${networkErr.message}`,
+        message: `تعذر الاتصال بخادم المتجر: ${networkErr.message}`,
       };
     }
-
-    const durationMs = Date.now() - startTime;
-
-    // فشل حقيقي من السيرفر (401 مفتاح خاطئ، 400 بيانات ناقصة، ...)
-    if (!res.ok || !(data?.status || data?.data)) {
-      const errorDetail =
-  data?.message ||
-  data?.error?.message ||
-  (typeof data?.error === "string" ? data.error : null) ||
-  (Array.isArray(data?.errors)
-    ? data.errors
-        .map((e) => typeof e === "string" ? e : e.message || JSON.stringify(e))
-        .join(", ")
-    : null) ||
-  JSON.stringify(data) ||
-  `رمز الاستجابة: ${res.status}`;
-      this.logOperation({
-        action: "create_shipment",
-        endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
-        method: "POST",
-        statusCode: res.status,
-        durationMs,
-        success: false,
-        message: `فشل إنشاء الشحنة في درب السبيل: ${errorDetail}`,
-        orderId: internalOrder.orderId,
-        details: data,
-      });
-      return {
-        success: false,
-        message: `فشل إنشاء الشحنة لدى درب السبيل 🔴 (${errorDetail}). تحقق من مفتاح الـ API والحساب.`,
-      };
-    }
-
-    // نجاح حقيقي وموثّق من رد السيرفر فعلياً
-    const ref = data.data?.reference || data.data?.trackingNumber;
-    if (!ref) {
-      this.logOperation({
-        action: "create_shipment",
-        endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
-        method: "POST",
-        statusCode: res.status,
-        durationMs,
-        success: false,
-        message: "رد السيرفر لا يحتوي على رقم تتبع صالح",
-        orderId: internalOrder.orderId,
-        details: data,
-      });
-      return {
-        success: false,
-        message: "تم إرسال الطلب لكن لم يرجع رقم تتبع من درب السبيل — راجع الدعم الفني.",
-      };
-    }
-
-    this.logOperation({
-      action: "create_shipment",
-      endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
-      method: "POST",
-      statusCode: res.status,
-      durationMs,
-      success: true,
-      message: `تم تسجيل الشحنة في درب السبيل بنجاح (رقم التتبع: ${ref})`,
-      orderId: internalOrder.orderId,
-    });
-
-    return {
-      success: true,
-      shipment: new InternalShipment({
-        orderId: internalOrder.orderId,
-        providerCode: this.code,
-        providerShipmentId: data.data?._id || "",
-        trackingNumber: ref,
-        trackingUrl: `https://track.sabil.ly/${ref}`,
-        shippingCost: this.config.flatRate || 20,
-        shipmentStatus: "created",
-        rawResponse: data.data,
-      }),
-      message: `تم إنشاء الشحنة برقم تتبع: ${ref}`,
-    };
   }
 
   async getShipmentStatus(trackingNumber) {
