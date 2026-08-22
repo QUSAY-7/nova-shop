@@ -99,13 +99,24 @@ export default async function handler(req, res) {
       const sRes = await fetch(`${apiBaseUrl}/api/local/service/rates/public`, { method: "GET", headers });
       const sData = await sRes.json();
       serviceId = sData?.data?.results?.[0]?._id || (Array.isArray(sData?.data) ? sData.data[0]?._id : null);
-      if (!sRes.ok || !serviceId) {
-        return res.status(502).json({
-          success: false,
-          error: "Failed to fetch shipping service rate from Darb Assabil",
-          details: sData,
-        });
-      }
+      if (!cRes.ok || !cData?.data?._id) {
+  const providerError =
+    cData?.message ||
+    cData?.error?.message ||
+    (typeof cData?.error === "string" ? cData.error : null) ||
+    JSON.stringify(cData);
+
+  console.error("Darb Assabil contact error:", {
+    status: cRes.status,
+    response: cData,
+  });
+
+  return res.status(502).json({
+    success: false,
+    error: `فشل تسجيل العميل لدى درب السبيل. HTTP ${cRes.status}: ${providerError}`,
+    details: cData,
+  });
+}
     } catch (e) {
       return res.status(502).json({ success: false, error: `Service rate request failed: ${e.message}` });
     }
