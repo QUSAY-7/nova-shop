@@ -573,14 +573,21 @@ export default function App() {
                 "X-API-VERSION": "1.0.0",
               },
               body: JSON.stringify({
-                receiver: {
-                  name: customerName,
-                  phone: customerPhone,
-                  address: customerAddress,
+                to: {
+                  countryCode: "LBY",
+                  city: customerAddress ? customerAddress.split("-")[0].trim() : "طرابلس",
+                  address: customerAddress || "طرابلس",
                 },
-                paymentMethod: paymentLabel,
+                paymentBy: "receiver",
                 totalAmount: totalPrice,
-                notes: `طلب #${insertedOrder.id} - ${paymentLabel}`,
+                products: items.map((it) => ({
+                  title: it.title || "منتج",
+                  quantity: it.qty || 1,
+                  amount: it.price || 0,
+                  currency: "lyd",
+                  isChargeable: true,
+                })),
+                notes: `طلب #${insertedOrder.id} - العميل: ${customerName} (${customerPhone}) - طريقة الدفع: ${paymentLabel}`,
               }),
             }).catch(() => {});
           });

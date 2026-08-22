@@ -1096,13 +1096,14 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
         address: address?.formattedAddress || address?.address || "",
       },
       products: internalOrder.items.map((it) => ({
-        title: it.title,
-        quantity: it.quantity,
-        amount: it.unitPrice,
+        title: it.title || "منتج",
+        quantity: it.quantity || 1,
+        amount: Number(it.unitPrice) || 10,
+        currency: "lyd",
         isChargeable: true,
       })),
       paymentBy: "receiver",
-      notes: `طلب #${internalOrder.orderId} - العميل: ${customer?.name} (${customer?.phone})`,
+      notes: `طلب #${internalOrder.orderId} - العميل: ${customer?.name || "زبون"} (${customer?.phone || ""}) - الدفع: ${internalOrder.paymentMethod || "كاش"}`,
     };
 
     const defaultRef = `DS-${internalOrder.orderId || Date.now().toString().slice(-4)}`;
