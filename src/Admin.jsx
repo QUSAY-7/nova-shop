@@ -969,26 +969,20 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
       return { success: false, message: msg };
     }
 
-    const jwtPayload = this.parseJwt(rawKey);
-
-    // إذا كان المفتاح توكن JWT معتمد صادر من درب السبيل (iss: Darb Assabil أو sub: oauth_secret)
-    if (jwtPayload && (jwtPayload.iss === "Darb Assabil" || jwtPayload.secretId || jwtPayload.sub === "oauth_secret")) {
-      const idPreview = (jwtPayload.secretId || "Valid").slice(0, 10);
+    if (!this.config.apiBaseUrl || !/^https?:\/\//i.test(this.config.apiBaseUrl)) {
+      const msg = `رابط الـ API (Base URL) غير صحيح: "${this.config.apiBaseUrl}". يجب أن يبدأ بـ https:// (مثال: https://v2.sabil.ly)`;
       this.logOperation({
         action: "test_connection",
-        endpoint: `${this.config.apiBaseUrl}/api/wallet/metadata`,
-        method: "GET",
-        statusCode: 200,
-        durationMs: 10,
-        success: true,
-        message: `تم التحقق من صحة مفتاح Darb Assabil بنجاح (المعرف: ${idPreview})`,
+        endpoint: this.config.apiBaseUrl || "n/a",
+        statusCode: 400,
+        durationMs: 0,
+        success: false,
+        message: msg,
       });
-      return {
-        success: true,
-        message: `تم التحقق والاتصال برمز درب السبيل المعتمد بنجاح 🟢 (المعرف: ${idPreview}...)`,
-      };
+      return { success: false, message: msg };
     }
 
+    // لا اختصار — نتصل فعلياً بالسيرفر دائماً، بغض النظر عن شكل المفتاح
     try {
       const response = await fetch(`${this.config.apiBaseUrl}/api/wallet/metadata`, {
         method: "GET",
@@ -1082,7 +1076,6 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
     const address = internalOrder.shippingAddress;
     const customer = internalOrder.customer;
     const headers = this.getHeaders();
-    const defaultRef = `DS-${internalOrder.orderId || Date.now().toString().slice(-4)}`;
 
     // 1. تنسيق رقم الهاتف الليبي بالصيغة الدولية (+218)
     let rawPhone = (customer?.phone || "").replace(/[^0-9+]/g, "");
@@ -1096,48 +1089,44 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
     let contactId = null;
     let serviceId = null;
 
-    // 2. الخطوة الأولى: تسجيل / جلب معرف الزبون (Contact ID)
+    // 2. تسجيل / جلب معرف الزبون (Contact ID)
     try {
       const contactRes = await fetch(`${this.config.apiBaseUrl}/api/contacts`, {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          name: customer?.name || "زبون المتجر",
-          phone: rawPhone,
-        }),
+        body: JSON.stringify({ name: customer?.name || "زبون المتجر", phone: rawPhone }),
       });
       const contactData = await contactRes.json().catch(() => ({}));
-      if (contactData?.data?._id) {
+      if (contactRes.ok && contactData?.data?._id) {
         contactId = contactData.data._id;
+      } else if (!contactRes.ok) {
+        console.warn("Darb Assabil Contact creation failed:", contactRes.status, contactData);
       }
     } catch (cErr) {
       console.warn("Darb Assabil Contact error:", cErr);
     }
 
-    // 3. الخطوة الثانية: جلب كود الخدمة المتاحة (Service ID)
+    // 3. جلب كود الخدمة المتاحة (Service ID)
     try {
       const serviceRes = await fetch(`${this.config.apiBaseUrl}/api/local/service/rates/public`, {
         method: "GET",
         headers,
       });
       const serviceData = await serviceRes.json().catch(() => ({}));
-      if (serviceData?.data?.results?.[0]?._id) {
-        serviceId = serviceData.data.results[0]._id;
-      } else if (Array.isArray(serviceData?.data) && serviceData.data[0]?._id) {
-        serviceId = serviceData.data[0]._id;
+      if (serviceRes.ok) {
+        if (serviceData?.data?.results?.[0]?._id) {
+          serviceId = serviceData.data.results[0]._id;
+        } else if (Array.isArray(serviceData?.data) && serviceData.data[0]?._id) {
+          serviceId = serviceData.data[0]._id;
+        }
       }
     } catch (sErr) {
       console.warn("Darb Assabil Service rates error:", sErr);
     }
 
-    // 4. الخطوة الثالثة: تجهيز حمولة الشحنة بالصيغة المطلوبة لخوادم درب السبيل V2
+    // 4. تجهيز حمولة الشحنة
     const payload = {
-      from: {
-        countryCode: "LBY",
-        city: "طرابلس",
-        area: "المركز",
-        address: "مقر المتجر",
-      },
+      from: { countryCode: "LBY", city: "طرابلس", area: "المركز", address: "مقر المتجر" },
       to: {
         countryCode: "LBY",
         city: address?.city || "طرابلس",
@@ -1154,65 +1143,97 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
       paymentBy: "receiver",
       notes: `طلب #${internalOrder.orderId} - العميل: ${customer?.name || "زبون"} (${customer?.phone || ""}) - الدفع: ${internalOrder.paymentMethod || "كاش"}`,
     };
+    if (contactId) payload.contacts = [contactId];
+    if (serviceId) payload.service = serviceId;
 
-    if (contactId) {
-      payload.contacts = [contactId];
-    }
-    if (serviceId) {
-      payload.service = serviceId;
-    }
-
+    // 5. تنفيذ الطلب — بدون أي fallback وهمي
+    let res;
+    let data;
     try {
-      const res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments`, {
+      res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments`, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
       });
-
-      const data = await res.json().catch(() => ({}));
+      data = await res.json().catch(() => ({}));
+    } catch (networkErr) {
       const durationMs = Date.now() - startTime;
-
-      if (res.ok && (data.status || data.data)) {
-        const ref = data.data?.reference || defaultRef;
-        this.logOperation({
-          action: "create_shipment",
-          endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
-          method: "POST",
-          statusCode: res.status,
-          durationMs,
-          success: true,
-          message: `تم تسجيل الشحنة في درب السبيل بنجاح (رقم التتبع: ${ref})`,
-          orderId: internalOrder.orderId,
-        });
-
-        return {
-          success: true,
-          shipment: new InternalShipment({
-            orderId: internalOrder.orderId,
-            providerCode: this.code,
-            providerShipmentId: data.data?._id || "",
-            trackingNumber: ref,
-            trackingUrl: `https://track.sabil.ly/${ref}`,
-            shippingCost: this.config.flatRate || 20,
-            shipmentStatus: "created",
-            rawResponse: data.data,
-          }),
-          message: `تم إنشاء الشحنة برقم تتبع: ${ref}`,
-        };
-      }
-    } catch (err) {
-      // التعامل مع أخطاء المتصفح والشبكة
+      this.logOperation({
+        action: "create_shipment",
+        endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
+        method: "POST",
+        statusCode: 0,
+        durationMs,
+        success: false,
+        message: `فشل الاتصال بدرب السبيل: ${networkErr.message}`,
+        orderId: internalOrder.orderId,
+      });
+      return {
+        success: false,
+        message: `تعذر الاتصال بشركة درب السبيل: ${networkErr.message}`,
+      };
     }
 
     const durationMs = Date.now() - startTime;
+
+    // فشل حقيقي من السيرفر (401 مفتاح خاطئ، 400 بيانات ناقصة، ...)
+    if (!res.ok || !(data?.status || data?.data)) {
+      const errorDetail =
+  data?.message ||
+  data?.error?.message ||
+  (typeof data?.error === "string" ? data.error : null) ||
+  (Array.isArray(data?.errors)
+    ? data.errors
+        .map((e) => typeof e === "string" ? e : e.message || JSON.stringify(e))
+        .join(", ")
+    : null) ||
+  JSON.stringify(data) ||
+  `رمز الاستجابة: ${res.status}`;
+      this.logOperation({
+        action: "create_shipment",
+        endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
+        method: "POST",
+        statusCode: res.status,
+        durationMs,
+        success: false,
+        message: `فشل إنشاء الشحنة في درب السبيل: ${errorDetail}`,
+        orderId: internalOrder.orderId,
+        details: data,
+      });
+      return {
+        success: false,
+        message: `فشل إنشاء الشحنة لدى درب السبيل 🔴 (${errorDetail}). تحقق من مفتاح الـ API والحساب.`,
+      };
+    }
+
+    // نجاح حقيقي وموثّق من رد السيرفر فعلياً
+    const ref = data.data?.reference || data.data?.trackingNumber;
+    if (!ref) {
+      this.logOperation({
+        action: "create_shipment",
+        endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
+        method: "POST",
+        statusCode: res.status,
+        durationMs,
+        success: false,
+        message: "رد السيرفر لا يحتوي على رقم تتبع صالح",
+        orderId: internalOrder.orderId,
+        details: data,
+      });
+      return {
+        success: false,
+        message: "تم إرسال الطلب لكن لم يرجع رقم تتبع من درب السبيل — راجع الدعم الفني.",
+      };
+    }
+
     this.logOperation({
       action: "create_shipment",
       endpoint: `${this.config.apiBaseUrl}/api/local/shipments`,
       method: "POST",
-      statusCode: 200,
-      durationMs: durationMs || 15,
+      statusCode: res.status,
+      durationMs,
       success: true,
-      message: `تم توثيق وتجهيز شحنة درب السبيل للطلب #${internalOrder.orderId} (بوليصة: ${defaultRef})`,
+      message: `تم تسجيل الشحنة في درب السبيل بنجاح (رقم التتبع: ${ref})`,
       orderId: internalOrder.orderId,
     });
 
@@ -1221,14 +1242,14 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
       shipment: new InternalShipment({
         orderId: internalOrder.orderId,
         providerCode: this.code,
-        providerShipmentId: `sabil_${Date.now()}`,
-        trackingNumber: defaultRef,
-        trackingUrl: `https://track.sabil.ly/${defaultRef}`,
+        providerShipmentId: data.data?._id || "",
+        trackingNumber: ref,
+        trackingUrl: `https://track.sabil.ly/${ref}`,
         shippingCost: this.config.flatRate || 20,
         shipmentStatus: "created",
-        rawResponse: { reference: defaultRef, payload },
+        rawResponse: data.data,
       }),
-      message: `تم إنشاء الشحنة برقم تتبع: ${defaultRef}`,
+      message: `تم إنشاء الشحنة برقم تتبع: ${ref}`,
     };
   }
 
@@ -2244,7 +2265,53 @@ export default function Admin() {
     });
 
     try {
-      const result = await provider.createShipment(internalOrder);
+     const response = await fetch("/api/dispatch-shipment", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    order: {
+      id: order.id,
+      customer_name: order.customer_name,
+      customer_phone: order.customer_phone,
+      customer_address: order.customer_address,
+      items: order.items,
+    },
+  }),
+});
+
+const rawResponse = await response.text();
+
+let apiResult = {};
+
+try {
+  apiResult = rawResponse ? JSON.parse(rawResponse) : {};
+} catch (parseError) {
+  apiResult = {
+    success: false,
+    error: `الخادم أعاد ردًا غير صالح. رمز الاستجابة: ${response.status}. الرد: ${rawResponse.slice(0, 300)}`,
+  };
+}
+
+const shipmentData =
+  apiResult?.data?.data ||
+  apiResult?.data ||
+  {};
+
+const trackingNumber =
+  shipmentData.reference ||
+  shipmentData.trackingNumber ||
+  shipmentData.tracking_number ||
+  "";
+
+const result = {
+  success: response.ok && apiResult.success === true,
+  shipment: trackingNumber
+    ? { trackingNumber }
+    : null,
+  message: apiResult.error || apiResult.message || "",
+};
       if (result.success) {
         const trackingRef = result.shipment?.trackingNumber || `DS-${order.id}`;
 
