@@ -82,9 +82,20 @@ export default async function handler(req, res) {
       });
       const cData = await cRes.json();
       if (!cRes.ok || !cData?.data?._id) {
+        const providerError =
+          cData?.message ||
+          cData?.error?.message ||
+          (typeof cData?.error === "string" ? cData.error : null) ||
+          JSON.stringify(cData);
+
+        console.error("Darb Assabil contact error:", {
+          status: cRes.status,
+          response: cData,
+        });
+
         return res.status(502).json({
           success: false,
-          error: "Failed to register contact with Darb Assabil",
+          error: `فشل تسجيل العميل لدى درب السبيل. HTTP ${cRes.status}: ${providerError}`,
           details: cData,
         });
       }
@@ -93,38 +104,39 @@ export default async function handler(req, res) {
       return res.status(502).json({ success: false, error: `Contact request failed: ${e.message}` });
     }
 
-    // 2. جلب كود الخدمة - نفشل بوضوح لو ما نجح
+    // 2. جلب كود الخدمة - نفشل بوضوح لو ما نجح (تم فصله تماماً عن مقطع جهة الاتصال)
     let serviceId = null;
     try {
       const sRes = await fetch(`${apiBaseUrl}/api/local/service/rates/public`, { method: "GET", headers });
       const sData = await sRes.json();
       serviceId = sData?.data?.results?.[0]?._id || (Array.isArray(sData?.data) ? sData.data[0]?._id : null);
-      if (!cRes.ok || !cData?.data?._id) {
-  const providerError =
-    cData?.message ||
-    cData?.error?.message ||
-    (typeof cData?.error === "string" ? cData.error : null) ||
-    JSON.stringify(cData);
 
-  console.error("Darb Assabil contact error:", {
-    status: cRes.status,
-    response: cData,
-  });
+      if (!sRes.ok || !serviceId) {
+        const providerError =
+          sData?.message ||
+          sData?.error?.message ||
+          (typeof sData?.error === "string" ? sData.error : null) ||
+          JSON.stringify(sData);
 
-  return res.status(502).json({
-    success: false,
-    error: `فشل تسجيل العميل لدى درب السبيل. HTTP ${cRes.status}: ${providerError}`,
-    details: cData,
-  });
-}
+        console.error("Darb Assabil service rate error:", {
+          status: sRes.status,
+          response: sData,
+        });
+
+        return res.status(502).json({
+          success: false,
+          error: `فشل جلب كود الخدمة من درب السبيل. HTTP ${sRes.status}: ${providerError}`,
+          details: sData,
+        });
+      }
     } catch (e) {
       return res.status(502).json({ success: false, error: `Service rate request failed: ${e.message}` });
     }
 
-    // 3. إنشاء الشحنة
+    // 3. إنشاء الشحنة — رمز الدولة المصحح (ISO-2: LY بدل ISO-3 الخاطئ LBY)
     const shipPayload = {
-      from: { countryCode: "LBY", city: "طرابلس", area: "المركز", address: "مقر المتجر" },
-      to: { countryCode: "LBY", city: "طرابلس", area: "المركز", address: order.customer_address || "طرابلس" },
+      from: { countryCode: "LY", city: "طرابلس", area: "المركز", address: "مقر المتجر" },
+      to: { countryCode: "LY", city: "طرابلس", area: "المركز", address: order.customer_address || "طرابلس" },
       products,
       contacts: [contactId],
       service: serviceId,
@@ -139,7 +151,29 @@ export default async function handler(req, res) {
     });
     const shipData = await shipRes.json().catch(() => ({}));
 
-    return res.status(shipRes.ok ? 200 : 502).json({ success: shipRes.ok, data: shipData });
+    if (!shipRes.ok) {
+      const providerError =
+        shipData?.message ||
+        shipData?.error?.message ||
+        (typeof shipData?.error === "string" ? shipData.error : null) ||
+        (Array.isArray(shipData?.errors)
+          ? shipData.errors.map((e) => (typeof e === "string" ? e : e.message || JSON.stringify(e))).join(", ")
+          : null) ||
+        JSON.stringify(shipData);
+
+      console.error("Darb Assabil create_shipment error:", {
+        status: shipRes.status,
+        response: shipData,
+      });
+
+      return res.status(502).json({
+        success: false,
+        error: `فشل إنشاء الشحنة لدى درب السبيل. HTTP ${shipRes.status}: ${providerError}`,
+        details: shipData,
+      });
+    }
+
+    return res.status(200).json({ success: true, data: shipData });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
