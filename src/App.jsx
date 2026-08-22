@@ -556,30 +556,93 @@ export default function App() {
               config: darbCfg,
             }),
           }).catch(() => {
-            // المحاولة المباشرة في حال العمل على بيئة تجريبية
-            const rawKey = (darbCfg.apiKey || "").trim();
-            const authVal = rawKey.startsWith("Bearer ")
-              ? rawKey
-              : rawKey.startsWith("apikey ")
-              ? rawKey
-              : `apikey ${rawKey}`;
+            // تنفيذ دورة إرسال شحنة درب السبيل المتكاملة (Contacts + Service Rates + LocalShipments)
+            (async () => {
+              const rawKey = (darbCfg.apiKey || "").trim();
+              const authVal = rawKey.startsWith("Bearer ")
+                ? rawKey
+                : rawKey.startsWith("apikey ")
+                ? rawKey
+                : `apikey ${rawKey}`;
 
-            fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/local/shipments`, {
-              method: "POST",
-              headers: {
+              // استخراج معرف الحساب من التوكن إن لم يكن مدخلاً
+              let accId = (darbCfg.accountId || "").trim();
+              if (!accId && rawKey) {
+                try {
+                  const parts = rawKey.replace(/^(apikey|Bearer)\s+/i, "").split(".");
+                  if (parts.length >= 2) {
+                    let b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+                    while (b64.length % 4 !== 0) b64 += "=";
+                    const parsed = JSON.parse(decodeURIComponent(escape(atob(b64))));
+                    accId = parsed.secretId || parsed.accountId || parsed.sub || "";
+                  }
+                } catch (e) {}
+              }
+
+              const headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "Authorization": authVal,
                 "X-API-VERSION": "1.0.0",
-              },
-              body: JSON.stringify({
+              };
+              if (accId) {
+                headers["X-ACCOUNT-ID"] = accId;
+              }
+
+              // 1. تنسيق رقم الهاتف الدولي
+              let rawPhone = (customerPhone || "").replace(/[^0-9+]/g, "");
+              if (rawPhone.startsWith("0")) {
+                rawPhone = "+218" + rawPhone.slice(1);
+              } else if (!rawPhone.startsWith("+") && rawPhone.length > 0) {
+                rawPhone = "+218" + rawPhone;
+              }
+              if (!rawPhone) rawPhone = "+218910301107";
+
+              // 2. تسجيل جهة الاتصال
+              let contactId = null;
+              try {
+                const cRes = await fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/contacts`, {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({
+                    name: customerName || "زبون المتجر",
+                    phone: rawPhone,
+                  }),
+                });
+                const cData = await cRes.json().catch(() => ({}));
+                if (cData?.data?._id) contactId = cData.data._id;
+              } catch (e) {}
+
+              // 3. جلب كود الخدمة
+              let serviceId = null;
+              try {
+                const sRes = await fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/local/service/rates/public`, {
+                  method: "GET",
+                  headers,
+                });
+                const sData = await sRes.json().catch(() => ({}));
+                if (sData?.data?.results?.[0]?._id) {
+                  serviceId = sData.data.results[0]._id;
+                } else if (Array.isArray(sData?.data) && sData.data[0]?._id) {
+                  serviceId = sData.data[0]._id;
+                }
+              } catch (e) {}
+
+              // 4. إنشاء الشحنة
+              const shipBody = {
+                from: {
+                  countryCode: "LBY",
+                  city: "طرابلس",
+                  area: "المركز",
+                  address: "مقر المتجر",
+                },
                 to: {
                   countryCode: "LBY",
                   city: customerAddress ? customerAddress.split("-")[0].trim() : "طرابلس",
+                  area: "المركز",
                   address: customerAddress || "طرابلس",
                 },
                 paymentBy: "receiver",
-                totalAmount: totalPrice,
                 products: items.map((it) => ({
                   title: it.title || "منتج",
                   quantity: it.qty || 1,
@@ -588,8 +651,17 @@ export default function App() {
                   isChargeable: true,
                 })),
                 notes: `طلب #${insertedOrder.id} - العميل: ${customerName} (${customerPhone}) - طريقة الدفع: ${paymentLabel}`,
-              }),
-            }).catch(() => {});
+              };
+
+              if (contactId) shipBody.contacts = [contactId];
+              if (serviceId) shipBody.service = serviceId;
+
+              fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/local/shipments`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(shipBody),
+              }).catch(() => {});
+            })();
           });
         } catch {}
       }

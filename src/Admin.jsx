@@ -1081,7 +1081,56 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
     const startTime = Date.now();
     const address = internalOrder.shippingAddress;
     const customer = internalOrder.customer;
+    const headers = this.getHeaders();
+    const defaultRef = `DS-${internalOrder.orderId || Date.now().toString().slice(-4)}`;
 
+    // 1. تنسيق رقم الهاتف الليبي بالصيغة الدولية (+218)
+    let rawPhone = (customer?.phone || "").replace(/[^0-9+]/g, "");
+    if (rawPhone.startsWith("0")) {
+      rawPhone = "+218" + rawPhone.slice(1);
+    } else if (!rawPhone.startsWith("+") && rawPhone.length > 0) {
+      rawPhone = "+218" + rawPhone;
+    }
+    if (!rawPhone) rawPhone = "+218910301107";
+
+    let contactId = null;
+    let serviceId = null;
+
+    // 2. الخطوة الأولى: تسجيل / جلب معرف الزبون (Contact ID)
+    try {
+      const contactRes = await fetch(`${this.config.apiBaseUrl}/api/contacts`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          name: customer?.name || "زبون المتجر",
+          phone: rawPhone,
+        }),
+      });
+      const contactData = await contactRes.json().catch(() => ({}));
+      if (contactData?.data?._id) {
+        contactId = contactData.data._id;
+      }
+    } catch (cErr) {
+      console.warn("Darb Assabil Contact error:", cErr);
+    }
+
+    // 3. الخطوة الثانية: جلب كود الخدمة المتاحة (Service ID)
+    try {
+      const serviceRes = await fetch(`${this.config.apiBaseUrl}/api/local/service/rates/public`, {
+        method: "GET",
+        headers,
+      });
+      const serviceData = await serviceRes.json().catch(() => ({}));
+      if (serviceData?.data?.results?.[0]?._id) {
+        serviceId = serviceData.data.results[0]._id;
+      } else if (Array.isArray(serviceData?.data) && serviceData.data[0]?._id) {
+        serviceId = serviceData.data[0]._id;
+      }
+    } catch (sErr) {
+      console.warn("Darb Assabil Service rates error:", sErr);
+    }
+
+    // 4. الخطوة الثالثة: تجهيز حمولة الشحنة بالصيغة المطلوبة لخوادم درب السبيل V2
     const payload = {
       from: {
         countryCode: "LBY",
@@ -1093,9 +1142,9 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
         countryCode: "LBY",
         city: address?.city || "طرابلس",
         area: address?.area || "المدينة",
-        address: address?.formattedAddress || address?.address || "",
+        address: address?.formattedAddress || address?.address || "طرابلس",
       },
-      products: internalOrder.items.map((it) => ({
+      products: (internalOrder.items || []).map((it) => ({
         title: it.title || "منتج",
         quantity: it.quantity || 1,
         amount: Number(it.unitPrice) || 10,
@@ -1106,63 +1155,17 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
       notes: `طلب #${internalOrder.orderId} - العميل: ${customer?.name || "زبون"} (${customer?.phone || ""}) - الدفع: ${internalOrder.paymentMethod || "كاش"}`,
     };
 
-    const defaultRef = `DS-${internalOrder.orderId || Date.now().toString().slice(-4)}`;
+    if (contactId) {
+      payload.contacts = [contactId];
+    }
+    if (serviceId) {
+      payload.service = serviceId;
+    }
 
-    // 1. المحاولة عبر الدالة السحابية الوسيطة (Server-to-Server)
-    try {
-      const serverlessRes = await fetch("/api/dispatch-shipment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order: {
-            id: internalOrder.orderId,
-            customer_name: customer?.name,
-            customer_phone: customer?.phone,
-            customer_address: addr?.address,
-            payment_method: internalOrder.paymentMethod,
-            total_price: internalOrder.totalAmount,
-            items: internalOrder.items,
-          },
-          config: this.config,
-        }),
-      });
-
-      const sData = await serverlessRes.json().catch(() => ({}));
-      if (serverlessRes.ok && sData.success) {
-        const ref = sData.reference || defaultRef;
-        this.logOperation({
-          action: "create_shipment",
-          endpoint: "/api/dispatch-shipment",
-          method: "POST",
-          statusCode: 200,
-          durationMs: Date.now() - startTime,
-          success: true,
-          message: `تم إرسال وتوثيق الشحنة في درب السبيل بنجاح (رقم التتبع: ${ref})`,
-          orderId: internalOrder.orderId,
-        });
-
-        return {
-          success: true,
-          shipment: new InternalShipment({
-            orderId: internalOrder.orderId,
-            providerCode: this.code,
-            providerShipmentId: sData.data?._id || `sabil_${Date.now()}`,
-            trackingNumber: ref,
-            trackingUrl: sData.trackingUrl || `https://track.sabil.ly/${ref}`,
-            shippingCost: this.config.flatRate || 20,
-            shipmentStatus: "created",
-            rawResponse: sData,
-          }),
-          message: `تم إنشاء وتأكيد الشحنة برقم تتبع: ${ref}`,
-        };
-      }
-    } catch (e) {}
-
-    // 2. المحاولة المباشرة كبديل
     try {
       const res = await fetch(`${this.config.apiBaseUrl}/api/local/shipments`, {
         method: "POST",
-        headers: this.getHeaders(),
+        headers,
         body: JSON.stringify(payload),
       });
 
@@ -1198,7 +1201,7 @@ export class DarbAssabilDeliveryProvider extends DeliveryProvider {
         };
       }
     } catch (err) {
-      // التعامل الذكي مع قيود المتصفح لضمان تسجيل الشحنة وإصدار البوليصة دون توقف
+      // التعامل مع أخطاء المتصفح والشبكة
     }
 
     const durationMs = Date.now() - startTime;
