@@ -134,9 +134,9 @@ export default async function handler(req, res) {
     }
 
     // 3. إنشاء الشحنة — رمز الدولة المصحح (ISO-2: LY بدل ISO-3 الخاطئ LBY)
-            const shipPayload = {
-  from: { countryCode: "lby", city: "طرابلس", area: "المركز", address: "مقر المتجر" },
-  to: { countryCode: "lby", city: "طرابلس", area: "المركز", address: order.customer_address || "طرابلس" },
+                const shipPayload = {
+  from: { countryCode: "lby", city: "طرابلس", area: "سوق الجمعة", address: "مقر المتجر" },
+  to: { countryCode: "lby", city: "طرابلس", area: "سوق الجمعة", address: order.customer_address || "طرابلس" },
   products,
       contacts: [contactId],
       service: serviceId,
