@@ -691,7 +691,6 @@ export default function App() {
         const ezonePayload = {
           Title: `طلب متجر #${insertedOrder.id}`,
           OrderReference: `ORD-${insertedOrder.id}`,
-          IsUniqueOrderReference: true,
           InternalReference: `NOVA-${insertedOrder.id}`,
           Amount: Number(totalPrice),
           Currency: 1, // 1 = LYD
