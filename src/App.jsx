@@ -699,21 +699,36 @@ export default function App() {
           RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
         };
 
+        console.log("📤 Ezone Pay: إرسال طلب الدفع...", ezonePayload);
+
         const ezoneRes = await fetch("/api/ezone-pay", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ payload: ezonePayload }),
         });
 
+        const responseText = await ezoneRes.text();
+        console.log("📥 Ezone Pay Response:", ezoneRes.status, responseText);
+
         if (ezoneRes.ok) {
-          const result = await ezoneRes.json();
+          const result = JSON.parse(responseText);
           if (result.success && result.data?.Link) {
             window.location.href = result.data.Link;
             return true;
+          } else {
+            console.error("❌ Ezone Pay: لم يتم إرجاع رابط الدفع", result);
+            alert("⚠️ تعذر إنشاء رابط الدفع الإلكتروني. تم حفظ طلبك وسيتم التواصل معك.\n\nتفاصيل: " + (result.error || result.message || "لا يوجد رابط دفع في الاستجابة"));
+            return true;
           }
+        } else {
+          console.error("❌ Ezone Pay HTTP Error:", ezoneRes.status, responseText);
+          alert("⚠️ خطأ في خدمة الدفع الإلكتروني (HTTP " + ezoneRes.status + "). تم حفظ طلبك وسيتم التواصل معك.");
+          return true;
         }
       } catch (ezErr) {
-        console.warn("Ezone checkout redirection:", ezErr);
+        console.error("❌ Ezone Pay Exception:", ezErr);
+        alert("⚠️ تعذر الاتصال بخدمة الدفع الإلكتروني. تم حفظ طلبك وسيتم التواصل معك.\n\nالخطأ: " + ezErr.message);
+        return true;
       }
     }
 
