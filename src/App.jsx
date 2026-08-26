@@ -702,20 +702,20 @@ export default function App() {
             RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
           };
 
-          const ezoneRes = await fetch(`${ezoneCfg.apiBaseUrl || "https://test.ezonepay.ly"}/payment-link/new`, {
+          const ezoneRes = await fetch("/api/ezone-pay", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-API-Key": ezoneCfg.apiKey,
-              "Accept": "application/json",
-            },
-            body: JSON.stringify(ezonePayload),
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              payload: ezonePayload,
+              apiKey: ezoneCfg.apiKey,
+              apiBaseUrl: ezoneCfg.apiBaseUrl || "https://api.ezonepay.ly",
+            }),
           });
 
           if (ezoneRes.ok) {
-            const ezoneData = await ezoneRes.json();
-            if (ezoneData.Link) {
-              window.location.href = ezoneData.Link;
+            const result = await ezoneRes.json();
+            if (result.success && result.data?.Link) {
+              window.location.href = result.data.Link;
             }
           }
         }
