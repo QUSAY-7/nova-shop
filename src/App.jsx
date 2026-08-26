@@ -682,41 +682,34 @@ export default function App() {
     // معالجة الدفع الإلكتروني عبر Ezone Pay إذا تم اختياره
     if (payment === "ezone") {
       try {
-        const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
-        const ezoneCfg = storedConfigs["ezone_pay"];
-        if (ezoneCfg && ezoneCfg.apiKey) {
-          const nameParts = (customerName || "زبون").trim().split(" ");
-          const ezonePayload = {
-            Title: `طلب متجر #${insertedOrder.id}`,
-            OrderReference: `ORD-${insertedOrder.id}`,
-            IsUniqueOrderReference: false,
-            InternalReference: `NOVA-${insertedOrder.id}`,
-            Amount: Number(totalPrice),
-            Currency: 1, // 1 = LYD
-            Note: "طلب شراء عبر المتجر الإلكتروني",
-            Customer: {
-              FirstName: nameParts[0] || "زبون",
-              LastName: nameParts.slice(1).join(" ") || "المتجر",
-              PhoneNumber: customerPhone || "0910000000",
-            },
-            RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
-          };
+        const nameParts = (customerName || "زبون").trim().split(" ");
+        const ezonePayload = {
+          Title: `طلب متجر #${insertedOrder.id}`,
+          OrderReference: `ORD-${insertedOrder.id}`,
+          IsUniqueOrderReference: false,
+          InternalReference: `NOVA-${insertedOrder.id}`,
+          Amount: Number(totalPrice),
+          Currency: 1, // 1 = LYD
+          Note: "طلب شراء عبر المتجر الإلكتروني",
+          Customer: {
+            FirstName: nameParts[0] || "زبون",
+            LastName: nameParts.slice(1).join(" ") || "المتجر",
+            PhoneNumber: customerPhone || "0910000000",
+          },
+          RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
+        };
 
-          const ezoneRes = await fetch("/api/ezone-pay", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              payload: ezonePayload,
-              apiKey: ezoneCfg.apiKey,
-              apiBaseUrl: ezoneCfg.apiBaseUrl || "https://api.ezonepay.ly",
-            }),
-          });
+        const ezoneRes = await fetch("/api/ezone-pay", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payload: ezonePayload }),
+        });
 
-          if (ezoneRes.ok) {
-            const result = await ezoneRes.json();
-            if (result.success && result.data?.Link) {
-              window.location.href = result.data.Link;
-            }
+        if (ezoneRes.ok) {
+          const result = await ezoneRes.json();
+          if (result.success && result.data?.Link) {
+            window.location.href = result.data.Link;
+            return true;
           }
         }
       } catch (ezErr) {
