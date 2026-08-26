@@ -1,7 +1,9 @@
 import mock from "./mock.js";
+import ezonepay from "./ezone-pay.js";
 
 const PAYMENT_ADAPTERS = {
   mock,
+  ezonepay,
 };
 
 export function getPaymentAdapter(providerName) {
