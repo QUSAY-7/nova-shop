@@ -8,13 +8,22 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ message: "Method not allowed" });
 
   try {
-    const { payload, apiKey, apiBaseUrl } = req.body || {};
+    const { payload } = req.body || {};
 
-    if (!payload || !apiKey) {
-      return res.status(400).json({ success: false, error: "Missing payload or apiKey" });
+    if (!payload) {
+      return res.status(400).json({ success: false, error: "Missing payment payload" });
     }
 
-    const baseUrl = (apiBaseUrl || "https://api.ezonepay.ly").replace(/\/$/, "");
+    // المفتاح يُقرأ من السيرفر مباشرة (Vercel Environment Variables)
+    const apiKey = process.env.EZONE_PAY_API_KEY || "";
+    const baseUrl = (process.env.EZONE_PAY_BASE_URL || "https://api.ezonepay.ly").replace(/\/$/, "");
+
+    if (!apiKey) {
+      return res.status(500).json({
+        success: false,
+        error: "Server misconfiguration: missing EZONE_PAY_API_KEY",
+      });
+    }
 
     const ezoneRes = await fetch(`${baseUrl}/payment-link/new`, {
       method: "POST",
@@ -27,7 +36,11 @@ export default async function handler(req, res) {
     });
 
     const data = await ezoneRes.json().catch(() => ({}));
-    return res.status(ezoneRes.ok ? 200 : 502).json({ success: ezoneRes.ok, data });
+
+    return res.status(ezoneRes.ok ? 200 : 502).json({
+      success: ezoneRes.ok,
+      data,
+    });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
