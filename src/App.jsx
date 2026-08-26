@@ -726,8 +726,13 @@ export default function App() {
             return true;
           }
         } else {
+          let errorDetail = responseText;
+          try {
+            const errData = JSON.parse(responseText);
+            errorDetail = errData.error || errData.details?.message || responseText;
+          } catch(e) {}
           console.error("❌ Ezone Pay HTTP Error:", ezoneRes.status, responseText);
-          alert("⚠️ خطأ في خدمة الدفع الإلكتروني (HTTP " + ezoneRes.status + "). تم حفظ طلبك وسيتم التواصل معك.");
+          alert("⚠️ خطأ Ezone Pay (HTTP " + ezoneRes.status + "):\n\n" + errorDetail + "\n\nتم حفظ طلبك وسيتم التواصل معك.");
           return true;
         }
       } catch (ezErr) {
