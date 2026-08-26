@@ -682,7 +682,12 @@ export default function App() {
     // معالجة الدفع الإلكتروني عبر Ezone Pay إذا تم اختياره
     if (payment === "ezone") {
       try {
-        const nameParts = (customerName || "زبون").trim().split(" ");
+        const nameParts = (customerName || "زبون المتجر").trim().split(" ");
+        let firstName = nameParts[0] || "زبون";
+        let lastName = nameParts.slice(1).join(" ") || "المتجر";
+        // Ezone Pay يتطلب 3 أحرف على الأقل لكل حقل
+        if (firstName.length < 3) firstName = firstName + "...".slice(0, 3 - firstName.length);
+        if (lastName.length < 3) lastName = lastName + "...".slice(0, 3 - lastName.length);
         const ezonePayload = {
           Title: `طلب متجر #${insertedOrder.id}`,
           OrderReference: `ORD-${insertedOrder.id}`,
@@ -692,8 +697,8 @@ export default function App() {
           Currency: 1, // 1 = LYD
           Note: "طلب شراء عبر المتجر الإلكتروني",
           Customer: {
-            FirstName: nameParts[0] || "زبون",
-            LastName: nameParts.slice(1).join(" ") || "المتجر",
+            FirstName: firstName,
+            LastName: lastName,
             PhoneNumber: customerPhone || "0910000000",
           },
           RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
