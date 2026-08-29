@@ -420,46 +420,63 @@ export default function App() {
     // ========== الدفع الإلكتروني عبر Ezone Pay ==========
     if (payment === "ezone") {
       try {
-        const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
-        const ezoneCfg = storedConfigs["ezone_pay"];
-        if (ezoneCfg && ezoneCfg.apiKey) {
-          const nameParts = (customerName || "زبون").trim().split(" ");
-          const ezonePayload = {
-            Title: `طلب متجر #${insertedOrder.id}`,
-            OrderReference: `ORD-${insertedOrder.id}`,
-            IsUniqueOrderReference: true,
-            InternalReference: `NOVA-${insertedOrder.id}`,
-           MaxUsageCount: 1,
-            Amount: Number(totalPrice),
-            Currency: 1,
-            Note: "طلب شراء عبر المتجر الإلكتروني",
-            Customer: {
-              FirstName: nameParts[0] || "زبون",
-              LastName: nameParts.slice(1).join(" ") || "المتجر",
-              PhoneNumber: customerPhone || "0910000000",
-            },
-            RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
-          };
+        const nameParts = (customerName || "زبون المتجر").trim().split(" ");
+        let firstName = nameParts[0] || "زبون";
+        let lastName = nameParts.slice(1).join(" ") || "المتجر";
+        if (firstName.length < 3) firstName = firstName + "...".slice(0, 3 - firstName.length);
+        if (lastName.length < 3) lastName = lastName + "...".slice(0, 3 - lastName.length);
 
-          const ezoneRes = await fetch("/api/ezone-pay", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    payload: ezonePayload,
-    apiKey: ezoneCfg.apiKey,
-    apiBaseUrl: ezoneCfg.apiBaseUrl || "https://test.ezonepay.ly",
-  }),
-});
+        const ezonePayload = {
+          Title: `طلب متجر #${insertedOrder.id}`,
+          OrderReference: `ORD-${insertedOrder.id}`,
+          IsUniqueOrderReference: true,
+          InternalReference: `NOVA-${insertedOrder.id}`,
+          Amount: Number(totalPrice),
+          Currency: 1, // 1 = LYD
+          Note: "طلب شراء عبر المتجر الإلكتروني",
+          Customer: {
+            FirstName: firstName,
+            LastName: lastName,
+            PhoneNumber: customerPhone || "0910000000",
+          },
+          RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
+        };
 
-          if (ezoneRes.ok) {
-            const result = await ezoneRes.json();
-            if (result.success && result.data?.Link) {
-              window.location.href = result.data.Link;
-            }
+        console.log("📤 Ezone Pay: إرسال طلب الدفع...", ezonePayload);
+
+        const ezoneRes = await fetch("/api/ezone-pay", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payload: ezonePayload }),
+        });
+
+        const responseText = await ezoneRes.text();
+        console.log("📥 Ezone Pay Response:", ezoneRes.status, responseText);
+
+        if (ezoneRes.ok) {
+          const result = JSON.parse(responseText);
+          if (result.success && result.data?.Link) {
+            window.location.href = result.data.Link;
+            return true;
+          } else {
+            console.error("❌ Ezone Pay: لم يتم إرجاع رابط الدفع", result);
+            alert("⚠️ تعذر إنشاء رابط الدفع الإلكتروني. تم حفظ طلبك وسيتم التواصل معك.\n\nتفاصيل: " + (result.error || result.message || "لا يوجد رابط دفع"));
+            return true;
           }
+        } else {
+          let errorDetail = responseText;
+          try {
+            const errData = JSON.parse(responseText);
+            errorDetail = errData.error || errData.details?.message || responseText;
+          } catch(e) {}
+          console.error("❌ Ezone Pay HTTP Error:", ezoneRes.status, responseText);
+          alert("⚠️ خطأ Ezone Pay (HTTP " + ezoneRes.status + "):\n\n" + errorDetail + "\n\nتم حفظ طلبك وسيتم التواصل معك.");
+          return true;
         }
       } catch (ezErr) {
-        console.warn("Ezone checkout:", ezErr);
+        console.error("❌ Ezone Pay Exception:", ezErr);
+        alert("⚠️ تعذر الاتصال بخدمة الدفع الإلكتروني. تم حفظ طلبك وسيتم التواصل معك.\n\nالخطأ: " + ezErr.message);
+        return true;
       }
     }
 
@@ -1267,6 +1284,13 @@ export default function App() {
                       <button onClick={copyAccount} className="copy-btn">
                         {copied ? <Check className="ok" /> : <Copy />}
                       </button>
+                    </div>
+                  )}
+                  {payment === "ezone" && (
+                    <div style={{ marginTop: "10px", padding: "10px 12px", background: "var(--teal-light)", borderRadius: "12px", fontSize: "12px", color: "var(--teal-dark)", lineHeight: 1.6 }}>
+                      🔒 <strong>الدفع الإلكتروني المباشر:</strong>
+                      <br />
+                      عند الضغط على إتمام الطلب، سيتم نقلك مباشرة إلى بوابة الدفع الآمنة لاختيار وسيلة الدفع المفضلة (سداد، إدفع لي، موبي كاش، تداول، مصرفي باي، إلخ).
                     </div>
                   )}
                 </div>
