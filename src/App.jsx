@@ -28,8 +28,6 @@ import {
   Trash2,
   Wallet,
   WalletMinimal,
-  Share2,
-  ExternalLink,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -65,101 +63,6 @@ const FAQ = [
   { q: "كيف أطلب أكثر من منتج بنفس الوقت؟", a: "أضف كل منتج تريده للسلة بالكمية المطلوبة، وعند إتمام الطلب سيصلنا طلب واحد يجمعهم كلهم." },
 ];
 
-export const FacebookIcon = ({ size = 20, color = "currentColor", style = {} }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
-    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
-  </svg>
-);
-
-export const InstagramIcon = ({ size = 20, color = "currentColor", style = {} }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
-    <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-  </svg>
-);
-
-function updateMetaTag(propertyOrName, content, isProperty = true) {
-  const selector = isProperty ? `meta[property="${propertyOrName}"]` : `meta[name="${propertyOrName}"]`;
-  let element = document.querySelector(selector);
-  if (!element) {
-    element = document.createElement("meta");
-    if (isProperty) {
-      element.setAttribute("property", propertyOrName);
-    } else {
-      element.setAttribute("name", propertyOrName);
-    }
-    document.head.appendChild(element);
-  }
-  element.setAttribute("content", content || "");
-}
-
-export function applySEOMeta({
-  title,
-  description,
-  image,
-  url,
-  price,
-  currency = "LYD",
-  type = "website",
-}) {
-  if (title) document.title = title;
-  if (description) updateMetaTag("description", description, false);
-
-  updateMetaTag("og:title", title);
-  updateMetaTag("og:description", description);
-  updateMetaTag("og:type", type);
-  updateMetaTag("og:url", url || window.location.href);
-  if (image) updateMetaTag("og:image", image);
-  if (price) {
-    updateMetaTag("product:price:amount", String(price));
-    updateMetaTag("product:price:currency", currency);
-  }
-
-  // Twitter Cards
-  updateMetaTag("twitter:card", "summary_large_image", false);
-  updateMetaTag("twitter:title", title, false);
-  updateMetaTag("twitter:description", description, false);
-  if (image) updateMetaTag("twitter:image", image, false);
-
-  // Schema.org JSON-LD Structured Data
-  let script = document.getElementById("schema-product-jsonld");
-  if (!script) {
-    script = document.createElement("script");
-    script.id = "schema-product-jsonld";
-    script.type = "application/ld+json";
-    document.head.appendChild(script);
-  }
-
-  const structuredData =
-    type === "product"
-      ? {
-          "@context": "https://schema.org/",
-          "@type": "Product",
-          name: title,
-          image: image ? [image] : [],
-          description: description,
-          offers: {
-            "@type": "Offer",
-            url: url || window.location.href,
-            priceCurrency: currency,
-            price: price || "0",
-            availability: "https://schema.org/InStock",
-            itemCondition: "https://schema.org/NewCondition",
-          },
-        }
-      : {
-          "@context": "https://schema.org",
-          "@type": "Store",
-          name: title,
-          description: description,
-          url: url || window.location.href,
-          image: image,
-        };
-
-  script.textContent = JSON.stringify(structuredData);
-}
-
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -191,45 +94,29 @@ export default function App() {
   // ---- معرض صور المنتج ----
   const [galleryProduct, setGalleryProduct] = useState(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
-  const [shareModalProduct, setShareModalProduct] = useState(null);
 
-  // ---- طلباتي السابقة (نظام تأكيد عبر واتساب وحفظ تلقائي) ----
+    // ---- طلباتي (بحث آمن ومحمي للزبون) ----
   const [myOrdersOpen, setMyOrdersOpen] = useState(false);
-  const [orderTab, setOrderTab] = useState("local"); // 'local' | 'wa_verify'
+  const [orderTab, setOrderTab] = useState("local"); // 'local' | 'lookup'
   const [lookupPhone, setLookupPhone] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [enteredOtp, setEnteredOtp] = useState("");
-  const [isOtpSent, setIsOtpSent] = useState(false);
-  const [isVerified, setIsVerified] = useState(false);
+  const [lookupOrderId, setLookupOrderId] = useState("");
   const [localOrders, setLocalOrders] = useState([]);
   const [myOrders, setMyOrders] = useState([]);
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [myOrdersSearched, setMyOrdersSearched] = useState(false);
   const [invoiceOrder, setInvoiceOrder] = useState(null);
 
-  // تحديث محركات البحث (SEO & Open Graph) تلقائياً عند تغيير المتجر أو المنتج النشط
-  useEffect(() => {
-    if (galleryProduct) {
-      applySEOMeta({
-        title: `${galleryProduct.title} | ${settings?.store_name || "NOVA SHOP"} - ${galleryProduct.price} د.ل`,
-        description: galleryProduct.description || `تسوق ${galleryProduct.title} بأفضل سعر وجودة مضمونة في ليبيا.`,
-        image: galleryProduct.image || (galleryProduct.images && galleryProduct.images[0]),
-        price: galleryProduct.price,
-        type: "product",
-        url: `${window.location.origin}${window.location.pathname}?product=${galleryProduct.id}`,
-      });
-    } else if (settings) {
-      applySEOMeta({
-        title: settings.store_name || "NOVA SHOP - أفضل متجر إلكتروني في ليبيا",
-        description: settings.store_description || localStorage.getItem("nova_store_description") || "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات مع توصيل سريع لجميع المدن الليبية.",
-        image: settings.logo_url,
-        type: "website",
-        url: window.location.origin,
-      });
-    }
-  }, [galleryProduct, settings]);
-
   // تحميل طلبات الجهاز المحفوظة تلقائياً
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("nova_customer_orders") || "[]");
+      setLocalOrders(saved);
+    } catch (e) {
+      console.error("فشل قراءة الطلبات المحلية", e);
+    }
+  }, []);
+
+  // تحميل طلبات الجهاز المحفوظة
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("nova_customer_orders") || "[]");
@@ -268,14 +155,12 @@ export default function App() {
       if (error) {
         setLoadError(error.message);
       } else {
-        const prodList = data || [];
-        setProducts(prodList);
-
-        // فتح منتج معين تلقائياً لو الرابط يحتوي على ?product=ID أو #product-ID
+        setProducts(data || []);
+        // فتح منتج معين تلقائياً لو الرابط يحتوي على ?product=ID
         const params = new URLSearchParams(window.location.search);
-        const sharedId = params.get("product") || (window.location.hash.startsWith("#product-") ? window.location.hash.replace("#product-", "") : null);
+        const sharedId = params.get("product");
         if (sharedId) {
-          const found = prodList.find((p) => String(p.id) === String(sharedId) || String(p.code) === String(sharedId));
+          const found = (data || []).find((p) => String(p.id) === String(sharedId));
           if (found) {
             setGalleryProduct(found);
             setGalleryIndex(0);
@@ -464,28 +349,13 @@ export default function App() {
     setQty(key, line.qty - 1, line);
   };
 
-  const handleShare = async (product) => {
-    const baseUrl = (settings?.store_url || localStorage.getItem("nova_store_url") || `${window.location.origin}${window.location.pathname}`).replace(/\/$/, "");
-    const url = baseUrl.includes("?") ? `${baseUrl}&product=${product.id}` : `${baseUrl}?product=${product.id}`;
-    const storeName = settings?.store_name || "NOVA SHOP";
-    const shareData = {
-      title: `${product.title} | ${storeName}`,
-      text: `شاهد "${product.title}" بسعر ${product.price} د.ل فقط من متجر ${storeName}! ✨`,
-      url: url,
-    };
-
-    if (navigator.share) {
-      try {
-        await navigator.share(shareData);
-        return;
-      } catch (err) {
-        if (err.name !== "AbortError") {
-          console.warn("Share fallback:", err);
-        }
-      }
-    }
-
-    setShareModalProduct(product);
+  const handleShare = (product) => {
+    const url = `${window.location.origin}${window.location.pathname}?product=${product.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      alert("تم نسخ رابط المنتج ✅");
+    }).catch(() => {
+      alert("تعذر نسخ الرابط، حاول مرة أخرى");
+    });
   };
 
   const saveOrder = async () => {
@@ -503,20 +373,13 @@ export default function App() {
       price: getEffectivePrice(l.product, l.variant),
     }));
 
-    const paymentLabel =
-      payment === "cash"
-        ? "كاش عند الاستلام"
-        : payment === "bank"
-        ? "تحويل بنكي"
-        : "Ezone Pay (دفع إلكتروني)";
-
     const { data: insertedOrder, error } = await supabase
       .from("orders")
       .insert([
         {
           items,
           total_price: totalPrice,
-          payment_method: paymentLabel,
+                    payment_method: payment === "cash" ? "كاش" : payment === "bank" ? "تحويل بنكي" : "Ezone Pay (دفع إلكتروني)",
           customer_name: customerName,
           customer_phone: customerPhone,
           customer_address: customerAddress,
@@ -525,223 +388,82 @@ export default function App() {
       .select()
       .single();
 
-    if (error) {
-      console.error("فشل حفظ الطلب:", error.message);
-      return false;
-    }
-
-    // ----------------------------------------------------
-    // الأتمتة الفورية: ربط وتوجيه الطلب لشركة التوصيل (درب السبيل) فور إتمامه
-    // ----------------------------------------------------
+         // ========== إرسال تلقائي لشركة درب السبيل للتوصيل ==========
     try {
       const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
       const darbCfg = storedConfigs["darb_assabil"];
       if (darbCfg && darbCfg.isActive !== false) {
-        const trackingRef = `DS-${insertedOrder.id}`;
-        await supabase
-          .from("orders")
-          .update({
-            tracking_number: trackingRef,
-            delivery_provider: "darb_assabil",
-          })
-          .eq("id", insertedOrder.id);
+        await supabase.from("orders").update({
+          tracking_number: `DS-${insertedOrder.id}`,
+          delivery_provider: "darb_assabil",
+        }).eq("id", insertedOrder.id);
 
-        // إرسال حمولة الشحنة لخوادم درب السبيل عبر الدالة السحابية الوسيطة
-        try {
-          fetch("/api/dispatch-shipment", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              order: { ...insertedOrder, items, total_price: totalPrice, payment_method: paymentLabel },
-              config: darbCfg,
-            }),
-          }).catch(() => {
-            // تنفيذ دورة إرسال شحنة درب السبيل المتكاملة (Contacts + Service Rates + LocalShipments)
-            (async () => {
-              const rawKey = (darbCfg.apiKey || "").trim();
-              const authVal = rawKey.startsWith("Bearer ")
-                ? rawKey
-                : rawKey.startsWith("apikey ")
-                ? rawKey
-                : `apikey ${rawKey}`;
-
-              // استخراج معرف الحساب من التوكن إن لم يكن مدخلاً
-              let accId = (darbCfg.accountId || "").trim();
-              if (!accId && rawKey) {
-                try {
-                  const parts = rawKey.replace(/^(apikey|Bearer)\s+/i, "").split(".");
-                  if (parts.length >= 2) {
-                    let b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-                    while (b64.length % 4 !== 0) b64 += "=";
-                    const parsed = JSON.parse(decodeURIComponent(escape(atob(b64))));
-                    accId = parsed.secretId || parsed.accountId || parsed.sub || "";
-                  }
-                } catch (e) {}
-              }
-
-              const headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Authorization": authVal,
-                "X-API-VERSION": "1.0.0",
-              };
-              if (accId) {
-                headers["X-ACCOUNT-ID"] = accId;
-              }
-
-              // 1. تنسيق رقم الهاتف الدولي
-              let rawPhone = (customerPhone || "").replace(/[^0-9+]/g, "");
-              if (rawPhone.startsWith("0")) {
-                rawPhone = "+218" + rawPhone.slice(1);
-              } else if (!rawPhone.startsWith("+") && rawPhone.length > 0) {
-                rawPhone = "+218" + rawPhone;
-              }
-              if (!rawPhone) rawPhone = "+218910301107";
-
-              // 2. تسجيل جهة الاتصال
-              let contactId = null;
-              try {
-                const cRes = await fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/contacts`, {
-                  method: "POST",
-                  headers,
-                  body: JSON.stringify({
-                    name: customerName || "زبون المتجر",
-                    phone: rawPhone,
-                  }),
-                });
-                const cData = await cRes.json().catch(() => ({}));
-                if (cData?.data?._id) contactId = cData.data._id;
-              } catch (e) {}
-
-              // 3. جلب كود الخدمة
-              let serviceId = null;
-              try {
-                const sRes = await fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/local/service/rates/public`, {
-                  method: "GET",
-                  headers,
-                });
-                const sData = await sRes.json().catch(() => ({}));
-                if (sData?.data?.results?.[0]?._id) {
-                  serviceId = sData.data.results[0]._id;
-                } else if (Array.isArray(sData?.data) && sData.data[0]?._id) {
-                  serviceId = sData.data[0]._id;
-                }
-              } catch (e) {}
-
-              // 4. إنشاء الشحنة
-              const shipBody = {
-                from: {
-                  countryCode: "LBY",
-                  city: "طرابلس",
-                  area: "المركز",
-                  address: "مقر المتجر",
-                },
-                to: {
-                  countryCode: "LBY",
-                  city: customerAddress ? customerAddress.split("-")[0].trim() : "طرابلس",
-                  area: "المركز",
-                  address: customerAddress || "طرابلس",
-                },
-                paymentBy: "receiver",
-                products: items.map((it) => ({
-                  title: it.title || "منتج",
-                  quantity: it.qty || 1,
-                  amount: it.price || 0,
-                  currency: "lyd",
-                  isChargeable: true,
-                })),
-                notes: `طلب #${insertedOrder.id} - العميل: ${customerName} (${customerPhone}) - طريقة الدفع: ${paymentLabel}`,
-              };
-
-              if (contactId) shipBody.contacts = [contactId];
-              if (serviceId) shipBody.service = serviceId;
-
-              fetch(`${darbCfg.apiBaseUrl || "https://v2.sabil.ly"}/api/local/shipments`, {
-                method: "POST",
-                headers,
-                body: JSON.stringify(shipBody),
-              }).catch(() => {});
-            })();
-          });
-        } catch {}
-      }
-    } catch (deliveryDispatchErr) {
-      console.warn("Delivery auto-dispatch:", deliveryDispatchErr);
-    }
-
-    // حفظ الطلب في الـ LocalStorage لجهاز الزبون لسهولة متابعته
-    try {
-      const existing = JSON.parse(localStorage.getItem("nova_customer_orders") || "[]");
-      const updated = [insertedOrder, ...existing.filter((o) => o.id !== insertedOrder.id)].slice(0, 10);
-      localStorage.setItem("nova_customer_orders", JSON.stringify(updated));
-      setLocalOrders(updated);
-    } catch (e) {
-      console.error("فشل حفظ الطلب محلياً", e);
-    }
-
-    // معالجة الدفع الإلكتروني عبر Ezone Pay إذا تم اختياره
-    if (payment === "ezone") {
-      try {
-        const nameParts = (customerName || "زبون المتجر").trim().split(" ");
-        let firstName = nameParts[0] || "زبون";
-        let lastName = nameParts.slice(1).join(" ") || "المتجر";
-        // Ezone Pay يتطلب 3 أحرف على الأقل لكل حقل
-        if (firstName.length < 3) firstName = firstName + "...".slice(0, 3 - firstName.length);
-        if (lastName.length < 3) lastName = lastName + "...".slice(0, 3 - lastName.length);
-        const ezonePayload = {
-          Title: `طلب متجر #${insertedOrder.id}`,
-          OrderReference: `ORD-${insertedOrder.id}`,
-          InternalReference: `NOVA-${insertedOrder.id}`,
-          Amount: Number(totalPrice),
-          Currency: 1, // 1 = LYD
-          Note: "طلب شراء عبر المتجر الإلكتروني",
-          Customer: {
-            FirstName: firstName,
-            LastName: lastName,
-            PhoneNumber: customerPhone || "0910000000",
-          },
-          RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
-        };
-
-        console.log("📤 Ezone Pay: إرسال طلب الدفع...", ezonePayload);
-
-        const ezoneRes = await fetch("/api/ezone-pay", {
+        fetch("/api/dispatch-shipment", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payload: ezonePayload }),
-        });
+          body: JSON.stringify({
+            order: {
+              id: insertedOrder.id,
+              customer_name: customerName,
+              customer_phone: customerPhone,
+              customer_address: customerAddress,
+              items,
+              total_price: totalPrice,
+            },
+          }),
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Darb Assabil dispatch:", e);
+    }
 
-        const responseText = await ezoneRes.text();
-        console.log("📥 Ezone Pay Response:", ezoneRes.status, responseText);
+    // ========== الدفع الإلكتروني عبر Ezone Pay ==========
+    if (payment === "ezone") {
+      try {
+        const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
+        const ezoneCfg = storedConfigs["ezone_pay"];
+        if (ezoneCfg && ezoneCfg.apiKey) {
+          const nameParts = (customerName || "زبون").trim().split(" ");
+          const ezonePayload = {
+            Title: `طلب متجر #${insertedOrder.id}`,
+            OrderReference: `ORD-${insertedOrder.id}`,
+            IsUniqueOrderReference: true,
+            InternalReference: `NOVA-${insertedOrder.id}`,
+           MaxUsageCount: 1,
+            Amount: Number(totalPrice),
+            Currency: 1,
+            Note: "طلب شراء عبر المتجر الإلكتروني",
+            Customer: {
+              FirstName: nameParts[0] || "زبون",
+              LastName: nameParts.slice(1).join(" ") || "المتجر",
+              PhoneNumber: customerPhone || "0910000000",
+            },
+            RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
+          };
 
-        if (ezoneRes.ok) {
-          const result = JSON.parse(responseText);
-          if (result.success && result.data?.Link) {
-            window.location.href = result.data.Link;
-            return true;
-          } else {
-            console.error("❌ Ezone Pay: لم يتم إرجاع رابط الدفع", result);
-            alert("⚠️ تعذر إنشاء رابط الدفع الإلكتروني. تم حفظ طلبك وسيتم التواصل معك.\n\nتفاصيل: " + (result.error || result.message || "لا يوجد رابط دفع في الاستجابة"));
-            return true;
+          const ezoneRes = await fetch("/api/ezone-pay", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    payload: ezonePayload,
+    apiKey: ezoneCfg.apiKey,
+    apiBaseUrl: ezoneCfg.apiBaseUrl || "https://test.ezonepay.ly",
+  }),
+});
+
+          if (ezoneRes.ok) {
+            const result = await ezoneRes.json();
+            if (result.success && result.data?.Link) {
+              window.location.href = result.data.Link;
+            }
           }
-        } else {
-          let errorDetail = responseText;
-          try {
-            const errData = JSON.parse(responseText);
-            errorDetail = errData.error || errData.details?.message || responseText;
-          } catch(e) {}
-          console.error("❌ Ezone Pay HTTP Error:", ezoneRes.status, responseText);
-          alert("⚠️ خطأ Ezone Pay (HTTP " + ezoneRes.status + "):\n\n" + errorDetail + "\n\nتم حفظ طلبك وسيتم التواصل معك.");
-          return true;
         }
       } catch (ezErr) {
-        console.error("❌ Ezone Pay Exception:", ezErr);
-        alert("⚠️ تعذر الاتصال بخدمة الدفع الإلكتروني. تم حفظ طلبك وسيتم التواصل معك.\n\nالخطأ: " + ezErr.message);
-        return true;
+        console.warn("Ezone checkout:", ezErr);
       }
     }
 
-    // خصم الكمية من المخزون
+    // خصم الكمية من المخزون (المنتج نفسه أو خيار المقاس/اللون حسب الحالة)
     for (const line of cartItems) {
       if (line.variant) {
         const newQty = Math.max(0, line.variant.quantity - line.qty);
@@ -795,45 +517,27 @@ export default function App() {
     return true;
   };
 
-  // إرسال كود التحقق عبر واتساب
-  const sendWhatsAppOtp = () => {
-    if (!lookupPhone.trim() || lookupPhone.trim().length < 8) {
-      alert("من فضلك أدخل رقم هاتف صحيح أولاً.");
+  // بحث آمن عن الطلبات يتطلب رقم الهاتف ورقم الطلب معاً لحماية الخصوصية
+    // بحث آمن عن الطلبات يتطلب رقم الهاتف ورقم الطلب معاً لحماية الخصوصية
+  const fetchMyOrders = async () => {
+    if (!lookupPhone.trim() || !lookupOrderId.trim()) {
+      alert("لحماية خصوصيتك، يُرجى إدخال رقم الهاتف ورقم الطلب معاً.");
       return;
     }
-    const generated = String(Math.floor(1000 + Math.random() * 9000));
-    setOtpCode(generated);
-    setIsOtpSent(true);
-
-    const waMsg = encodeURIComponent(
-      `مرحباً ${settings?.store_name || "NOVA SHOP"}، أرغب في التحقق من حسابي وعرض طلباتي لرقم الهاتف (${lookupPhone.trim()}).\nرمز التحقق: [ ${generated} ]`
-    );
-    const storeWa = settings?.whatsapp_number || "218931739453";
-    window.open(`https://wa.me/${storeWa}?text=${waMsg}`, "_blank", "noopener,noreferrer");
-  };
-
-  // التحقق من الكود وجلب طلبات الزبون
-  const verifyAndFetchOrders = async () => {
-    if (enteredOtp.trim() !== otpCode) {
-      alert("رمز التحقق غير صحيح، يرجى التأكد من الرمز وإعادة المحاولة.");
-      return;
-    }
-    setIsVerified(true);
     setMyOrdersLoading(true);
     setMyOrdersSearched(true);
     const { data, error } = await supabase
       .from("orders")
       .select("*")
-      .eq("customer_phone", lookupPhone.trim())
-      .order("created_at", { ascending: false });
-    if (!error) {
-      setMyOrders(data || []);
+      .eq("id", lookupOrderId.trim())
+      .eq("customer_phone", lookupPhone.trim());
+    if (!error && data) {
+      setMyOrders(data);
     } else {
       setMyOrders([]);
     }
     setMyOrdersLoading(false);
   };
-
   const orderMessage = () => {
     const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
     cartItems.forEach((l) => {
@@ -846,15 +550,7 @@ export default function App() {
     });
     lines.push("");
     lines.push(`الإجمالي: ${totalPrice} د.ل`);
-    lines.push(
-      `طريقة الدفع: ${
-        payment === "cash"
-          ? "كاش عند الاستلام"
-          : payment === "bank"
-          ? "تحويل بنكي"
-          : "دفع إلكتروني عبر Ezone Pay"
-      }`
-    );
+    lines.push(`طريقة الدفع: ${payment === "cash" ? "كاش عند الاستلام" : "تحويل بنكي"}`);
     if (payment === "bank") lines.push(`رقم الحساب: ${settings?.bank_account || ""}`);
     return encodeURIComponent(lines.join("\n"));
   };
@@ -941,6 +637,7 @@ export default function App() {
     invoiceWindow.document.close();
   };
 
+  // يعرض صورة المنتج إن وجدت، وإلا أيقونة افتراضية حسب التصنيف
   const ProductThumb = ({ product }) => {
     if (product.image) {
       return (
@@ -969,6 +666,7 @@ export default function App() {
     return <Icon />;
   };
 
+  // ---- معرض الصور: مساعدين ----
   const getProductImages = (product) => {
     if (product.images && product.images.length > 0) return product.images;
     if (product.image) return [product.image];
@@ -1064,7 +762,7 @@ export default function App() {
         .total-line{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
         .total-amount{ font-family:'Almarai',sans-serif; font-weight:800; font-size:20px; color:var(--teal-dark); }
 
-        .cta-button{ width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px; border-radius:999px; background:var(--teal); color:#fff; font-weight:800; font-size:14px; box-shadow:0 8px 20px rgba(14,124,134,.25); transition: transform .15s ease; }
+        .cta-button{ width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:15px; border-radius:18px; background:var(--teal); color:#fff; font-weight:800; font-size:15px; box-shadow:0 10px 24px rgba(14,124,134,.25); transition: transform .15s ease; }
         .cta-button:active{ transform: scale(.98); }
         .cta-button:disabled{ opacity:.5; }
 
@@ -1073,9 +771,27 @@ export default function App() {
         .hero-top{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px; }
         .eyebrow{ font-size:12px; font-weight:700; padding:6px 14px; border-radius:999px; background:var(--teal-light); color:var(--teal-dark); }
         .h1{ font-family:'Almarai',sans-serif; font-weight:800; font-size:26px; line-height:1.5; max-width:380px; }
-        .h1-sub{ font-size:14px; color:var(--muted); max-width:380px; line-height:1.7; }
+        .h1-sub{ font-size:14px; color:var(--muted); max-width:340px; line-height:1.7; }
 
-        .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:20px; }
+        .parcel-wrap{ position:relative; width:100%; max-width:260px; aspect-ratio:1/1; margin:20px auto 0; display:flex; align-items:center; justify-content:center; }
+        .parcel-glow{ position:absolute; inset:24px; border-radius:32px; filter:blur(30px); opacity:.4; background: radial-gradient(circle at 50% 40%, var(--teal), transparent 70%); }
+        .parcel-float{ position:relative; width:170px; height:190px; animation: floatY 4.5s ease-in-out infinite; }
+        @keyframes floatY{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
+        .parcel-chip{ position:absolute; width:64px; height:64px; border-radius:16px; display:flex; align-items:center; justify-content:center; box-shadow:0 12px 22px rgba(0,0,0,.16); }
+        .parcel-chip svg{ width:24px; height:24px; color:#fff; }
+        .chip-1{ right:-4px; top:6px; transform:rotate(-10deg); background:linear-gradient(135deg,#2a3f47,#0B2027); }
+        .chip-2{ left:-8px; top:2px; transform:rotate(9deg); background:linear-gradient(135deg,var(--gold),#8a6a22); }
+        .parcel-body{ position:absolute; inset:46px 8px 8px 8px; border-radius:18px; overflow:hidden; background:linear-gradient(160deg,#12333a,#0A1F24); box-shadow:0 20px 40px rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; }
+        .parcel-noise{ position:absolute; inset:0; opacity:.16; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.09) 0px, rgba(255,255,255,.09) 1px, transparent 1px, transparent 10px); }
+        .parcel-scan-clip{ position:absolute; inset:0; overflow:hidden; }
+        .scan-line{ position:absolute; inset-inline:0; height:32px; background:linear-gradient(180deg, transparent, rgba(45,212,191,.55), transparent); animation: scan 3.4s ease-in-out infinite; }
+        @keyframes scan{ 0%{ transform:translateY(-160%); opacity:0;} 12%{ opacity:1;} 88%{ opacity:1;} 100%{ transform:translateY(240%); opacity:0;} }
+        .parcel-mark{ position:relative; font-family:'Almarai',sans-serif; font-weight:800; font-size:13px; letter-spacing:3px; color:rgba(255,255,255,.35); }
+        .badge-pulse{ position:absolute; top:-6px; right:-6px; width:40px; height:40px; border-radius:999px; background:var(--teal); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(0,0,0,.2); animation: pulseRing 2.2s ease-out infinite; z-index:2; }
+        @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
+        .badge-pulse svg{ width:18px; height:18px; color:#fff; }
+
+        .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
         .trust-item{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px 6px; border-radius:18px; background:var(--surface); border:1px solid var(--line); }
         .trust-item svg{ width:20px; height:20px; color:var(--teal); }
         .trust-item span{ font-size:11px; font-weight:500; color:var(--muted); text-align:center; line-height:1.3; }
@@ -1092,9 +808,9 @@ export default function App() {
         .feature-body{ font-size:12px; line-height:1.6; color:var(--muted); }
 
         /* ---------- Category tabs ---------- */
-        .cat-tabs{ display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:16px; scrollbar-width:none; justify-content:flex-start; }
+        .cat-tabs{ display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:16px; scrollbar-width:none; }
         .cat-tabs::-webkit-scrollbar{ display:none; }
-        .cat-tab{ flex-shrink:0; padding:8px 16px; border-radius:999px; font-size:12.5px; font-weight:700; border:1px solid var(--line); background:var(--surface); color:var(--ink); transition: all .15s ease; }
+        .cat-tab{ flex-shrink:0; padding:9px 18px; border-radius:999px; font-size:13px; font-weight:700; border:1px solid var(--line); background:var(--surface); color:var(--ink); transition: all .15s ease; }
         .cat-tab.active{ background:var(--teal); border-color:var(--teal); color:#fff; }
 
         /* ---------- Product grid ---------- */
@@ -1109,7 +825,7 @@ export default function App() {
         .product-price{ font-family:'Almarai',sans-serif; font-weight:800; font-size:16px; color:var(--teal-dark); }
         .product-compare{ font-size:11px; color:var(--muted); text-decoration:line-through; }
         .product-action{ margin-top:10px; }
-        .add-btn{ width:100%; display:flex; align-items:center; justify-content:center; gap:6px; padding:9px; border-radius:999px; background:var(--teal-light); color:var(--teal-dark); font-size:12px; font-weight:700; transition: background .15s; }
+        .add-btn{ width:100%; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:var(--teal-light); color:var(--teal-dark); font-size:12.5px; font-weight:700; transition: background .15s; }
         .add-btn:active{ transform: scale(.97); }
         .product-action .qty-control{ width:100%; justify-content:space-between; background:var(--teal-light); }
 
@@ -1118,14 +834,14 @@ export default function App() {
 
         /* ---------- Payment (in cart) ---------- */
         .field-block{ margin-top:16px; flex-shrink:0; }
-        .field-label{ font-size:12.5px; font-weight:700; display:block; margin-bottom:8px; }
+        .field-label{ font-size:13px; font-weight:700; display:block; margin-bottom:8px; }
         .payment-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-        .pay-btn{ display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:999px; font-size:12px; font-weight:700; background:transparent; border:1px solid var(--line); color:var(--ink); transition: all .15s ease; }
+        .pay-btn{ display:flex; align-items:center; justify-content:center; gap:6px; padding:11px; border-radius:12px; font-size:12.5px; font-weight:700; background:transparent; border:1px solid var(--line); color:var(--ink); transition: all .15s ease; }
         .pay-btn svg{ width:14px; height:14px; }
         .pay-btn.active{ background:var(--teal); border-color:var(--teal); color:#fff; }
-        .bank-box{ margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; border-radius:999px; background:var(--teal-light); }
+        .bank-box{ margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:11px; border-radius:12px; background:var(--teal-light); }
         .bank-number{ font-size:11px; font-family: monospace; letter-spacing:.5px; color:var(--teal-dark); direction:ltr; }
-        .copy-btn{ width:28px; height:28px; border-radius:999px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.12); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .copy-btn{ width:30px; height:30px; border-radius:999px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.12); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         .copy-btn svg{ width:13px; height:13px; }
         .copy-btn .ok{ color:var(--success); }
 
@@ -1147,11 +863,11 @@ export default function App() {
         /* ---------- Sticky bar ---------- */
         .sticky-bar{ position:fixed; bottom:0; inset-inline:0; z-index:30; }
         .sticky-bar-inner{ max-width: var(--container); margin:0 auto; padding:8px 16px 16px; }
-        .sticky-card{ display:flex; align-items:center; gap:12px; padding:10px; border-radius:999px; background:var(--surface); border:1px solid var(--line); box-shadow:0 -6px 24px rgba(0,0,0,.08); }
+        .sticky-card{ display:flex; align-items:center; gap:12px; padding:10px; border-radius:18px; background:var(--surface); border:1px solid var(--line); box-shadow:0 -6px 24px rgba(0,0,0,.08); }
         .sticky-total-label{ font-size:10px; color:var(--muted); }
         .sticky-total-amount{ font-family:'Almarai',sans-serif; font-weight:800; color:var(--teal-dark); }
-        .sticky-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:12px; border-radius:999px; background:var(--teal); color:#fff; font-weight:700; font-size:13px; }
-        .sticky-cta svg{ width:17px; height:17px; }
+        .sticky-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px; border-radius:14px; background:var(--teal); color:#fff; font-weight:700; }
+        .sticky-cta svg{ width:18px; height:18px; }
 
         /* ---------- Product image gallery modal ---------- */
         .gallery-overlay{ position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
@@ -1174,6 +890,7 @@ export default function App() {
         @media (min-width: 640px){
           :root{ --container: 720px; }
           .h1{ font-size:30px; max-width:480px; }
+          .parcel-wrap{ max-width:300px; }
           .features-grid{ grid-template-columns:repeat(2,1fr); gap:14px; }
           .product-grid{ grid-template-columns:repeat(3,1fr); }
         }
@@ -1185,17 +902,18 @@ export default function App() {
           :root{ --container: 1120px; }
           .app{ padding-bottom:40px; }
 
-          .hero .container{ display:flex; flex-direction:column; align-items:center; text-align:center; }
-          .hero-top{ align-items:center; text-align:center; }
-          .h1{ font-size:34px; max-width:580px; }
-          .h1-sub{ max-width:520px; }
-          .trust-row{ grid-template-columns:repeat(3,1fr); max-width:540px; margin-top:24px; }
+          .hero .container{ display:grid; grid-template-columns: 1.1fr 0.9fr; align-items:center; gap:48px; text-align:right; }
+          .hero-top{ align-items:flex-start; text-align:right; }
+          .h1{ font-size:38px; max-width:540px; }
+          .h1-sub{ max-width:460px; }
+          .parcel-wrap{ margin:0; max-width:360px; }
+          .trust-row{ grid-column: 1 / -1; grid-template-columns:repeat(3,1fr); max-width:540px; margin-top:32px; }
 
           .features-grid{ grid-template-columns:repeat(4,1fr); gap:16px; }
           .feature-card{ padding:20px; }
 
           .product-grid{ grid-template-columns:repeat(4,1fr); gap:18px; }
-          .faq-list{ max-width:760px; margin: 0 auto; }
+          .faq-list{ max-width:760px; }
 
           .sticky-bar{ display:none; }
         }
@@ -1204,26 +922,26 @@ export default function App() {
       {/* ===== Header ===== */}
       <header className="header">
         <div className="header-inner">
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <button onClick={() => setMenuOpen(true)} className="icon-btn" aria-label="القائمة">
-              <Menu size={19} />
-            </button>
-            <button onClick={() => setMyOrdersOpen(true)} className="orders-header-btn" aria-label="طلباتي السابقة">
-              <Package size={16} />
-              <span>طلباتي السابقة</span>
-            </button>
-          </div>
+          <button onClick={() => setMenuOpen(true)} className="icon-btn" aria-label="القائمة">
+            <Menu size={19} />
+          </button>
 
           <a href="#home" className="logo">
             {(settings?.store_name || "NOVA SHOP").split(" ")[0]}{" "}
             <span className="accent">{(settings?.store_name || "NOVA SHOP").split(" ").slice(1).join(" ")}</span>
           </a>
 
-          <button onClick={() => setCartOpen(true)} className="cart-header-btn" aria-label="السلة">
-            <ShoppingCart size={19} />
-            <span>السلة</span>
-            {totalQty > 0 && <span className="cart-badge">{totalQty}</span>}
-          </button>
+          <div className="header-actions">
+            <button onClick={() => setMyOrdersOpen(true)} className="nav-action-btn" aria-label="طلباتي">
+              <Package size={17} />
+              <span>طلباتي</span>
+            </button>
+            <button onClick={() => setCartOpen(true)} className="nav-action-btn solid" aria-label="السلة">
+              <ShoppingCart size={17} />
+              <span>السلة</span>
+              {totalQty > 0 && <span className="cart-badge">{totalQty}</span>}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1245,53 +963,32 @@ export default function App() {
                 </a>
               ))}
             </nav>
-            <div className="drawer-foot" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div className="drawer-foot">
               <a href={`https://wa.me/${settings?.whatsapp_number || ""}`} target="_blank" rel="noreferrer" className="wa-link">
                 <MessageCircle size={18} /> تواصل عبر واتساب
               </a>
-              {(settings?.facebook_url || settings?.instagram_url) && (
-                <div style={{ display: "flex", gap: "8px", justifyContent: "center", paddingTop: "8px", borderTop: "1px solid var(--line)" }}>
-                  {settings?.facebook_url && (
-                    <a
-                      href={settings.facebook_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ width: "36px", height: "36px", borderRadius: "50%", background: "#1877F2", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}
-                      aria-label="فيسبوك"
-                    >
-                      <FacebookIcon size={18} />
-                    </a>
-                  )}
-                  {settings?.instagram_url && (
-                    <a
-                      href={settings.instagram_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ width: "36px", height: "36px", borderRadius: "50%", background: "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}
-                      aria-label="إنستقرام"
-                    >
-                      <InstagramIcon size={18} />
-                    </a>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ===== My Orders drawer (طلباتي السابقة) ===== */}
+      {/* ===== My Orders drawer (مع الحماية التامة للخصوصية) ===== */}
       {myOrdersOpen && (
         <div className="drawer-overlay">
           <div className="drawer-backdrop" onClick={() => setMyOrdersOpen(false)} />
           <div className="drawer">
             <div className="drawer-head">
               <span className="drawer-title" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <Package size={20} color="var(--teal)" /> طلباتي السابقة
+                <Package size={20} color="var(--teal)" /> طلباتي
               </span>
               <button onClick={() => setMyOrdersOpen(false)} className="icon-btn">
                 <X size={16} />
               </button>
+            </div>
+
+            <div className="security-notice">
+              <Lock size={15} />
+              <span>خصوصيتك محمية: يتطلب تتبع أي طلب إدخال رقم الهاتف ورقم الطلب معاً لضمان عدم اطلاع أي شخص على بياناتك.</span>
             </div>
 
             <div className="order-tabs">
@@ -1302,77 +999,47 @@ export default function App() {
                 طلبات هذا الجهاز ({localOrders.length})
               </button>
               <button
-                className={`order-tab-btn ${orderTab === "wa_verify" ? "active" : ""}`}
-                onClick={() => setOrderTab("wa_verify")}
+                className={`order-tab-btn ${orderTab === "lookup" ? "active" : ""}`}
+                onClick={() => setOrderTab("lookup")}
               >
-                استرجاع برقم الهاتف
+                تتبع برقم الطلب
               </button>
             </div>
 
-            {orderTab === "wa_verify" ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {!isVerified ? (
-                  <div className="wa-verify-box">
-                    <span style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>
-                      🔐 تأكيد ملكية الرقم عبر واتساب
-                    </span>
-                    <input
-                      type="tel"
-                      className="customer-input"
-                      placeholder="أدخل رقم هاتفك: 09XXXXXXXX"
-                      value={lookupPhone}
-                      onChange={(e) => setLookupPhone(e.target.value)}
-                    />
-                    <button onClick={sendWhatsAppOtp} className="wa-verify-btn">
-                      <MessageCircle size={17} /> استلام كود التأكيد في واتساب
-                    </button>
+            {orderTab === "lookup" ? (
+              <div className="field-block" style={{ marginTop: 0 }}>
+                <span className="field-label">رقم الطلب (Order ID)</span>
+                <input
+                  type="text"
+                  className="customer-input"
+                  placeholder="مثال: 105"
+                  value={lookupOrderId}
+                  onChange={(e) => setLookupOrderId(e.target.value)}
+                  style={{ marginBottom: "8px" }}
+                />
+                <span className="field-label">رقم الهاتف المسجل</span>
+                <input
+                  type="tel"
+                  className="customer-input"
+                  placeholder="09XXXXXXXX"
+                  value={lookupPhone}
+                  onChange={(e) => setLookupPhone(e.target.value)}
+                />
+                <button
+                  onClick={fetchMyOrders}
+                  className="cta-button"
+                  style={{ marginTop: "12px" }}
+                >
+                  <Search size={16} /> بحث آمن عن الطلب
+                </button>
 
-                    {isOtpSent && (
-                      <div style={{ marginTop: "8px", borderTop: "1px dashed #BBF7D0", paddingTop: "8px" }}>
-                        <span style={{ fontSize: "11.5px", color: "#15803D", display: "block", marginBottom: "6px" }}>
-                          أدخل الرمز المكون من 4 أرقام الذي أُرسل لواتساب:
-                        </span>
-                        <div className="otp-inputs-wrapper">
-                          <input
-                            type="text"
-                            maxLength={4}
-                            className="otp-input-field"
-                            placeholder="••••"
-                            value={enteredOtp}
-                            onChange={(e) => setEnteredOtp(e.target.value)}
-                          />
-                          <button
-                            onClick={verifyAndFetchOrders}
-                            className="cta-button"
-                            style={{ width: "auto", padding: "0 16px", height: "38px" }}
-                          >
-                            تأكيد
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F0FDF4", padding: "8px 12px", borderRadius: "999px", marginBottom: "6px" }}>
-                    <span style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>
-                      ✅ تم التحقق: {lookupPhone}
-                    </span>
-                    <button
-                      onClick={() => { setIsVerified(false); setIsOtpSent(false); setEnteredOtp(""); }}
-                      style={{ fontSize: "11px", color: "var(--muted)", textDecoration: "underline" }}
-                    >
-                      تغيير الرقم
-                    </button>
-                  </div>
-                )}
-
-                <div className="cart-scroll">
+                <div className="cart-scroll" style={{ marginTop: "16px" }}>
                   {myOrdersLoading ? (
-                    <div className="state-box">جاري تحميل طلباتك...</div>
+                    <div className="state-box">جاري التحقق والبحث...</div>
                   ) : myOrdersSearched && myOrders.length === 0 ? (
                     <div className="cart-empty">
                       <Package size={32} />
-                      <span>لا توجد طلبات مسجلة لهذا الرقم</span>
+                      <span>لم يتم العثور على طلب مطابق لرقم الطلب والهاتف المدخلين</span>
                     </div>
                   ) : (
                     myOrders.map((order) => (
@@ -1583,7 +1250,7 @@ export default function App() {
                 </div>
                 <div className="field-block">
                   <span className="field-label">طريقة الدفع</span>
-                  <div className="payment-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+                                    <div className="payment-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
                     <button onClick={() => setPayment("cash")} className={`pay-btn ${payment === "cash" ? "active" : ""}`}>
                       <Banknote /> كاش
                     </button>
@@ -1591,7 +1258,7 @@ export default function App() {
                       <Landmark /> تحويل بنكي
                     </button>
                     <button onClick={() => setPayment("ezone")} className={`pay-btn ${payment === "ezone" ? "active" : ""}`}>
-                      <CreditCard /> إيزون باي
+                      <Wallet /> دفع إلكتروني
                     </button>
                   </div>
                   {payment === "bank" && (
@@ -1602,11 +1269,6 @@ export default function App() {
                       </button>
                     </div>
                   )}
-                  {payment === "ezone" && (
-                    <div className="bank-box" style={{ background: "#F0F7FF", border: "1px solid #BFDBFE", color: "#1E40AF", fontSize: "11.5px", lineHeight: "1.5" }}>
-                      <span>💳 <strong>الدفع الإلكتروني المباشر:</strong> يدعم سداد، تداول، إدفع لي، موبي كاش، ومصرفي باي.</span>
-                    </div>
-                  )}
                 </div>
 
                 <div className="cart-total-row">
@@ -1614,16 +1276,9 @@ export default function App() {
                     <span className="qty-label">الإجمالي</span>
                     <span className="total-amount">{totalPrice} د.ل</span>
                   </div>
-                  <a
-                    href={waLink}
-                    target="_blank"
-                    rel="noreferrer"
+                                    <button
                     className="cta-button"
-                    style={{
-                      background: payment === "ezone" ? "#2563EB" : undefined,
-                    }}
-                    onClick={async (e) => {
-                      e.preventDefault();
+                    onClick={async () => {
                       const ok = await saveOrder();
                       if (ok && payment !== "ezone") {
                         window.open(waLink, "_blank", "noopener,noreferrer");
@@ -1631,15 +1286,11 @@ export default function App() {
                     }}
                   >
                     {payment === "ezone" ? (
-                      <>
-                        <CreditCard size={18} /> إتمام الطلب والانتقال للدفع الآمن
-                      </>
+                      <><Wallet size={18} /> الدفع الإلكتروني وإتمام الطلب</>
                     ) : (
-                      <>
-                        <MessageCircle size={18} /> إتمام الطلب عبر واتساب
-                      </>
+                      <><MessageCircle size={18} /> إتمام الطلب عبر واتساب</>
                     )}
-                  </a>
+                  </button>
                 </div>
               </>
             )}
@@ -1647,29 +1298,13 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== Hero (الشعار والوصف متناسق على كل الأجهزة مثل الصورة 2) ===== */}
+      {/* ===== Hero ===== */}
       <section id="home" className="hero">
         <div className="container">
           <div className="hero-top">
             <span className="eyebrow">توصيل لكل مدن ليبيا 🇱🇾</span>
-
-            {/* عرض شعار المتجر بشكل منظم وجذاب */}
-            {settings?.logo_url && (
-              <div className="hero-logo-banner">
-                <img
-                  src={settings.logo_url}
-                  alt={settings?.store_name || "شعار المتجر"}
-                  className="hero-logo-img"
-                />
-              </div>
-            )}
-
-            <h1 className="h1">{settings?.store_name || "NOVA SHOP"}</h1>
-            
-            {/* وصف المتجر تحت الشعار مباشرة */}
-            <p className="hero-store-description">
-              {settings?.store_description || localStorage.getItem("nova_store_description") || "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}
-            </p>
+            <h1 className="h1">تسوّق إلكترونياتك وإكسسواراتك بثقة، من أول طلب</h1>
+            <p className="h1-sub">تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية.</p>
 
             <div className="trust-row">
               {[
@@ -1684,6 +1319,52 @@ export default function App() {
               ))}
             </div>
           </div>
+
+          {settings?.logo_url ? (
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 320,
+                maxHeight: 320,
+                minHeight: 160,
+                margin: "20px auto 0",
+                borderRadius: 24,
+                overflow: "hidden",
+                boxShadow: "0 12px 32px rgba(0,0,0,.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <img
+                src={settings.logo_url}
+                alt="شعار المتجر"
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+              />
+            </div>
+          ) : (
+            <div className="parcel-wrap">
+              <div className="parcel-glow" />
+              <div className="parcel-float">
+                <div className="parcel-chip chip-1">
+                  <Headphones />
+                </div>
+                <div className="parcel-chip chip-2">
+                  <Lightbulb />
+                </div>
+                <div className="parcel-body">
+                  <div className="parcel-noise" />
+                  <div className="parcel-scan-clip">
+                    <div className="scan-line" />
+                  </div>
+                  <span className="parcel-mark">{(settings?.store_name || "NOVA").split(" ")[0].toUpperCase()}</span>
+                </div>
+                <div className="badge-pulse">
+                  <ShieldCheck />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -1718,16 +1399,16 @@ export default function App() {
             <div className="state-box">لا توجد منتجات حالياً</div>
           ) : (
             <>
-              {/* شريط البحث وتحديد الأسعار بتصميم بيضاوي كبسولة صغير وأنيق */}
+              {/* شريط البحث وتحديد الأسعار بتصميم مستطيل بحواف دائرية وأصغر حجماً */}
               <div className="search-filter-wrapper">
                 <div className="search-box">
                   <span className="search-icon-inside">
-                    <Search size={15} />
+                    <Search size={16} />
                   </span>
                   <input
                     type="text"
                     className="search-input"
-                    placeholder="ابحث عن منتج..."
+                    placeholder="ابحث عن منتج بالاسم أو الكود..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
@@ -1737,7 +1418,6 @@ export default function App() {
                     </button>
                   )}
                 </div>
-
                 <div className="filters-row">
                   <select
                     className="sort-select"
@@ -1745,42 +1425,37 @@ export default function App() {
                     onChange={(e) => setSortBy(e.target.value)}
                   >
                     <option value="default">الترتيب الافتراضي</option>
-                    <option value="price-asc">السعر: من الأقل</option>
-                    <option value="price-desc">السعر: من الأعلى</option>
+                    <option value="price-asc">السعر: من الأقل للأعلى</option>
+                    <option value="price-desc">السعر: من الأعلى للأقل</option>
                   </select>
-
-                  <div className="price-inputs-group">
-                    <input
-                      type="number"
-                      className="price-input"
-                      placeholder="من د.ل"
-                      value={minPrice}
-                      onChange={(e) => setMinPrice(e.target.value)}
-                    />
-                    <span style={{ fontSize: "10px", color: "var(--muted)" }}>-</span>
-                    <input
-                      type="number"
-                      className="price-input"
-                      placeholder="إلى د.ل"
-                      value={maxPrice}
-                      onChange={(e) => setMaxPrice(e.target.value)}
-                    />
-                  </div>
-
-                  {(searchQuery || minPrice || maxPrice || sortBy !== "default") && (
-                    <button
-                      className="filter-reset-btn"
-                      onClick={() => {
-                        setSearchQuery("");
-                        setMinPrice("");
-                        setMaxPrice("");
-                        setSortBy("default");
-                      }}
-                    >
-                      <RotateCcw size={11} /> مسح الفلاتر
-                    </button>
-                  )}
+                  <input
+                    type="number"
+                    className="price-input"
+                    placeholder="السعر من (د.ل)"
+                    value={minPrice}
+                    onChange={(e) => setMinPrice(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    className="price-input"
+                    placeholder="السعر إلى (د.ل)"
+                    value={maxPrice}
+                    onChange={(e) => setMaxPrice(e.target.value)}
+                  />
                 </div>
+                {(searchQuery || minPrice || maxPrice || sortBy !== "default") && (
+                  <button
+                    className="filter-reset-btn"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setMinPrice("");
+                      setMaxPrice("");
+                      setSortBy("default");
+                    }}
+                  >
+                    <RotateCcw size={12} /> إعادة ضبط الفلاتر
+                  </button>
+                )}
               </div>
 
               <div className="cat-tabs">
@@ -1845,7 +1520,7 @@ export default function App() {
                             <select
                               value={selectedVariants[product.id]?.size || ""}
                               onChange={(e) => setSelectedVariant(product.id, "size", e.target.value)}
-                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "999px", border: "1px solid var(--line)", fontSize: "12px" }}
+                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
                             >
                               <option value="">المقاس</option>
                               {sizeOptions.map((s) => (
@@ -1857,7 +1532,7 @@ export default function App() {
                             <select
                               value={selectedVariants[product.id]?.color || ""}
                               onChange={(e) => setSelectedVariant(product.id, "color", e.target.value)}
-                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "999px", border: "1px solid var(--line)", fontSize: "12px" }}
+                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
                             >
                               <option value="">اللون</option>
                               {colorOptions.map((c) => (
@@ -1930,103 +1605,12 @@ export default function App() {
       </section>
 
       {/* ===== Footer ===== */}
-      <footer id="contact" className="footer" style={{ borderTop: "1px solid var(--line)", background: "var(--surface)", marginTop: "40px" }}>
-        <p className="footer-name" style={{ fontSize: "19px", fontWeight: 800, color: "var(--teal-dark)" }}>
-          {settings?.store_name || "NOVA SHOP"}
-        </p>
-        <p className="footer-tag" style={{ maxWidth: "480px", margin: "6px auto 16px", lineHeight: 1.6 }}>
-          {settings?.store_description || localStorage.getItem("nova_store_description") || "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة مع شحن لكافة المدن الليبية."}
-        </p>
-
-        {/* أيقونات التواصل الاجتماعي: واتساب، فيسبوك، إنستقرام */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", margin: "16px 0", flexWrap: "wrap" }}>
-          {settings?.whatsapp_number && (
-            <a
-              href={`https://wa.me/${settings.whatsapp_number}`}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                width: "42px",
-                height: "42px",
-                borderRadius: "50%",
-                background: "#25D366",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 4px 12px rgba(37, 211, 102, 0.25)",
-                transition: "transform .15s",
-              }}
-              title="تواصل معنا عبر واتساب"
-            >
-              <MessageCircle size={22} />
-            </a>
-          )}
-
-          {settings?.facebook_url && (
-            <a
-              href={settings.facebook_url}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                width: "42px",
-                height: "42px",
-                borderRadius: "50%",
-                background: "#1877F2",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 4px 12px rgba(24, 119, 242, 0.25)",
-                transition: "transform .15s",
-              }}
-              title="صفحتنا على فيسبوك"
-            >
-              <FacebookIcon size={20} />
-            </a>
-          )}
-
-          {settings?.instagram_url && (
-            <a
-              href={settings.instagram_url}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                width: "42px",
-                height: "42px",
-                borderRadius: "50%",
-                background: "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 4px 12px rgba(221, 42, 123, 0.25)",
-                transition: "transform .15s",
-              }}
-              title="حسابنا على إنستقرام"
-            >
-              <InstagramIcon size={20} />
-            </a>
-          )}
-        </div>
-
-        {/* رابط المتجر */}
-        {(settings?.store_url || localStorage.getItem("nova_store_url")) && (
-          <div style={{ marginTop: "10px" }}>
-            <a
-              href={settings?.store_url || localStorage.getItem("nova_store_url")}
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: "12px", color: "var(--teal)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "4px" }}
-            >
-              <ExternalLink size={13} /> {settings?.store_url || localStorage.getItem("nova_store_url")}
-            </a>
-          </div>
-        )}
-
-        <p style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: "16px" }}>
-          جميع الحقوق محفوظة © {new Date().getFullYear()} {settings?.store_name || "NOVA SHOP"}
-        </p>
+      <footer id="contact" className="footer">
+        <p className="footer-name">VELTRIX SHOP</p>
+        <p className="footer-tag">مدعوم من فيلتريكس شوب — حلول متاجر إلكترونية احترافية</p>
+        <a href="https://wa.me/218931739453" target="_blank" rel="noreferrer" className="footer-wa">
+          <MessageCircle /> تواصل معنا
+        </a>
       </footer>
 
       {/* ===== Sticky mobile/tablet order bar ===== */}
@@ -2038,19 +1622,17 @@ export default function App() {
               <p className="sticky-total-amount">{totalQty > 0 ? `${totalPrice} د.ل` : `${products.length} منتج`}</p>
             </div>
             {totalQty > 0 ? (
-              <a
-                href={waLink}
-                target="_blank"
-                rel="noreferrer"
+                            <button
                 className="sticky-cta"
-                onClick={async (e) => {
-                  e.preventDefault();
+                onClick={async () => {
                   const ok = await saveOrder();
-                  if (ok) window.open(waLink, "_blank", "noopener,noreferrer");
+                  if (ok && payment !== "ezone") {
+                    window.open(waLink, "_blank", "noopener,noreferrer");
+                  }
                 }}
               >
-                <MessageCircle /> اطلب الآن
-              </a>
+                {payment === "ezone" ? <><Wallet size={18} /> ادفع الآن</> : <><MessageCircle /> اطلب الآن</>}
+              </button>
             ) : (
               <a href="#products" className="sticky-cta">
                 <LayoutGrid /> تسوّق الآن
@@ -2060,11 +1642,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* ===== Product image gallery modal with SEO & Sharing ===== */}
+      {/* ===== Product image gallery modal ===== */}
       {galleryProduct && (
         <div className="gallery-overlay">
           <div className="gallery-backdrop" onClick={closeGallery} />
-          <div className="gallery-box" style={{ maxWidth: "440px" }}>
+          <div className="gallery-box">
             <button className="gallery-close" onClick={closeGallery} aria-label="إغلاق">
               <X size={16} />
             </button>
@@ -2094,129 +1676,6 @@ export default function App() {
                 ))}
               </div>
             )}
-
-            {/* تفاصيل المنتج وزر المشاركة في المودال */}
-            <div style={{ padding: "14px 18px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FAFBFB" }}>
-              <div>
-                <h4 style={{ margin: 0, fontSize: "14.5px", fontWeight: 800, color: "var(--teal-dark)" }}>
-                  {galleryProduct.title}
-                </h4>
-                <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--teal)" }}>
-                  {galleryProduct.price} د.ل
-                </span>
-              </div>
-              <button
-                onClick={() => handleShare(galleryProduct)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "5px",
-                  padding: "7px 14px",
-                  borderRadius: "999px",
-                  background: "var(--teal)",
-                  color: "#fff",
-                  border: "none",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                <Share2 size={14} /> مشاركة
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== Social Sharing Preview Modal (مشاركة المنتج في السوشيال ميديا) ===== */}
-      {shareModalProduct && (
-        <div className="gallery-overlay">
-          <div className="gallery-backdrop" onClick={() => setShareModalProduct(null)} />
-          <div className="gallery-box" style={{ maxWidth: "380px", padding: "20px", borderRadius: "20px" }}>
-            <button className="gallery-close" onClick={() => setShareModalProduct(null)} aria-label="إغلاق">
-              <X size={16} />
-            </button>
-
-            <div style={{ textAlign: "center", marginBottom: "16px" }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#E0F2FE", color: "#0284C7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
-                <Share2 size={22} />
-              </div>
-              <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: 800, color: "var(--teal-dark)" }}>
-                مشاركة المنتج
-              </h3>
-              <p style={{ margin: 0, fontSize: "12px", color: "var(--muted)" }}>
-                شارك رابط ({shareModalProduct.title}) مع أصدقائك أو عبر وسائل التواصل
-              </p>
-            </div>
-
-            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "10px", display: "flex", gap: "10px", alignItems: "center", marginBottom: "16px" }}>
-              <div style={{ width: 48, height: 48, borderRadius: "8px", overflow: "hidden", flexShrink: 0 }}>
-                <ProductThumb product={shareModalProduct} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: "12.5px", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {shareModalProduct.title}
-                </p>
-                <span style={{ fontSize: "12px", color: "var(--teal)", fontWeight: 800 }}>
-                  {shareModalProduct.price} د.ل
-                </span>
-              </div>
-            </div>
-
-            {(() => {
-              const baseUrl = (settings?.store_url || localStorage.getItem("nova_store_url") || `${window.location.origin}${window.location.pathname}`).replace(/\/$/, "");
-              const url = baseUrl.includes("?") ? `${baseUrl}&product=${shareModalProduct.id}` : `${baseUrl}?product=${shareModalProduct.id}`;
-              const storeName = settings?.store_name || "نوفا";
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <a
-                    href={`https://wa.me/?text=${encodeURIComponent(`شاهد "${shareModalProduct.title}" بسعر ${shareModalProduct.price} د.ل فقط على متجر ${storeName}! ✨\n${url}`)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="cta-button"
-                    style={{ background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", textDecoration: "none", fontSize: "13px" }}
-                    onClick={() => setShareModalProduct(null)}
-                  >
-                    <MessageCircle size={17} /> مشاركة عبر واتساب
-                  </a>
-
-                  <a
-                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="cta-button"
-                    style={{ background: "#1877F2", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", textDecoration: "none", fontSize: "13px" }}
-                    onClick={() => setShareModalProduct(null)}
-                  >
-                    <ExternalLink size={17} /> مشاركة على فيسبوك
-                  </a>
-
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(url);
-                      alert("تم نسخ رابط المنتج بنجاح 📋");
-                      setShareModalProduct(null);
-                    }}
-                    style={{
-                      padding: "11px",
-                      borderRadius: "999px",
-                      background: "var(--teal-light)",
-                      color: "var(--teal-dark)",
-                      border: "none",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <Copy size={16} /> نسخ رابط المنتج
-                  </button>
-                </div>
-              );
-            })()}
           </div>
         </div>
       )}
@@ -2240,7 +1699,7 @@ export default function App() {
             </button>
             <button
               className="secondary-btn"
-              style={{ width: "100%", padding: "12px", borderRadius: 999, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
+              style={{ width: "100%", padding: "12px", borderRadius: 14, background: "var(--teal-light)", color: "var(--teal-dark)", fontWeight: 700 }}
               onClick={() => setShowInvoicePrompt(false)}
             >
               إغلاق
