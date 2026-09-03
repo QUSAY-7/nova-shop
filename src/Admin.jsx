@@ -1355,6 +1355,435 @@ function printAdminInvoice(order, storeName) {
   invoiceWindow.document.close();
 }
 
+/**
+ * دالة تصدير شيت المبيعات والعمليات والتحصيل إلى ملف Excel احترافي
+ */
+export function exportSalesToExcel(orders = [], storeName = "NOVA SHOP") {
+  if (!orders || orders.length === 0) {
+    alert("لا توجد طلبات لتصديرها حالياً");
+    return;
+  }
+
+  const rows = orders.map((o) => {
+    const isOnline = (o.payment_method || "").toLowerCase().includes("ezone") || (o.payment_method || "").includes("إلكتروني");
+    const isBank = (o.payment_method || "").includes("بنك") || (o.payment_method || "").includes("تحويل");
+    const isCash = !isOnline && !isBank;
+
+    const paymentType = isOnline ? "أونلاين (Ezone Pay)" : isBank ? "تحويل بنكي" : "كاش عند الاستلام (COD)";
+    const codToCollect = isOnline || isBank ? 0 : Number(o.total_price || 0);
+    const onlineCollected = isOnline || isBank ? Number(o.total_price || 0) : 0;
+
+    const itemsSummary = (o.items || [])
+      .map((it) => `${it.title || "منتج"}${it.size || it.color ? ` (${[it.size, it.color].filter(Boolean).join("/")})` : ""} × ${it.qty || 1}`)
+      .join(" | ");
+
+    const dateStr = o.created_at ? new Date(o.created_at).toLocaleDateString("ar-LY") : "-";
+    const timeStr = o.created_at ? new Date(o.created_at).toLocaleTimeString("ar-LY", { hour: "2-digit", minute: "2-digit" }) : "-";
+
+    return `
+      <Row>
+        <Cell ss:StyleID="center"><Data ss:Type="String">#${o.id}</Data></Cell>
+        <Cell ss:StyleID="center"><Data ss:Type="String">${dateStr}</Data></Cell>
+        <Cell ss:StyleID="center"><Data ss:Type="String">${timeStr}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(o.customer_name || "زبون")}</Data></Cell>
+        <Cell ss:StyleID="center"><Data ss:Type="String">${escapeXml(o.customer_phone || "-")}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(o.customer_address || "-")}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(itemsSummary)}</Data></Cell>
+        <Cell ss:StyleID="number"><Data ss:Type="Number">${Number(o.total_price || 0)}</Data></Cell>
+        <Cell ss:StyleID="center"><Data ss:Type="String">${escapeXml(o.payment_method || "كاش")}</Data></Cell>
+        <Cell ss:StyleID="center"><Data ss:Type="String">${paymentType}</Data></Cell>
+        <Cell ss:StyleID="number"><Data ss:Type="Number">${codToCollect}</Data></Cell>
+        <Cell ss:StyleID="number"><Data ss:Type="Number">${onlineCollected}</Data></Cell>
+        <Cell ss:StyleID="center"><Data ss:Type="String">${escapeXml(o.status || "جديد")}</Data></Cell>
+        <Cell ss:StyleID="center"><Data ss:Type="String">${escapeXml(o.tracking_number || (o.delivery_provider ? "درب السبيل" : "توصيل عادي"))}</Data></Cell>
+      </Row>
+    `;
+  }).join("");
+
+  const totalAmount = orders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
+  const totalCash = orders.filter(o => !(o.payment_method || "").toLowerCase().includes("ezone") && !(o.payment_method || "").includes("بنك")).reduce((sum, o) => sum + Number(o.total_price || 0), 0);
+  const totalOnline = totalAmount - totalCash;
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center" ss:ReadingOrder="RightToLeft"/>
+   <Font ss:FontName="Segoe UI" x:CharSet="178" ss:Size="11" ss:Color="#0B2027"/>
+  </Style>
+  <Style ss:ID="title">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="16" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0E7C86" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Font ss:FontName="Segoe UI" ss:Size="11" ss:Bold="1" ss:Color="#0A5A61"/>
+   <Interior ss:Color="#E7F3F3" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0E7C86"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E3ECED"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E3ECED"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E3ECED"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="summary">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="12" ss:Bold="1" ss:Color="#0E7C86"/>
+   <Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0E7C86"/>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0E7C86"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="center">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E3ECED"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="number">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <NumberFormat ss:Format="#,##0.00"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E3ECED"/>
+   </Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="سجل المبيعات والعمليات">
+  <Table ss:DefaultColumnWidth="120" ss:DefaultRowHeight="24">
+   <Column ss:Width="70"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="70"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="160"/>
+   <Column ss:Width="240"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="120"/>
+
+   <Row ss:Height="40">
+    <Cell ss:MergeAcross="13" ss:StyleID="title">
+     <Data ss:Type="String">سجل المبيعات والعمليات والتحصيل — ${escapeXml(storeName)}</Data>
+    </Cell>
+   </Row>
+
+   <Row ss:Height="26">
+    <Cell ss:StyleID="header"><Data ss:Type="String">رقم الطلب</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">تاريخ الطلب</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">الوقت</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">اسم الزبون</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">رقم الهاتف</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">المدينة والعنوان</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">المنتجات والكميات</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">إجمالي الطلب (د.ل)</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">طريقة الدفع</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">تصنيف الدفع</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">المطلوب تحصيله كاش (COD)</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">المحصل أونلاين / بنك</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">حالة الطلب</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">رقم التتبع / الشحن</Data></Cell>
+   </Row>
+
+   ${rows}
+
+   <Row ss:Height="30">
+    <Cell ss:MergeAcross="6" ss:StyleID="summary"><Data ss:Type="String">الإجمالي الكلي (${orders.length} طلب)</Data></Cell>
+    <Cell ss:StyleID="summary"><Data ss:Type="Number">${totalAmount}</Data></Cell>
+    <Cell ss:StyleID="summary"><Data ss:Type="String">-</Data></Cell>
+    <Cell ss:StyleID="summary"><Data ss:Type="String">-</Data></Cell>
+    <Cell ss:StyleID="summary"><Data ss:Type="Number">${totalCash}</Data></Cell>
+    <Cell ss:StyleID="summary"><Data ss:Type="Number">${totalOnline}</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="summary"><Data ss:Type="String">-</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <DisplayRightToLeft/>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  downloadBlob(xml, `Sales-Report-${storeName.replace(/\s+/g, "_")}-${new Date().toISOString().slice(0,10)}.xls`, "application/vnd.ms-excel");
+}
+
+/**
+ * دالة تحميل نموذج شيت إدارة رأس المال والتدفق النقدي (Cash Flow Statement)
+ */
+export function downloadCashFlowTemplate(storeName = "NOVA SHOP") {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center" ss:ReadingOrder="RightToLeft"/>
+   <Font ss:FontName="Segoe UI" x:CharSet="178" ss:Size="11" ss:Color="#0B2027"/>
+  </Style>
+  <Style ss:ID="title">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="16" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0E7C86" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="11" ss:Bold="1" ss:Color="#0A5A61"/>
+   <Interior ss:Color="#E7F3F3" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0E7C86"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="inflowHead">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="11" ss:Bold="1" ss:Color="#15803D"/>
+   <Interior ss:Color="#DCFCE7" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="outflowHead">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="11" ss:Bold="1" ss:Color="#B91C1C"/>
+   <Interior ss:Color="#FEE2E2" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="kpiLabel">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="12" ss:Bold="1" ss:Color="#0B2027"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="kpiVal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="13" ss:Bold="1" ss:Color="#0E7C86"/>
+   <Interior ss:Color="#E7F3F3" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="#,##0.00"/>
+  </Style>
+  <Style ss:ID="center">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E3ECED"/></Borders>
+  </Style>
+  <Style ss:ID="num">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <NumberFormat ss:Format="#,##0.00"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E3ECED"/></Borders>
+  </Style>
+ </Styles>
+
+ <!-- الشيت 1: التدفق النقدي اليومي والشهري -->
+ <Worksheet ss:Name="حركة التدفق النقدي Cash Flow">
+  <Table ss:DefaultColumnWidth="140" ss:DefaultRowHeight="24">
+   <Column ss:Width="90"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="160"/>
+   <Column ss:Width="220"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="160"/>
+
+   <Row ss:Height="40">
+    <Cell ss:MergeAcross="7" ss:StyleID="title">
+     <Data ss:Type="String">سجل حركة التدفق النقدي (Cash Flow Statement) — ${escapeXml(storeName)}</Data>
+    </Cell>
+   </Row>
+
+   <Row ss:Height="26">
+    <Cell ss:StyleID="header"><Data ss:Type="String">التاريخ</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">نوع الحركة</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">البند والتصنيف</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">البيان / التفاصيل</Data></Cell>
+    <Cell ss:StyleID="inflowHead"><Data ss:Type="String">المبلغ الداخل (+) د.ل</Data></Cell>
+    <Cell ss:StyleID="outflowHead"><Data ss:Type="String">المبلغ الخارج (-) د.ل</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">طريقة الدفع / الحساب</Data></Cell>
+    <Cell ss:StyleID="header"><Data ss:Type="String">ملاحظات</Data></Cell>
+   </Row>
+
+   <!-- بيانات توضيحية أولية -->
+   <Row>
+    <Cell ss:StyleID="center"><Data ss:Type="String">2026/09/01</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">رأس مال</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">رأس المال الابتدائي</Data></Cell>
+    <Cell><Data ss:Type="String">إيداع رأس مال بداية النشاط</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">15000</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">0</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">كاش في اليد / بنك</Data></Cell>
+    <Cell><Data ss:Type="String">سيولة متاحة للتشغيل</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="center"><Data ss:Type="String">2026/09/01</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">تدفق خارج</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">شراء بضاعة (مخزون)</Data></Cell>
+    <Cell><Data ss:Type="String">دفعة استيراد ساعات وإلكترونيات</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">0</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">6500</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">تحويل للمورد</Data></Cell>
+    <Cell><Data ss:Type="String">فاتورة رقم #991</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="center"><Data ss:Type="String">2026/09/02</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">تدفق خارج</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">شحن دولي وتخليص</Data></Cell>
+    <Cell><Data ss:Type="String">مصاريف شحن البضاعة إلى طرابلس</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">0</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">850</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">كاش</Data></Cell>
+    <Cell><Data ss:Type="String">شركة الشحن الدولي</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="center"><Data ss:Type="String">2026/09/02</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">تدفق خارج</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">إعلانات ممولة</Data></Cell>
+    <Cell><Data ss:Type="String">حملة فيسبوك وإنستقرام إعلانية</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">0</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">400</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">بطاقة مصرفية</Data></Cell>
+    <Cell><Data ss:Type="String">حملة إطلاق المتجر</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="center"><Data ss:Type="String">2026/09/03</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">تدفق داخل</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">مبيعات كاش مستلمة</Data></Cell>
+    <Cell><Data ss:Type="String">تحصيل كاش من شركة التوصيل (درب السبيل)</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">3250</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">0</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">كاش / حوالة</Data></Cell>
+    <Cell><Data ss:Type="String">تسوية طلبات الأسبوع 1</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="center"><Data ss:Type="String">2026/09/03</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">تدفق داخل</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">مبيعات أونلاين Ezone</Data></Cell>
+    <Cell><Data ss:Type="String">سحب رصيد محفظة إيزون باي لحساب البنك</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">1800</Data></Cell>
+    <Cell ss:StyleID="num"><Data ss:Type="Number">0</Data></Cell>
+    <Cell ss:StyleID="center"><Data ss:Type="String">Ezone Pay</Data></Cell>
+    <Cell><Data ss:Type="String">سداد + تداول + إدفع لي</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><DisplayRightToLeft/></WorksheetOptions>
+ </Worksheet>
+
+ <!-- الشيت 2: الميزانية وصافي الأرباح -->
+ <Worksheet ss:Name="الميزانية وصافي الربح P&amp;L">
+  <Table ss:DefaultColumnWidth="180" ss:DefaultRowHeight="26">
+   <Column ss:Width="260"/>
+   <Column ss:Width="160"/>
+   <Column ss:Width="280"/>
+
+   <Row ss:Height="40">
+    <Cell ss:MergeAcross="2" ss:StyleID="title">
+     <Data ss:Type="String">لوحة قياس الأداء المالي والميزانية (Financial Dashboard)</Data>
+    </Cell>
+   </Row>
+
+   <Row ss:Height="10"></Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">💵 رأس المال الابتدائي المستثمر:</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">15000</Data></Cell>
+    <Cell><Data ss:Type="String">المبلغ الأساسي المخصص للتجارة</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">📦 قيمة البضاعة الحالية في المخزن:</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">5200</Data></Cell>
+    <Cell><Data ss:Type="String">سعر تكلفة المنتجات الموجودة بالمخزن</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">📈 إجمالي الإيرادات (المبيعات):</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">5050</Data></Cell>
+    <Cell><Data ss:Type="String">مجموع مبيعات الكاش والأونلاين</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">🏷️ تكلفة البضاعة المباعة (COGS):</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">2400</Data></Cell>
+    <Cell><Data ss:Type="String">تكلفة شراء القطع التي تم بيعها فعلياً</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">✨ مجمل الربح (Gross Profit):</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">2650</Data></Cell>
+    <Cell><Data ss:Type="String">الإيرادات ناقص تكلفة البضاعة المباعة</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">📢 مصاريف الإعلانات والتسويق:</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">400</Data></Cell>
+    <Cell><Data ss:Type="String">فيسبوك، إنستغرام، تيك توك</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">🚚 مصاريف الشحن والتغليف والرواجع:</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">220</Data></Cell>
+    <Cell><Data ss:Type="String">أكياس + تكلفة توصيل الطلبات المرتجعة</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">💳 عمولات الدفع والمنصات:</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">55</Data></Cell>
+    <Cell><Data ss:Type="String">عمولة إيزون باي أو سداد</Data></Cell>
+   </Row>
+
+   <Row ss:Height="32">
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">🏆 صافي الربح الحقيقي (Net Profit):</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">1975</Data></Cell>
+    <Cell><Data ss:Type="String">الربح الصافي النهائي بعد خصم كل شيء 🎯</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">💰 السيولة النقدية المتاحة (Cash in Hand):</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="Number">12250</Data></Cell>
+    <Cell><Data ss:Type="String">الكاش المتوفر في حسابك البنكي واليد</Data></Cell>
+   </Row>
+
+   <Row>
+    <Cell ss:StyleID="kpiLabel"><Data ss:Type="String">📊 هامش صافي الربح (Profit Margin %):</Data></Cell>
+    <Cell ss:StyleID="kpiVal"><Data ss:Type="String">39.1%</Data></Cell>
+    <Cell><Data ss:Type="String">(صافي الربح ÷ إجمالي المبيعات) × 100</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><DisplayRightToLeft/></WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  downloadBlob(xml, `Cash-Flow-Statement-${storeName.replace(/\s+/g, "_")}.xls`, "application/vnd.ms-excel");
+}
+
+function escapeXml(unsafe) {
+  if (unsafe === null || unsafe === undefined) return "";
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function downloadBlob(content, filename, contentType) {
+  const blob = new Blob([content], { type: `${contentType};charset=utf-8;` });
+  const url = URL.createObjectURL(blob);
+  const pom = document.createElement("a");
+  pom.href = url;
+  pom.setAttribute("download", filename);
+  pom.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function Admin() {
   const [session, setSession] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
@@ -2583,6 +3012,50 @@ const result = {
               </div>
             </div>
 
+            {/* أزرار التصدير والإكسل السريعة */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", margin: "-6px 0 6px" }}>
+              <button
+                type="button"
+                onClick={() => exportSalesToExcel(orders, settingsForm.store_name || "NOVA SHOP")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 16px",
+                  borderRadius: 10,
+                  border: "1px solid #BBF7D0",
+                  background: "#F0FDF4",
+                  color: "#15803D",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                }}
+              >
+                📊 تصدير شيت المبيعات والعمليات (Excel)
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadCashFlowTemplate(settingsForm.store_name || "NOVA SHOP")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 16px",
+                  borderRadius: 10,
+                  border: "1px solid #BAE6FD",
+                  background: "#F0F9FF",
+                  color: "#0369A1",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                }}
+              >
+                💼 تحميل شيت التدفق النقدي والميزانية (Cash Flow)
+              </button>
+            </div>
+
             {/* البطاقات الخمس الرئيسية */}
             <div style={styles.metricCardsGrid}>
               {/* 1. إجمالي المبيعات */}
@@ -3647,7 +4120,49 @@ const result = {
         {/* ---- تبويب: الطلبات ---- */}
         {activeTab === "orders" && (
           <>
-            <h3 style={{ margin: "0 0 14px 0", fontSize: 18, fontWeight: 800 }}>الطلبات ({orders.length})</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>الطلبات ({orders.length})</h3>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => exportSalesToExcel(orders, settingsForm.store_name || "NOVA SHOP")}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "1px solid #BBF7D0",
+                    background: "#F0FDF4",
+                    color: "#15803D",
+                    fontWeight: 700,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  📊 تصدير شيت المبيعات (Excel)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadCashFlowTemplate(settingsForm.store_name || "NOVA SHOP")}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "1px solid #E0F2FE",
+                    background: "#F0F9FF",
+                    color: "#0369A1",
+                    fontWeight: 700,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  💼 شيت التدفق النقدي والميزانية (Cash Flow)
+                </button>
+              </div>
+            </div>
             {ordersLoading ? (
               <p>جارٍ تحميل الطلبات...</p>
             ) : orders.length === 0 ? (
@@ -3763,6 +4278,25 @@ const result = {
                     الملغية: {invoiceStats.cancelledCount} ({invoiceStats.cancelledTotal.toLocaleString()} د.ل)
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => exportSalesToExcel(filteredInvoices, settingsForm.store_name || "NOVA SHOP")}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "6px 14px",
+                    borderRadius: 999,
+                    border: "1px solid #BBF7D0",
+                    background: "#15803D",
+                    color: "#FFFFFF",
+                    fontWeight: 700,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  📊 تصدير الفواتير لـ Excel
+                </button>
               </div>
             </div>
 
