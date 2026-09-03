@@ -734,8 +734,9 @@ export default function App() {
         /* ---------- Header ---------- */
         .header{ position: sticky; top:0; z-index:40; background: rgba(243,247,248,0.9); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
         .header-inner{ max-width: var(--container); margin:0 auto; padding: 0 16px; height:64px; display:flex; align-items:center; justify-content:space-between; }
-        .icon-btn{ width:40px; height:40px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--line); transition: transform .15s ease; }
+        .icon-btn{ width:40px; height:40px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--line); transition: transform .15s ease; position:relative; }
         .icon-btn:active{ transform: scale(.94); }
+        .cart-badge{ position:absolute; top:-3px; left:-3px; background:var(--teal); color:#fff; font-size:10px; font-weight:800; min-width:18px; height:18px; border-radius:999px; display:flex; align-items:center; justify-content:center; padding:0 4px; border:2px solid #fff; }
         .logo{ font-family:'Almarai',sans-serif; font-weight:800; font-size:20px; color:var(--teal-dark); }
         .logo .accent{ color:var(--gold); }
 
@@ -939,26 +940,24 @@ export default function App() {
       {/* ===== Header ===== */}
       <header className="header">
         <div className="header-inner">
-          <button onClick={() => setMenuOpen(true)} className="icon-btn" aria-label="القائمة">
-            <Menu size={19} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button onClick={() => setMenuOpen(true)} className="icon-btn" aria-label="القائمة" title="القائمة">
+              <Menu size={19} />
+            </button>
+            <button onClick={() => setMyOrdersOpen(true)} className="icon-btn" aria-label="طلباتي" title="طلباتي">
+              <Package size={19} />
+            </button>
+          </div>
 
           <a href="#home" className="logo">
             {(settings?.store_name || "NOVA SHOP").split(" ")[0]}{" "}
             <span className="accent">{(settings?.store_name || "NOVA SHOP").split(" ").slice(1).join(" ")}</span>
           </a>
 
-          <div className="header-actions">
-            <button onClick={() => setMyOrdersOpen(true)} className="nav-action-btn" aria-label="طلباتي">
-              <Package size={17} />
-              <span>طلباتي</span>
-            </button>
-            <button onClick={() => setCartOpen(true)} className="nav-action-btn solid" aria-label="السلة">
-              <ShoppingCart size={17} />
-              <span>السلة</span>
-              {totalQty > 0 && <span className="cart-badge">{totalQty}</span>}
-            </button>
-          </div>
+          <button onClick={() => setCartOpen(true)} className="icon-btn" aria-label="السلة" title="السلة">
+            <ShoppingCart size={19} />
+            {totalQty > 0 && <span className="cart-badge">{totalQty}</span>}
+          </button>
         </div>
       </header>
 
@@ -1392,24 +1391,6 @@ export default function App() {
         </div>
       </section>
 
-      {/* ===== Why Nova ===== */}
-      <section id="why" className="section">
-        <div className="container">
-          <h2 className="section-title">لماذا تتسوق من {settings?.store_name || "نوفا"}</h2>
-          <div className="features-grid">
-            {FEATURES.map(({ icon: Icon, title, body }) => (
-              <div key={title} className="feature-card">
-                <div className="feature-icon">
-                  <Icon />
-                </div>
-                <p className="feature-title">{title}</p>
-                <p className="feature-body">{body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ===== Products ===== */}
       <section id="products" className="section">
         <div className="container">
@@ -1607,6 +1588,24 @@ export default function App() {
               </div>
             </>
           )}
+        </div>
+      </section>
+
+      {/* ===== Why Nova ===== */}
+      <section id="why" className="section">
+        <div className="container">
+          <h2 className="section-title">لماذا تتسوق من {settings?.store_name || "نوفا"}</h2>
+          <div className="features-grid">
+            {FEATURES.map(({ icon: Icon, title, body }) => (
+              <div key={title} className="feature-card">
+                <div className="feature-icon">
+                  <Icon />
+                </div>
+                <p className="feature-title">{title}</p>
+                <p className="feature-body">{body}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
