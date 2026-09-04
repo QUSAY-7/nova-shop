@@ -791,16 +791,28 @@ export default function App() {
         .h1{ font-family:'Almarai',sans-serif; font-weight:800; font-size:26px; line-height:1.5; max-width:380px; }
         .h1-sub{ font-size:14px; color:var(--muted); max-width:340px; line-height:1.7; }
 
-        .hero-brand-showcase { position:relative; width:100%; max-width:280px; margin:22px auto 0 auto; display:flex; align-items:center; justify-content:center; }
-        .hero-brand-glow { position:absolute; inset:-12px; border-radius:36px; background:radial-gradient(circle at 50% 50%, rgba(14,124,134,0.3), rgba(200,155,60,0.14), transparent 70%); filter:blur(24px); pointer-events:none; }
-        .hero-brand-card { position:relative; width:100%; min-height:180px; max-height:230px; background:#FFFFFF; border-radius:28px; border:1.5px solid rgba(227,236,237,0.95); box-shadow:0 16px 36px rgba(11,32,39,0.08), 0 4px 14px rgba(14,124,134,0.06); display:flex; align-items:center; justify-content:center; padding:18px; overflow:hidden; transition:transform 0.3s ease, box-shadow 0.3s ease; }
-        .hero-brand-card:hover { transform:translateY(-3px); box-shadow:0 22px 46px rgba(11,32,39,0.12); }
-        .hero-brand-img { max-width:100%; max-height:190px; width:auto; height:auto; object-fit:contain; filter:drop-shadow(0 4px 12px rgba(0,0,0,0.06)); transition:transform 0.3s ease; }
-        .hero-brand-img:hover { transform:scale(1.02); }
-        .hero-brand-placeholder { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; padding:12px; }
-        .hero-brand-icon-box { width:72px; height:72px; border-radius:22px; background:linear-gradient(135deg, var(--teal-light), #FFFFFF); border:1.5px solid var(--line); color:var(--teal); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(14,124,134,0.12); }
-        .hero-brand-name { font-family:'Almarai',sans-serif; font-weight:800; font-size:18px; color:var(--ink); letter-spacing:0.5px; }
-        .hero-brand-sub { font-size:12px; color:var(--muted); font-weight:500; }
+        .parcel-wrap{ position:relative; width:100%; max-width:260px; aspect-ratio:1/1; margin:20px auto 0; display:flex; align-items:center; justify-content:center; }
+        .parcel-glow{ position:absolute; inset:24px; border-radius:32px; filter:blur(30px); opacity:.4; background: radial-gradient(circle at 50% 40%, var(--teal), transparent 70%); }
+        .parcel-float{ position:relative; width:170px; height:190px; animation: floatY 4.5s ease-in-out infinite; }
+        @keyframes floatY{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
+        .parcel-chip{ position:absolute; width:64px; height:64px; border-radius:16px; display:flex; align-items:center; justify-content:center; box-shadow:0 12px 22px rgba(0,0,0,.16); }
+        .parcel-chip svg{ width:24px; height:24px; color:#fff; }
+        .chip-1{ right:-4px; top:6px; transform:rotate(-10deg); background:linear-gradient(135deg,#2a3f47,#0B2027); }
+        .chip-2{ left:-8px; top:2px; transform:rotate(9deg); background:linear-gradient(135deg,var(--gold),#8a6a22); }
+        .parcel-body{ position:absolute; inset:46px 8px 8px 8px; border-radius:18px; overflow:hidden; background:linear-gradient(160deg,#12333a,#0A1F24); box-shadow:0 20px 40px rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; }
+        .parcel-noise{ position:absolute; inset:0; opacity:.16; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.09) 0px, rgba(255,255,255,.09) 1px, transparent 1px, transparent 10px); }
+        .parcel-scan-clip{ position:absolute; inset:0; overflow:hidden; }
+        .scan-line{ position:absolute; inset-inline:0; height:32px; background:linear-gradient(180deg, transparent, rgba(45,212,191,.55), transparent); animation: scan 3.4s ease-in-out infinite; }
+        @keyframes scan{ 0%{ transform:translateY(-160%); opacity:0;} 12%{ opacity:1;} 88%{ opacity:1;} 100%{ transform:translateY(240%); opacity:0;} }
+        .parcel-mark{ position:relative; font-family:'Almarai',sans-serif; font-weight:800; font-size:13px; letter-spacing:3px; color:rgba(255,255,255,.35); }
+        .badge-pulse{ position:absolute; top:-6px; right:-6px; width:40px; height:40px; border-radius:999px; background:var(--teal); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(0,0,0,.2); animation: pulseRing 2.2s ease-out infinite; z-index:2; }
+        @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
+        .badge-pulse svg{ width:18px; height:18px; color:#fff; }
+
+        /* Hero logo full-width mode */
+        .hero-logo-mode{ padding:0 !important; }
+        .hero-full-logo{ width:100%; max-width:100%; height:auto; max-height:72vh; object-fit:cover; display:block; }
+        .hero-logo-trust{ padding:16px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:var(--container); margin:0 auto; }
 
         .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
         .trust-item{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px 6px; border-radius:18px; background:var(--surface); border:1px solid var(--line); }
@@ -1314,51 +1326,79 @@ export default function App() {
         </div>
       )}
 
+
       {/* ===== Hero ===== */}
-      <section id="home" className="hero">
-        <div className="container">
-          <div className="hero-top">
-            <span className="eyebrow">توصيل لكل مدن ليبيا 🇱🇾</span>
-            <h1 className="h1">تسوّق إلكترونياتك وإكسسواراتك بثقة، من أول طلب</h1>
-            <p className="h1-sub">تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية.</p>
-
-            <div className="trust-row">
-              {[
-                { icon: Truck, label: "شحن لكل المدن" },
-                { icon: ShieldCheck, label: "فحص قبل الدفع" },
-                { icon: MessageCircle, label: "دعم واتساب" },
-              ].map(({ icon: Icon, label }) => (
-                <div key={label} className="trust-item">
-                  <Icon />
-                  <span>{label}</span>
-                </div>
-              ))}
-            </div>
+      {settings?.logo_url ? (
+        /* ── وضع الشعار: يملأ العرض الكامل بدون نصوص فوقه ── */
+        <section id="home" className="hero hero-logo-mode">
+          <img
+            src={settings.logo_url}
+            alt={settings?.store_name || "شعار المتجر"}
+            className="hero-full-logo"
+          />
+          <div className="hero-logo-trust">
+            {[
+              { icon: Truck, label: "شحن لكل المدن" },
+              { icon: ShieldCheck, label: "فحص قبل الدفع" },
+              { icon: MessageCircle, label: "دعم واتساب" },
+            ].map(({ icon: Icon, label }) => (
+              <div key={label} className="trust-item">
+                <Icon />
+                <span>{label}</span>
+              </div>
+            ))}
           </div>
+        </section>
+      ) : (
+        /* ── الوضع الافتراضي: النص الأصلي + أنيميشن الطرد ── */
+        <section id="home" className="hero">
+          <div className="container">
+            <div className="hero-top">
+              <span className="eyebrow">توصيل لكل مدن ليبيا 🇱🇾</span>
+              <h1 className="h1">تسوّق إلكترونياتك وإكسسواراتك بثقة، من أول طلب</h1>
+              <p className="h1-sub">تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية.</p>
 
-          {/* مساحة الشعار الاحترافية تحت الشريط العلوي */}
-          <div className="hero-brand-showcase">
-            <div className="hero-brand-glow" />
-            <div className="hero-brand-card">
-              {settings?.logo_url ? (
-                <img
-                  src={settings.logo_url}
-                  alt={settings?.store_name || "شعار المتجر"}
-                  className="hero-brand-img"
-                />
-              ) : (
-                <div className="hero-brand-placeholder">
-                  <div className="hero-brand-icon-box">
-                    <ShoppingBag size={36} />
+              <div className="trust-row">
+                {[
+                  { icon: Truck, label: "شحن لكل المدن" },
+                  { icon: ShieldCheck, label: "فحص قبل الدفع" },
+                  { icon: MessageCircle, label: "دعم واتساب" },
+                ].map(({ icon: Icon, label }) => (
+                  <div key={label} className="trust-item">
+                    <Icon />
+                    <span>{label}</span>
                   </div>
-                  <span className="hero-brand-name">{settings?.store_name || "VELTRIX SHOP"}</span>
-                  <span className="hero-brand-sub">متجرك الإلكتروني الموثوق 🇱🇾</span>
+                ))}
+              </div>
+            </div>
+
+            {/* أنيميشن الطرد الأصلي */}
+            <div className="parcel-wrap">
+              <div className="parcel-glow" />
+              <div className="parcel-float">
+                <div className="parcel-chip chip-1">
+                  <Headphones />
                 </div>
-              )}
+                <div className="parcel-chip chip-2">
+                  <Lightbulb />
+                </div>
+                <div className="parcel-body">
+                  <div className="parcel-noise" />
+                  <div className="parcel-scan-clip">
+                    <div className="scan-line" />
+                  </div>
+                  <span className="parcel-mark">NOVA</span>
+                  <div className="badge-pulse">
+                    <ShoppingBag size={18} />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
+
+
 
       {/* ===== Products ===== */}
       <section id="products" className="section">
