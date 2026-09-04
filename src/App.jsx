@@ -95,16 +95,21 @@ export default function App() {
   const [galleryProduct, setGalleryProduct] = useState(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
 
-    // ---- طلباتي (بحث آمن ومحمي للزبون) ----
+    // ---- طلباتي (بحث آمن بالهاتف + OTP واتساب) ----
   const [myOrdersOpen, setMyOrdersOpen] = useState(false);
   const [orderTab, setOrderTab] = useState("local"); // 'local' | 'lookup'
   const [lookupPhone, setLookupPhone] = useState("");
-  const [lookupOrderId, setLookupOrderId] = useState("");
   const [localOrders, setLocalOrders] = useState([]);
   const [myOrders, setMyOrders] = useState([]);
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [myOrdersSearched, setMyOrdersSearched] = useState(false);
   const [invoiceOrder, setInvoiceOrder] = useState(null);
+  // OTP واتساب
+  const [otpCode, setOtpCode] = useState("");
+  const [otpExpiry, setOtpExpiry] = useState(null);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpInput, setOtpInput] = useState("");
+  const [otpVerified, setOtpVerified] = useState(false);
 
   // تحميل طلبات الجهاز المحفوظة تلقائياً
   useEffect(() => {
@@ -534,20 +539,52 @@ export default function App() {
     return true;
   };
 
-  // بحث آمن عن الطلبات يتطلب رقم الهاتف ورقم الطلب معاً لحماية الخصوصية
-    // بحث آمن عن الطلبات يتطلب رقم الهاتف ورقم الطلب معاً لحماية الخصوصية
-  const fetchMyOrders = async () => {
-    if (!lookupPhone.trim() || !lookupOrderId.trim()) {
-      alert("لحماية خصوصيتك، يُرجى إدخال رقم الهاتف ورقم الطلب معاً.");
+  // ── إرسال رمز OTP عبر واتساب ──
+  const sendOtp = () => {
+    if (!lookupPhone.trim() || lookupPhone.trim().length < 9) {
+      alert("يرجى إدخال رقم هاتف صحيح (9 أرقام على الأقل)");
       return;
     }
+    const otp = String(Math.floor(1000 + Math.random() * 9000));
+    const expiry = Date.now() + 5 * 60 * 1000; // 5 دقائق
+    setOtpCode(otp);
+    setOtpExpiry(expiry);
+    setOtpSent(true);
+    setOtpInput("");
+    setOtpVerified(false);
+    setMyOrders([]);
+    setMyOrdersSearched(false);
+    // فتح واتساب المتجر برسالة تحتوي على الرمز
+    const msg = encodeURIComponent(
+      `طلب تتبع طلباتي\nرقم الهاتف: ${lookupPhone.trim()}\nرمز التحقق: ${otp}`
+    );
+    window.open(`https://wa.me/${settings?.whatsapp_number || ""}?text=${msg}`, "_blank");
+  };
+
+  // ── التحقق من OTP وجلب الطلبات ──
+  const verifyOtpAndFetch = async () => {
+    if (!otpInput.trim()) {
+      alert("يرجى إدخال رمز التحقق المرسل");
+      return;
+    }
+    if (Date.now() > otpExpiry) {
+      alert("انتهت صلاحية الرمز (5 دقائق). يرجى إرسال رمز جديد.");
+      setOtpSent(false);
+      setOtpCode("");
+      return;
+    }
+    if (otpInput.trim() !== otpCode) {
+      alert("الرمز غير صحيح. تأكد من الرمز الظاهر في رسالتك على واتساب.");
+      return;
+    }
+    setOtpVerified(true);
     setMyOrdersLoading(true);
     setMyOrdersSearched(true);
     const { data, error } = await supabase
       .from("orders")
       .select("*")
-      .eq("id", lookupOrderId.trim())
-      .eq("customer_phone", lookupPhone.trim());
+      .eq("customer_phone", lookupPhone.trim())
+      .order("created_at", { ascending: false });
     if (!error && data) {
       setMyOrders(data);
     } else {
@@ -555,6 +592,7 @@ export default function App() {
     }
     setMyOrdersLoading(false);
   };
+
   const orderMessage = () => {
     const lines = [`طلب جديد من ${settings?.store_name || "NOVA SHOP"}`, ""];
     cartItems.forEach((l) => {
@@ -812,6 +850,9 @@ export default function App() {
         /* Hero logo full-width mode */
         .hero-logo-mode{ padding:0 !important; }
         .hero-full-logo{ width:100%; max-width:100%; height:auto; max-height:72vh; object-fit:cover; display:block; }
+        .hero-logo-desc{ padding:16px 16px 0; text-align:center; max-width:var(--container); margin:0 auto; }
+        .hero-logo-name{ font-family:'Almarai',sans-serif; font-weight:800; font-size:22px; color:var(--ink); margin-bottom:6px; }
+        .hero-logo-text{ font-size:13px; color:var(--muted); line-height:1.7; }
         .hero-logo-trust{ padding:16px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:var(--container); margin:0 auto; }
 
         .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
@@ -996,20 +1037,20 @@ export default function App() {
       {/* ===== My Orders drawer (مع الحماية التامة للخصوصية) ===== */}
       {myOrdersOpen && (
         <div className="drawer-overlay">
-          <div className="drawer-backdrop" onClick={() => setMyOrdersOpen(false)} />
+          <div className="drawer-backdrop" onClick={() => { setMyOrdersOpen(false); setOtpSent(false); setOtpCode(""); setOtpInput(""); setOtpVerified(false); setMyOrders([]); setMyOrdersSearched(false); }} />
           <div className="drawer">
             <div className="drawer-head">
               <span className="drawer-title" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <Package size={20} color="var(--teal)" /> طلباتي
               </span>
-              <button onClick={() => setMyOrdersOpen(false)} className="icon-btn">
+              <button onClick={() => { setMyOrdersOpen(false); setOtpSent(false); setOtpCode(""); setOtpInput(""); setOtpVerified(false); setMyOrders([]); setMyOrdersSearched(false); }} className="icon-btn">
                 <X size={16} />
               </button>
             </div>
 
             <div className="security-notice">
               <Lock size={15} />
-              <span>خصوصيتك محمية: يتطلب تتبع أي طلب إدخال رقم الهاتف ورقم الطلب معاً لضمان عدم اطلاع أي شخص على بياناتك.</span>
+              <span>خصوصيتك محمية: يتطلب تتبع الطلبات التحقق برمز عبر واتساب.</span>
             </div>
 
             <div className="order-tabs">
@@ -1021,73 +1062,119 @@ export default function App() {
               </button>
               <button
                 className={`order-tab-btn ${orderTab === "lookup" ? "active" : ""}`}
-                onClick={() => setOrderTab("lookup")}
+                onClick={() => { setOrderTab("lookup"); setOtpSent(false); setOtpCode(""); setOtpInput(""); setOtpVerified(false); setMyOrders([]); setMyOrdersSearched(false); }}
               >
-                تتبع برقم الطلب
+                تتبع برقم الهاتف
               </button>
             </div>
 
             {orderTab === "lookup" ? (
-              <div className="field-block" style={{ marginTop: 0 }}>
-                <span className="field-label">رقم الطلب (Order ID)</span>
-                <input
-                  type="text"
-                  className="customer-input"
-                  placeholder="مثال: 105"
-                  value={lookupOrderId}
-                  onChange={(e) => setLookupOrderId(e.target.value)}
-                  style={{ marginBottom: "8px" }}
-                />
-                <span className="field-label">رقم الهاتف المسجل</span>
-                <input
-                  type="tel"
-                  className="customer-input"
-                  placeholder="09XXXXXXXX"
-                  value={lookupPhone}
-                  onChange={(e) => setLookupPhone(e.target.value)}
-                />
-                <button
-                  onClick={fetchMyOrders}
-                  className="cta-button"
-                  style={{ marginTop: "12px" }}
-                >
-                  <Search size={16} /> بحث آمن عن الطلب
-                </button>
+              <div className="field-block" style={{ marginTop: 0, flex: 1, overflowY: "auto" }}>
 
-                <div className="cart-scroll" style={{ marginTop: "16px" }}>
-                  {myOrdersLoading ? (
-                    <div className="state-box">جاري التحقق والبحث...</div>
-                  ) : myOrdersSearched && myOrders.length === 0 ? (
-                    <div className="cart-empty">
-                      <Package size={32} />
-                      <span>لم يتم العثور على طلب مطابق لرقم الطلب والهاتف المدخلين</span>
+                {/* ── الخطوة 1: إدخال رقم الهاتف ── */}
+                {!otpSent && (
+                  <>
+                    <div style={{ textAlign: "center", padding: "16px 0 10px", fontSize: "13px", color: "var(--muted)", lineHeight: 1.7 }}>
+                      أدخل رقم هاتفك المسجل في الطلب وسيُرسل لك رمز تحقق عبر واتساب المتجر.
                     </div>
-                  ) : (
-                    myOrders.map((order) => (
-                      <div key={order.id} className="cart-line" style={{ flexDirection: "column", alignItems: "stretch" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-                          <span className="cart-name">طلب رقم #{order.id}</span>
-                          <span className="cart-price">{order.total_price} د.ل</span>
-                        </div>
-                        <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "4px" }}>
-                          {new Date(order.created_at).toLocaleDateString("ar-LY")}
-                        </p>
-                        {(order.items || []).map((item, idx) => (
-                          <p key={idx} className="cart-code">
-                            {item.title} × {item.qty}
-                          </p>
-                        ))}
-                        <button
-                          onClick={() => setInvoiceOrder(order)}
-                          className="add-btn"
-                          style={{ marginTop: "8px" }}
-                        >
-                          🧾 عرض الفاتورة
-                        </button>
+                    <span className="field-label">رقم الهاتف</span>
+                    <input
+                      type="tel"
+                      className="customer-input"
+                      placeholder="09XXXXXXXX"
+                      value={lookupPhone}
+                      onChange={(e) => setLookupPhone(e.target.value)}
+                      style={{ marginBottom: "12px" }}
+                    />
+                    <button
+                      onClick={sendOtp}
+                      className="cta-button"
+                    >
+                      <MessageCircle size={16} /> إرسال رمز التحقق عبر واتساب
+                    </button>
+                  </>
+                )}
+
+                {/* ── الخطوة 2: إدخال OTP ── */}
+                {otpSent && !otpVerified && (
+                  <>
+                    <div style={{ textAlign: "center", padding: "12px", background: "var(--teal-light)", borderRadius: "14px", marginBottom: "14px", marginTop: "8px" }}>
+                      <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--teal-dark)", marginBottom: "4px" }}>✅ تم فتح واتساب</p>
+                      <p style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.6 }}>
+                        أرسل الرسالة للمتجر، ثم أدخل الرمز المكوّن من 4 أرقام أدناه.
+                      </p>
+                      <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
+                        الرمز صالح لمدة 5 دقائق · الهاتف: {lookupPhone}
+                      </p>
+                    </div>
+                    <span className="field-label">رمز التحقق (4 أرقام)</span>
+                    <input
+                      type="number"
+                      className="customer-input"
+                      placeholder="XXXX"
+                      value={otpInput}
+                      onChange={(e) => setOtpInput(e.target.value.slice(0, 4))}
+                      style={{ marginBottom: "12px", textAlign: "center", fontSize: "22px", letterSpacing: "8px", fontWeight: 800 }}
+                    />
+                    <button
+                      onClick={verifyOtpAndFetch}
+                      className="cta-button"
+                      style={{ marginBottom: "10px" }}
+                    >
+                      <Search size={16} /> تحقق وعرض طلباتي
+                    </button>
+                    <button
+                      onClick={() => { setOtpSent(false); setOtpCode(""); setOtpInput(""); }}
+                      style={{ width: "100%", padding: "10px", borderRadius: "12px", fontSize: "13px", color: "var(--muted)", border: "1px solid var(--line)", background: "transparent" }}
+                    >
+                      ↩ تغيير رقم الهاتف
+                    </button>
+                  </>
+                )}
+
+                {/* ── الخطوة 3: النتائج ── */}
+                {otpVerified && (
+                  <div className="cart-scroll" style={{ marginTop: "12px" }}>
+                    {myOrdersLoading ? (
+                      <div className="state-box">جاري جلب طلباتك...</div>
+                    ) : myOrdersSearched && myOrders.length === 0 ? (
+                      <div className="cart-empty">
+                        <Package size={32} />
+                        <span>لا توجد طلبات مسجلة على رقم {lookupPhone}</span>
                       </div>
-                    ))
-                  )}
-                </div>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: "12px", color: "var(--teal-dark)", fontWeight: 700, marginBottom: "8px" }}>
+                          ✅ تم التحقق · {myOrders.length} طلب بالرقم {lookupPhone}
+                        </p>
+                        {myOrders.map((order) => (
+                          <div key={order.id} className="cart-line" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                              <span className="cart-name">طلب رقم #{order.id}</span>
+                              <span className="cart-price">{order.total_price} د.ل</span>
+                            </div>
+                            <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "4px" }}>
+                              {new Date(order.created_at).toLocaleDateString("ar-LY")} · {order.status || "قيد المعالجة"}
+                            </p>
+                            {(order.items || []).map((item, idx) => (
+                              <p key={idx} className="cart-code">
+                                {item.title} × {item.qty}
+                              </p>
+                            ))}
+                            <button
+                              onClick={() => setInvoiceOrder(order)}
+                              className="add-btn"
+                              style={{ marginTop: "8px" }}
+                            >
+                              🧾 عرض الفاتورة
+                            </button>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+
               </div>
             ) : (
               <div className="cart-scroll">
@@ -1126,6 +1213,7 @@ export default function App() {
           </div>
         </div>
       )}
+
 
       {/* ===== Invoice modal ===== */}
       {invoiceOrder && (
@@ -1336,6 +1424,13 @@ export default function App() {
             alt={settings?.store_name || "شعار المتجر"}
             className="hero-full-logo"
           />
+          {/* وصف المتجر تحت الشعار */}
+          {(settings?.store_name || settings?.description) && (
+            <div className="hero-logo-desc">
+              {settings?.store_name && <h1 className="hero-logo-name">{settings.store_name}</h1>}
+              {settings?.description && <p className="hero-logo-text">{settings.description}</p>}
+            </div>
+          )}
           <div className="hero-logo-trust">
             {[
               { icon: Truck, label: "شحن لكل المدن" },
