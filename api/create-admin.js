@@ -41,19 +41,31 @@ export default async function handler(req, res) {
     }
 
     const tempPassword = generateTempPassword(10);
+    let userId = null;
 
-    // 1. إنشاء المستخدم في Supabase Auth مباشرة
+    // 1. محاولة إنشاء المستخدم لأول مرة
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: cleanEmail,
       password: tempPassword,
       email_confirm: true,
     });
 
-    if (authError) {
+    if (authUser?.user?.id) {
+      userId = authUser.user.id;
+    } else if (authError && authError.message.includes("already")) {
+      // إذا كان مسجلاً مسبقاً، نجلب الـ ID ونحدث كلمة مروره بكلمة المرور المؤقتة الجديدة
+      const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
+      const existing = (usersData?.users || []).find((u) => u.email?.toLowerCase() === cleanEmail);
+      if (existing) {
+        userId = existing.id;
+        await supabaseAdmin.auth.admin.updateUserById(userId, {
+          password: tempPassword,
+          email_confirm: true,
+        });
+      }
+    } else if (authError) {
       return res.status(400).json({ error: authError.message });
     }
-
-    const userId = authUser?.user?.id;
 
     // 2. تسجيل البروفايل وحالة إجبار تغيير كلمة المرور
     if (userId) {
