@@ -37,6 +37,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
+import ExcelJS from "exceljs";
 
 // ============================================================================
 // 1. INTEGRATION LAYER: NORMALIZED INTERNAL MODELS (النماذج الموحدة)
@@ -1356,22 +1357,83 @@ function printAdminInvoice(order, storeName) {
 }
 
 /**
- * دالة تصدير شيت المبيعات والعمليات والتحصيل إلى ملف Excel احترافي بخط عربي متصل وواضح 100%
+ * دالة تصدير شيت المبيعات والعمليات والتحصيل إلى ملف Excel احترافي (.xlsx) عبر ExcelJS
  */
-export function exportSalesToExcel(orders = [], storeName = "NOVA SHOP") {
+export async function exportSalesToExcel(orders = [], storeName = "NOVA SHOP") {
   if (!orders || orders.length === 0) {
     alert("لا توجد طلبات لتصديرها حالياً");
     return;
   }
 
-  const rows = orders.map((o) => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = storeName;
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("سجل المبيعات والعمليات", {
+    views: [{ rightToLeft: true }],
+  });
+
+  sheet.columns = [
+    { header: "رقم الطلب", key: "id", width: 14 },
+    { header: "تاريخ الطلب", key: "date", width: 14 },
+    { header: "الوقت", key: "time", width: 12 },
+    { header: "اسم الزبون", key: "customer_name", width: 22 },
+    { header: "رقم الهاتف", key: "customer_phone", width: 18 },
+    { header: "المدينة والعنوان", key: "customer_address", width: 26 },
+    { header: "المنتجات والكميات", key: "items", width: 35 },
+    { header: "إجمالي الطلب (د.ل)", key: "total_price", width: 18 },
+    { header: "طريقة الدفع", key: "payment_method", width: 18 },
+    { header: "تصنيف الدفع", key: "payment_type", width: 22 },
+    { header: "المطلوب تحصيله كاش (COD)", key: "cod_amount", width: 24 },
+    { header: "المحصل أونلاين / بنك", key: "online_amount", width: 22 },
+    { header: "حالة الطلب", key: "status", width: 16 },
+    { header: "رقم التتبع / الشحن", key: "tracking", width: 20 },
+  ];
+
+  // 1. العنوان الرئيسي
+  sheet.spliceRows(1, 0, []);
+  sheet.mergeCells("A1:N1");
+  const titleRow = sheet.getRow(1);
+  titleRow.height = 36;
+  const titleCell = sheet.getCell("A1");
+  titleCell.value = `سجل المبيعات والعمليات والتحصيل — ${storeName}`;
+  titleCell.font = { name: "Arial", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
+  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0E7C86" } };
+  titleCell.alignment = { vertical: "middle", horizontal: "center" };
+
+  // 2. ترويسة الجدول
+  const headerRow = sheet.getRow(2);
+  headerRow.height = 28;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0A5A61" } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFCBD5E1" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
+      bottom: { style: "medium", color: { argb: "FF0E7C86" } },
+      right: { style: "thin", color: { argb: "FFCBD5E1" } },
+    };
+  });
+
+  // 3. إضافة البيانات
+  let totalAmount = 0;
+  let totalCash = 0;
+  let totalOnline = 0;
+
+  orders.forEach((o) => {
     const isOnline = (o.payment_method || "").toLowerCase().includes("ezone") || (o.payment_method || "").includes("إلكتروني");
     const isBank = (o.payment_method || "").includes("بنك") || (o.payment_method || "").includes("تحويل");
     const isCash = !isOnline && !isBank;
 
     const paymentType = isOnline ? "أونلاين (Ezone Pay)" : isBank ? "تحويل بنكي" : "كاش عند الاستلام (COD)";
-    const codToCollect = isOnline || isBank ? 0 : Number(o.total_price || 0);
-    const onlineCollected = isOnline || isBank ? Number(o.total_price || 0) : 0;
+    const orderTotal = Number(o.total_price || 0);
+    const codToCollect = isOnline || isBank ? 0 : orderTotal;
+    const onlineCollected = isOnline || isBank ? orderTotal : 0;
+
+    totalAmount += orderTotal;
+    totalCash += codToCollect;
+    totalOnline += onlineCollected;
 
     const itemsSummary = (o.items || [])
       .map((it) => `${it.title || "منتج"}${it.size || it.color ? ` (${[it.size, it.color].filter(Boolean).join("/")})` : ""} × ${it.qty || 1}`)
@@ -1380,272 +1442,252 @@ export function exportSalesToExcel(orders = [], storeName = "NOVA SHOP") {
     const dateStr = o.created_at ? new Date(o.created_at).toLocaleDateString("ar-LY") : "-";
     const timeStr = o.created_at ? new Date(o.created_at).toLocaleTimeString("ar-LY", { hour: "2-digit", minute: "2-digit" }) : "-";
 
-    return `
-      <tr>
-        <td style="text-align:center;font-weight:bold;">#${o.id}</td>
-        <td style="text-align:center;">${dateStr}</td>
-        <td style="text-align:center;">${timeStr}</td>
-        <td style="text-align:right;font-weight:500;">${escapeHtml(o.customer_name || "زبون")}</td>
-        <td style="text-align:center;direction:ltr;">${escapeHtml(o.customer_phone || "-")}</td>
-        <td style="text-align:right;">${escapeHtml(o.customer_address || "-")}</td>
-        <td style="text-align:right;">${escapeHtml(itemsSummary)}</td>
-        <td class="num" style="text-align:right;font-weight:bold;">${Number(o.total_price || 0).toFixed(2)}</td>
-        <td style="text-align:center;">${escapeHtml(o.payment_method || "كاش")}</td>
-        <td style="text-align:center;background-color:${isOnline ? '#E0F2FE' : isBank ? '#FEF3C7' : '#DCFCE7'};color:${isOnline ? '#0369A1' : isBank ? '#B45309' : '#15803D'};font-weight:bold;">${paymentType}</td>
-        <td class="num" style="text-align:right;font-weight:bold;color:${codToCollect > 0 ? '#B91C1C' : '#64748B'};">${codToCollect.toFixed(2)}</td>
-        <td class="num" style="text-align:right;font-weight:bold;color:${onlineCollected > 0 ? '#15803D' : '#64748B'};">${onlineCollected.toFixed(2)}</td>
-        <td style="text-align:center;font-weight:bold;">${escapeHtml(o.status || "جديد")}</td>
-        <td style="text-align:center;">${escapeHtml(o.tracking_number || (o.delivery_provider ? "درب السبيل" : "توصيل عادي"))}</td>
-      </tr>
-    `;
-  }).join("");
+    const row = sheet.addRow({
+      id: `#${o.id}`,
+      date: dateStr,
+      time: timeStr,
+      customer_name: o.customer_name || "زبون",
+      customer_phone: o.customer_phone || "-",
+      customer_address: o.customer_address || "-",
+      items: itemsSummary,
+      total_price: orderTotal,
+      payment_method: o.payment_method || "كاش",
+      payment_type: paymentType,
+      cod_amount: codToCollect,
+      online_amount: onlineCollected,
+      status: o.status || "جديد",
+      tracking: o.tracking_number || (o.delivery_provider ? "درب السبيل" : "توصيل عادي"),
+    });
 
-  const totalAmount = orders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
-  const totalCash = orders.filter(o => !(o.payment_method || "").toLowerCase().includes("ezone") && !(o.payment_method || "").includes("بنك")).reduce((sum, o) => sum + Number(o.total_price || 0), 0);
-  const totalOnline = totalAmount - totalCash;
+    row.height = 24;
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: "Arial", size: 10.5 };
+      cell.alignment = { vertical: "middle", horizontal: (colNumber === 4 || colNumber === 6 || colNumber === 7) ? "right" : "center" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+      if (colNumber === 8 || colNumber === 11 || colNumber === 12) {
+        cell.numFmt = '#,##0.00';
+      }
+      if (colNumber === 10) {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: isOnline ? "FFE0F2FE" : isBank ? "FFFEF3C7" : "FFDCFCE7" },
+        };
+        cell.font = {
+          name: "Arial",
+          size: 10.5,
+          bold: true,
+          color: { argb: isOnline ? "FF0369A1" : isBank ? "FFB45309" : "FF15803D" },
+        };
+      }
+    });
+  });
 
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40" dir="rtl" lang="ar">
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<!--[if gte mso 9]>
-<xml>
- <x:ExcelWorkbook>
-  <x:ExcelWorksheets>
-   <x:ExcelWorksheet>
-    <x:Name>سجل المبيعات والعمليات</x:Name>
-    <x:WorksheetOptions>
-     <x:DisplayRightToLeft/>
-    </x:WorksheetOptions>
-   </x:ExcelWorksheet>
-  </x:ExcelWorksheets>
- </x:ExcelWorkbook>
-</xml>
-<![endif]-->
-<style>
-  body, table { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; }
-  table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-  th { background-color: #0E7C86; color: #FFFFFF; font-weight: bold; font-size: 13px; padding: 10px 8px; border: 1px solid #0A5A61; text-align: center; }
-  td { padding: 8px 10px; border: 1px solid #CBD5E1; font-size: 12px; color: #0F172A; }
-  .title-cell { background-color: #0E7C86; color: #FFFFFF; font-size: 18px; font-weight: bold; text-align: center; padding: 14px; border: 1px solid #0A5A61; }
-  .summary-cell { background-color: #E2E8F0; color: #0F172A; font-weight: bold; font-size: 13px; padding: 10px; border: 1px solid #94A3B8; text-align: center; }
-  .num { mso-number-format:"\\#\\,\\#\\#0\\.00"; }
-</style>
-</head>
-<body dir="rtl">
-<table>
-  <tr>
-    <th colspan="14" class="title-cell">سجل المبيعات والعمليات والتحصيل — ${escapeHtml(storeName)}</th>
-  </tr>
-  <tr>
-    <th>رقم الطلب</th>
-    <th>تاريخ الطلب</th>
-    <th>الوقت</th>
-    <th>اسم الزبون</th>
-    <th>رقم الهاتف</th>
-    <th>المدينة والعنوان</th>
-    <th>المنتجات والكميات</th>
-    <th>إجمالي الطلب (د.ل)</th>
-    <th>طريقة الدفع</th>
-    <th>تصنيف الدفع</th>
-    <th>المطلوب تحصيله كاش (COD)</th>
-    <th>المحصل أونلاين / بنك</th>
-    <th>حالة الطلب</th>
-    <th>رقم التتبع / الشحن</th>
-  </tr>
-  ${rows}
-  <tr>
-    <td colspan="7" class="summary-cell" style="font-size:14px;background-color:#E0F2FE;color:#0369A1;">الإجمالي الكلي (${orders.length} طلب)</td>
-    <td class="summary-cell num" style="text-align:right;background-color:#E0F2FE;color:#0369A1;font-size:14px;">${totalAmount.toFixed(2)}</td>
-    <td colspan="2" class="summary-cell" style="background-color:#E0F2FE;">-</td>
-    <td class="summary-cell num" style="text-align:right;background-color:#FEE2E2;color:#B91C1C;font-size:14px;">${totalCash.toFixed(2)}</td>
-    <td class="summary-cell num" style="text-align:right;background-color:#DCFCE7;color:#15803D;font-size:14px;">${totalOnline.toFixed(2)}</td>
-    <td colspan="2" class="summary-cell" style="background-color:#E0F2FE;">-</td>
-  </tr>
-</table>
-</body>
-</html>`;
+  // 4. صف الإجماليات
+  const summaryRow = sheet.addRow({
+    id: `الإجمالي الكلي (${orders.length} طلب)`,
+    total_price: totalAmount,
+    cod_amount: totalCash,
+    online_amount: totalOnline,
+  });
+  summaryRow.height = 28;
+  sheet.mergeCells(`A${summaryRow.number}:G${summaryRow.number}`);
+  summaryRow.eachCell((cell) => {
+    cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FF0F172A" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.border = {
+      top: { style: "medium", color: { argb: "FF0E7C86" } },
+      bottom: { style: "medium", color: { argb: "FF0E7C86" } },
+    };
+  });
+  sheet.getCell(`H${summaryRow.number}`).numFmt = '#,##0.00';
+  sheet.getCell(`K${summaryRow.number}`).numFmt = '#,##0.00';
+  sheet.getCell(`L${summaryRow.number}`).numFmt = '#,##0.00';
 
-  downloadBlob(html, `Sales-Report-${storeName.replace(/\s+/g, "_")}-${new Date().toISOString().slice(0,10)}.xls`, "application/vnd.ms-excel");
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Sales-Report-${storeName.replace(/\s+/g, "_")}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /**
- * دالة تحميل نموذج شيت إدارة رأس المال والتدفق النقدي (Cash Flow Statement)
+ * دالة تحميل نموذج شيت إدارة رأس المال والتدفق النقدي (Cash Flow Statement) عبر ExcelJS
  */
-export function downloadCashFlowTemplate(storeName = "NOVA SHOP") {
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40" dir="rtl" lang="ar">
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<!--[if gte mso 9]>
-<xml>
- <x:ExcelWorkbook>
-  <x:ExcelWorksheets>
-   <x:ExcelWorksheet>
-    <x:Name>التدفق النقدي والميزانية</x:Name>
-    <x:WorksheetOptions>
-     <x:DisplayRightToLeft/>
-    </x:WorksheetOptions>
-   </x:ExcelWorksheet>
-  </x:ExcelWorksheets>
- </x:ExcelWorkbook>
-</xml>
-<![endif]-->
-<style>
-  body, table { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; }
-  table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
-  th { background-color: #0E7C86; color: #FFFFFF; font-weight: bold; font-size: 13px; padding: 10px 8px; border: 1px solid #0A5A61; text-align: center; }
-  td { padding: 8px 10px; border: 1px solid #CBD5E1; font-size: 12px; color: #0F172A; }
-  .title-cell { background-color: #0E7C86; color: #FFFFFF; font-size: 18px; font-weight: bold; text-align: center; padding: 14px; border: 1px solid #0A5A61; }
-  .inflow-head { background-color: #DCFCE7; color: #15803D; font-weight: bold; border: 1px solid #86EFAC; }
-  .outflow-head { background-color: #FEE2E2; color: #B91C1C; font-weight: bold; border: 1px solid #FCA5A5; }
-  .kpi-label { background-color: #F8FAFC; color: #0F172A; font-weight: bold; font-size: 13px; padding: 10px; border: 1px solid #CBD5E1; text-align: right; }
-  .kpi-val { background-color: #E0F2FE; color: #0369A1; font-weight: bold; font-size: 14px; padding: 10px; border: 1px solid #BAE6FD; text-align: center; }
-  .num { mso-number-format:"\\#\\,\\#\\#0\\.00"; text-align: right; font-weight: bold; }
-</style>
-</head>
-<body dir="rtl">
+export async function downloadCashFlowTemplate(storeName = "NOVA SHOP") {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = storeName;
+  workbook.created = new Date();
 
-<!-- جدول حركة التدفق النقدي -->
-<table>
-  <tr>
-    <th colspan="8" class="title-cell">سجل حركة التدفق النقدي (Cash Flow Statement) — ${escapeHtml(storeName)}</th>
-  </tr>
-  <tr>
-    <th>التاريخ</th>
-    <th>نوع الحركة</th>
-    <th>البند والتصنيف</th>
-    <th>البيان / التفاصيل</th>
-    <th class="inflow-head">المبلغ الداخل (+) د.ل</th>
-    <th class="outflow-head">المبلغ الخارج (-) د.ل</th>
-    <th>طريقة الدفع / الحساب</th>
-    <th>ملاحظات</th>
-  </tr>
-  <tr>
-    <td style="text-align:center;">2026/09/01</td>
-    <td style="text-align:center;font-weight:bold;">رأس مال</td>
-    <td style="text-align:center;font-weight:bold;">رأس المال الابتدائي</td>
-    <td style="text-align:right;">إيداع رأس مال بداية النشاط</td>
-    <td class="num" style="color:#15803D;">15000.00</td>
-    <td class="num" style="color:#64748B;">0.00</td>
-    <td style="text-align:center;">كاش في اليد / بنك</td>
-    <td style="text-align:right;">سيولة متاحة للتشغيل</td>
-  </tr>
-  <tr>
-    <td style="text-align:center;">2026/09/01</td>
-    <td style="text-align:center;color:#B91C1C;font-weight:bold;">تدفق خارج</td>
-    <td style="text-align:center;">شراء بضاعة (مخزون)</td>
-    <td style="text-align:right;">دفعة استيراد ساعات وإلكترونيات</td>
-    <td class="num" style="color:#64748B;">0.00</td>
-    <td class="num" style="color:#B91C1C;">6500.00</td>
-    <td style="text-align:center;">تحويل للمورد</td>
-    <td style="text-align:right;">فاتورة رقم #991</td>
-  </tr>
-  <tr>
-    <td style="text-align:center;">2026/09/02</td>
-    <td style="text-align:center;color:#B91C1C;font-weight:bold;">تدفق خارج</td>
-    <td style="text-align:center;">شحن دولي وتخليص</td>
-    <td style="text-align:right;">مصاريف شحن البضاعة إلى طرابلس</td>
-    <td class="num" style="color:#64748B;">0.00</td>
-    <td class="num" style="color:#B91C1C;">850.00</td>
-    <td style="text-align:center;">كاش</td>
-    <td style="text-align:right;">شركة الشحن الدولي</td>
-  </tr>
-  <tr>
-    <td style="text-align:center;">2026/09/02</td>
-    <td style="text-align:center;color:#B91C1C;font-weight:bold;">تدفق خارج</td>
-    <td style="text-align:center;">إعلانات ممولة</td>
-    <td style="text-align:right;">حملة فيسبوك وإنستقرام إعلانية</td>
-    <td class="num" style="color:#64748B;">0.00</td>
-    <td class="num" style="color:#B91C1C;">400.00</td>
-    <td style="text-align:center;">بطاقة مصرفية</td>
-    <td style="text-align:right;">حملة إطلاق المتجر</td>
-  </tr>
-  <tr>
-    <td style="text-align:center;">2026/09/03</td>
-    <td style="text-align:center;color:#15803D;font-weight:bold;">تدفق داخل</td>
-    <td style="text-align:center;">مبيعات كاش مستلمة</td>
-    <td style="text-align:right;">تحصيل كاش من شركة التوصيل (درب السبيل)</td>
-    <td class="num" style="color:#15803D;">3250.00</td>
-    <td class="num" style="color:#64748B;">0.00</td>
-    <td style="text-align:center;">كاش / حوالة</td>
-    <td style="text-align:right;">تسوية طلبات الأسبوع 1</td>
-  </tr>
-  <tr>
-    <td style="text-align:center;">2026/09/03</td>
-    <td style="text-align:center;color:#15803D;font-weight:bold;">تدفق داخل</td>
-    <td style="text-align:center;">مبيعات أونلاين Ezone</td>
-    <td style="text-align:right;">سحب رصيد محفظة إيزون باي لحساب البنك</td>
-    <td class="num" style="color:#15803D;">1800.00</td>
-    <td class="num" style="color:#64748B;">0.00</td>
-    <td style="text-align:center;">Ezone Pay</td>
-    <td style="text-align:right;">سداد + تداول + إدفع لي</td>
-  </tr>
-</table>
+  // الشيت 1: حركة التدفق النقدي
+  const sheet1 = workbook.addWorksheet("حركة التدفق النقدي", {
+    views: [{ rightToLeft: true }],
+  });
 
-<!-- جدول مؤشرات الأداء المالي والميزانية -->
-<table>
-  <tr>
-    <th colspan="3" class="title-cell">لوحة قياس الأداء المالي والميزانية (Financial Dashboard &amp; P&amp;L)</th>
-  </tr>
-  <tr>
-    <td class="kpi-label">💵 رأس المال الابتدائي المستثمر:</td>
-    <td class="kpi-val num">15000.00</td>
-    <td>المبلغ الأساسي المخصص للتجارة</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">📦 قيمة البضاعة الحالية في المخزن:</td>
-    <td class="kpi-val num">5200.00</td>
-    <td>سعر تكلفة المنتجات الموجودة بالمخزن</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">📈 إجمالي الإيرادات (المبيعات):</td>
-    <td class="kpi-val num">5050.00</td>
-    <td>مجموع مبيعات الكاش والأونلاين</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">🏷️ تكلفة البضاعة المباعة (COGS):</td>
-    <td class="kpi-val num" style="color:#B91C1C;">2400.00</td>
-    <td>تكلفة شراء القطع التي تم بيعها فعلياً</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">✨ مجمل الربح (Gross Profit):</td>
-    <td class="kpi-val num" style="color:#15803D;">2650.00</td>
-    <td>الإيرادات ناقص تكلفة البضاعة المباعة</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">📢 مصاريف الإعلانات والتسويق:</td>
-    <td class="kpi-val num" style="color:#B91C1C;">400.00</td>
-    <td>فيسبوك، إنستغرام، تيك توك</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">🚚 مصاريف الشحن والتغليف والرواجع:</td>
-    <td class="kpi-val num" style="color:#B91C1C;">220.00</td>
-    <td>أكياس + تكلفة توصيل الطلبات المرتجعة</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">💳 عمولات الدفع والمنصات:</td>
-    <td class="kpi-val num" style="color:#B91C1C;">55.00</td>
-    <td>عمولة إيزون باي أو سداد</td>
-  </tr>
-  <tr style="background-color:#DCFCE7;">
-    <td class="kpi-label" style="font-size:15px;color:#15803D;background-color:#DCFCE7;">🏆 صافي الربح الحقيقي (Net Profit):</td>
-    <td class="kpi-val num" style="font-size:16px;color:#15803D;background-color:#DCFCE7;">1975.00</td>
-    <td style="font-weight:bold;color:#15803D;">الربح الصافي النهائي بعد خصم كل شيء 🎯</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">💰 السيولة النقدية المتاحة (Cash in Hand):</td>
-    <td class="kpi-val num">12250.00</td>
-    <td>الكاش المتوفر في حسابك البنكي واليد</td>
-  </tr>
-  <tr>
-    <td class="kpi-label">📊 هامش صافي الربح (Profit Margin %):</td>
-    <td class="kpi-val" style="font-size:14px;color:#0E7C86;">39.1%</td>
-    <td>(صافي الربح ÷ إجمالي المبيعات) × 100</td>
-  </tr>
-</table>
-</body>
-</html>`;
+  sheet1.columns = [
+    { header: "التاريخ", key: "date", width: 15 },
+    { header: "نوع الحركة", key: "type", width: 16 },
+    { header: "البند والتصنيف", key: "category", width: 24 },
+    { header: "البيان / التفاصيل", key: "description", width: 36 },
+    { header: "المبلغ الداخل (+) د.ل", key: "inflow", width: 22 },
+    { header: "المبلغ الخارج (-) د.ل", key: "outflow", width: 22 },
+    { header: "طريقة الدفع / الحساب", key: "method", width: 20 },
+    { header: "ملاحظات", key: "notes", width: 26 },
+  ];
 
-  downloadBlob(html, `Cash-Flow-Statement-${storeName.replace(/\s+/g, "_")}.xls`, "application/vnd.ms-excel");
+  sheet1.spliceRows(1, 0, []);
+  sheet1.mergeCells("A1:H1");
+  const title1 = sheet1.getCell("A1");
+  sheet1.getRow(1).height = 36;
+  title1.value = `سجل حركة التدفق النقدي (Cash Flow Statement) — ${storeName}`;
+  title1.font = { name: "Arial", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
+  title1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0E7C86" } };
+  title1.alignment = { vertical: "middle", horizontal: "center" };
+
+  const hRow1 = sheet1.getRow(2);
+  hRow1.height = 28;
+  hRow1.eachCell((cell, colNumber) => {
+    cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: colNumber === 5 ? "FF15803D" : colNumber === 6 ? "FFB91C1C" : "FF0A5A61" },
+    };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFCBD5E1" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
+      bottom: { style: "medium", color: { argb: "FF0E7C86" } },
+      right: { style: "thin", color: { argb: "FFCBD5E1" } },
+    };
+  });
+
+  const sampleData1 = [
+    { date: "2026/09/01", type: "رأس مال", category: "رأس المال الابتدائي", description: "إيداع رأس مال بداية النشاط", inflow: 15000, outflow: 0, method: "كاش في اليد / بنك", notes: "سيولة متاحة للتشغيل" },
+    { date: "2026/09/01", type: "تدفق خارج", category: "شراء بضاعة (مخزون)", description: "دفعة استيراد ساعات وإلكترونيات", inflow: 0, outflow: 6500, method: "تحويل للمورد", notes: "فاتورة رقم #991" },
+    { date: "2026/09/02", type: "تدفق خارج", category: "شحن دولي وتخليص", description: "مصاريف شحن البضاعة إلى طرابلس", inflow: 0, outflow: 850, method: "كاش", notes: "شركة الشحن الدولي" },
+    { date: "2026/09/02", type: "تدفق خارج", category: "إعلانات ممولة", description: "حملة فيسبوك وإنستقرام إعلانية", inflow: 0, outflow: 400, method: "بطاقة مصرفية", notes: "حملة إطلاق المتجر" },
+    { date: "2026/09/03", type: "تدفق داخل", category: "مبيعات كاش مستلمة", description: "تحصيل كاش من شركة التوصيل (درب السبيل)", inflow: 3250, outflow: 0, method: "كاش / حوالة", notes: "تسوية طلبات الأسبوع 1" },
+    { date: "2026/09/03", type: "تدفق داخل", category: "مبيعات أونلاين Ezone", description: "سحب رصيد محفظة إيزون باي لحساب البنك", inflow: 1800, outflow: 0, method: "Ezone Pay", notes: "سداد + تداول + إدفع لي" },
+  ];
+
+  sampleData1.forEach((item) => {
+    const r = sheet1.addRow(item);
+    r.height = 24;
+    r.eachCell((cell, colNumber) => {
+      cell.font = { name: "Arial", size: 10.5 };
+      cell.alignment = { vertical: "middle", horizontal: colNumber === 4 ? "right" : "center" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+      if (colNumber === 5 || colNumber === 6) {
+        cell.numFmt = '#,##0.00';
+      }
+      if (colNumber === 5 && item.inflow > 0) {
+        cell.font = { name: "Arial", size: 10.5, bold: true, color: { argb: "FF15803D" } };
+      }
+      if (colNumber === 6 && item.outflow > 0) {
+        cell.font = { name: "Arial", size: 10.5, bold: true, color: { argb: "FFB91C1C" } };
+      }
+    });
+  });
+
+  // الشيت 2: الميزانية وصافي الربح
+  const sheet2 = workbook.addWorksheet("الميزانية وصافي الربح", {
+    views: [{ rightToLeft: true }],
+  });
+
+  sheet2.columns = [
+    { header: "البند المالي", key: "kpi", width: 34 },
+    { header: "القيمة (د.ل)", key: "value", width: 22 },
+    { header: "التفاصيل والشرح", key: "desc", width: 44 },
+  ];
+
+  sheet2.spliceRows(1, 0, []);
+  sheet2.mergeCells("A1:C1");
+  const title2 = sheet2.getCell("A1");
+  sheet2.getRow(1).height = 36;
+  title2.value = `لوحة قياس الأداء المالي والميزانية (Financial Dashboard & P&L)`;
+  title2.font = { name: "Arial", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
+  title2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0E7C86" } };
+  title2.alignment = { vertical: "middle", horizontal: "center" };
+
+  const hRow2 = sheet2.getRow(2);
+  hRow2.height = 28;
+  hRow2.eachCell((cell) => {
+    cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0A5A61" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFCBD5E1" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
+      bottom: { style: "medium", color: { argb: "FF0E7C86" } },
+      right: { style: "thin", color: { argb: "FFCBD5E1" } },
+    };
+  });
+
+  const pnlData = [
+    { kpi: "💵 رأس المال الابتدائي المستثمر:", value: 15000, desc: "المبلغ الأساسي المخصص للتجارة" },
+    { kpi: "📦 قيمة البضاعة الحالية في المخزن:", value: 5200, desc: "سعر تكلفة المنتجات الموجودة بالمخزن" },
+    { kpi: "📈 إجمالي الإيرادات (المبيعات):", value: 5050, desc: "مجموع مبيعات الكاش والأونلاين" },
+    { kpi: "🏷️ تكلفة البضاعة المباعة (COGS):", value: 2400, desc: "تكلفة شراء القطع التي تم بيعها فعلياً", isRed: true },
+    { kpi: "✨ مجمل الربح (Gross Profit):", value: 2650, desc: "الإيرادات ناقص تكلفة البضاعة المباعة", isGreen: true },
+    { kpi: "📢 مصاريف الإعلانات والتسويق:", value: 400, desc: "فيسبوك، إنستغرام، تيك توك", isRed: true },
+    { kpi: "🚚 مصاريف الشحن والتغليف والرواجع:", value: 220, desc: "أكياس + تكلفة توصيل الطلبات المرتجعة", isRed: true },
+    { kpi: "💳 عمولات الدفع والمنصات:", value: 55, desc: "عمولة إيزون باي أو سداد", isRed: true },
+    { kpi: "🏆 صافي الربح الحقيقي (Net Profit):", value: 1975, desc: "الربح الصافي النهائي بعد خصم كل شيء 🎯", isHighlight: true },
+    { kpi: "💰 السيولة النقدية المتاحة (Cash in Hand):", value: 12250, desc: "الكاش المتوفر في حسابك البنكي واليد" },
+    { kpi: "📊 هامش صافي الربح (Profit Margin %):", value: "39.1%", desc: "(صافي الربح ÷ إجمالي المبيعات) × 100", isPercent: true },
+  ];
+
+  pnlData.forEach((item) => {
+    const r = sheet2.addRow({ kpi: item.kpi, value: item.value, desc: item.desc });
+    r.height = 26;
+    r.eachCell((cell, colNumber) => {
+      cell.font = { name: "Arial", size: 11, bold: item.isHighlight || colNumber === 1 };
+      cell.alignment = { vertical: "middle", horizontal: colNumber === 1 ? "right" : colNumber === 2 ? "center" : "right" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+      if (colNumber === 2 && typeof item.value === "number") {
+        cell.numFmt = '#,##0.00';
+      }
+      if (item.isRed && colNumber === 2) {
+        cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFB91C1C" } };
+      }
+      if (item.isGreen && colNumber === 2) {
+        cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FF15803D" } };
+      }
+      if (item.isHighlight) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
+        cell.font = { name: "Arial", size: 12, bold: true, color: { argb: "FF15803D" } };
+      }
+    });
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Cash-Flow-Statement-${storeName.replace(/\s+/g, "_")}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function escapeHtml(unsafe) {
