@@ -18,16 +18,21 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://ugeekzmtavxcfrhtfrjq.supabase.co";
+    const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({ error: "Supabase Service Role Key غير مضبوط في Vercel" });
+    if (!serviceRoleKey) {
+      return res.status(500).json({ error: "يرجى التأكد من إضافة SUPABASE_SERVICE_ROLE_KEY في Vercel" });
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-    const { email, role } = req.body || {};
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
 
+    const { email, role } = req.body || {};
     const cleanEmail = (email || "").trim().toLowerCase();
     const cleanRole = role === "admin" ? "admin" : "moderator";
 
@@ -48,16 +53,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: authError.message });
     }
 
-    const userId = authUser.user.id;
+    const userId = authUser?.user?.id;
 
     // 2. تسجيل البروفايل وحالة إجبار تغيير كلمة المرور
-    await supabaseAdmin.from("admin_profiles").upsert({
-      user_id: userId,
-      email: cleanEmail,
-      role: cleanRole,
-      must_change_password: true,
-      temp_password_created_at: new Date().toISOString(),
-    });
+    if (userId) {
+      await supabaseAdmin.from("admin_profiles").upsert({
+        user_id: userId,
+        email: cleanEmail,
+        role: cleanRole,
+        must_change_password: true,
+        temp_password_created_at: new Date().toISOString(),
+      });
+    }
 
     // 3. مزامنة جدول admin_users
     await supabaseAdmin.from("admin_users").upsert({
