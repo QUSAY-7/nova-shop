@@ -1690,6 +1690,14 @@ export default function Admin() {
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("moderator");
   const [teamSaving, setTeamSaving] = useState(false);
+  const [createdAdminInfo, setCreatedAdminInfo] = useState(null); // { email, tempPassword, role }
+
+  // ---- إجبار المشرف على تغيير كلمة المرور المؤقتة ----
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [forcedNewPassword, setForcedNewPassword] = useState("");
+  const [forcedPasswordConfirm, setForcedPasswordConfirm] = useState("");
+  const [forcedPasswordSaving, setForcedPasswordSaving] = useState(false);
+  const [forcedPasswordError, setForcedPasswordError] = useState("");
 
   const [newLoginEmail, setNewLoginEmail] = useState("");
   const [newLoginPassword, setNewLoginPassword] = useState("");
@@ -2302,10 +2310,13 @@ export default function Admin() {
     setRoleLoading(true);
     const { data: userData } = await supabase.auth.getUser();
     const email = userData?.user?.email;
+    const userId = userData?.user?.id;
     if (!email) {
       setRoleLoading(false);
       return;
     }
+
+    // فحص دور المستخدم
     const { data, error } = await supabase
       .from("admin_users")
       .select("role")
@@ -2314,6 +2325,19 @@ export default function Admin() {
     if (!error && data) {
       setUserRole(data.role);
     }
+
+    // فحص هل يجب على المشرف تغيير كلمة المرور المؤقتة
+    if (userId) {
+      const { data: profile } = await supabase
+        .from("admin_profiles")
+        .select("must_change_password")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (profile?.must_change_password) {
+        setMustChangePassword(true);
+      }
+    }
+
     setRoleLoading(false);
   }
 
@@ -2325,51 +2349,107 @@ export default function Admin() {
     if (!error) setTeamMembers(data || []);
   }
 
-  // حل مشكلة إضافة وتحديث رتبة العضو بذكاء بدون خطأ duplicate key
+  // إضافة عضو جديد مع توليد كلمة مرور مؤقتة آلياً
   async function handleAddMember(e) {
     e.preventDefault();
     const emailClean = newMemberEmail.trim().toLowerCase();
     if (!emailClean) return;
     setTeamSaving(true);
+    setCreatedAdminInfo(null);
 
-    // التحقق إذا كان البريد مسجلاً مسبقاً
-    const { data: existingUser } = await supabase
-      .from("admin_users")
-      .select("id, email, role")
-      .eq("email", emailClean)
-      .maybeSingle();
+    try {
+      const response = await fetch("/api/create-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailClean, role: newMemberRole }),
+      });
 
-    let error;
-    if (existingUser) {
-      if (existingUser.role === "owner") {
-        alert("هذا الحساب هو المالك الأساسي للمتجر ولا يمكن تغيير صلاحيته.");
-        setTeamSaving(false);
-        return;
+      const resData = await response.json().catch(() => ({}));
+
+      if (response.ok && resData.success) {
+        // نجاح كامل مع توليد كلمة مرور مؤقتة
+        setCreatedAdminInfo({
+          email: resData.email,
+          role: resData.role,
+          tempPassword: resData.tempPassword,
+        });
+        setNewMemberEmail("");
+      } else {
+        // إذا فشل API السيرفر (مثلاً Service role key غير مضاف بعد في Vercel)، نقوم بالحفظ الاحتياطي
+        const { data: existingUser } = await supabase
+          .from("admin_users")
+          .select("id, email, role")
+          .eq("email", emailClean)
+          .maybeSingle();
+
+        let error;
+        if (existingUser) {
+          if (existingUser.role === "owner") {
+            alert("هذا الحساب هو المالك الأساسي للمتجر ولا يمكن تغيير صلاحيته.");
+            setTeamSaving(false);
+            return;
+          }
+          ({ error } = await supabase
+            .from("admin_users")
+            .update({ role: newMemberRole })
+            .eq("id", existingUser.id));
+          if (!error) alert(`تم تحديث صلاحية (${emailClean}) بنجاح ✅`);
+        } else {
+          ({ error } = await supabase
+            .from("admin_users")
+            .insert([{ email: emailClean, role: newMemberRole }]));
+          if (!error) alert(`تمت إضافة (${emailClean}) بنجاح ✅\n(ملاحظة: ${resData.error || "تأكد من ضبط SUPABASE_SERVICE_ROLE_KEY في Vercel لتوليد كلمات المرور تلقائياً"})`);
+        }
+
+        if (error) {
+          alert("فشل حفظ العضو: " + error.message);
+        }
       }
-      ({ error } = await supabase
-        .from("admin_users")
-        .update({ role: newMemberRole })
-        .eq("id", existingUser.id));
-      if (!error) {
-        alert(`تم تحديث صلاحية (${emailClean}) إلى "${newMemberRole === "admin" ? "أدمن" : "مشرف"}" بنجاح ✅`);
-      }
-    } else {
-      ({ error } = await supabase
-        .from("admin_users")
-        .insert([{ email: emailClean, role: newMemberRole }]));
-      if (!error) {
-        alert(`تمت إضافة (${emailClean}) كـ "${newMemberRole === "admin" ? "أدمن" : "مشرف"}" بنجاح ✅`);
-      }
+    } catch (err) {
+      alert("حدث خطأ أثناء إضافة العضو: " + err.message);
+    } finally {
+      setTeamSaving(false);
+      fetchTeamMembers();
     }
+  }
 
-    setTeamSaving(false);
-    if (error) {
-      alert("فشل حفظ العضو: " + error.message);
+  // دالة تغيير كلمة المرور المؤقتة وإلغاء الإجبار
+  async function handleForcedPasswordChange(e) {
+    e.preventDefault();
+    setForcedPasswordError("");
+    if (!forcedNewPassword || forcedNewPassword.length < 8) {
+      setForcedPasswordError("كلمة المرور يجب أن تكون 8 خانات على الأقل");
       return;
     }
-    setNewMemberEmail("");
-    setNewMemberRole("moderator");
-    fetchTeamMembers();
+    if (forcedNewPassword !== forcedPasswordConfirm) {
+      setForcedPasswordError("كلمتا المرور غير متطابقتين");
+      return;
+    }
+
+    setForcedPasswordSaving(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData?.user?.id;
+
+    const { error: authErr } = await supabase.auth.updateUser({
+      password: forcedNewPassword,
+    });
+
+    if (authErr) {
+      setForcedPasswordSaving(false);
+      setForcedPasswordError("فشل تغيير كلمة المرور: " + authErr.message);
+      return;
+    }
+
+    if (userId) {
+      await supabase
+        .from("admin_profiles")
+        .update({ must_change_password: false })
+        .eq("user_id", userId);
+    }
+
+    setForcedPasswordSaving(false);
+    setMustChangePassword(false);
+    alert("تم تعيين كلمة المرور الجديدة بنجاح! يمكنك الآن استخدام لوحة التحكم بأمان ✅");
   }
 
   async function handleRemoveMember(id, role) {
@@ -4494,8 +4574,54 @@ const result = {
                 </button>
               </div>
               <p style={{ margin: 0, fontSize: 12, color: "#5B7278", lineHeight: 1.6 }}>
-                💡 <strong>ملاحظة:</strong> إذا كان البريد مسجلاً مسبقاً، سيتم تعديل رتبته وصلاحيته تلقائياً بدون أي تعارض. تأكد من تسجيل نفس البريد في Authentication بـ Supabase ليتمكن العضو من الدخول بكلمة مروره.
+                💡 <strong>ملاحظة:</strong> يتم إنشاء حساب العضو فوراً وتوليد كلمة مرور مؤقتة له. عند تسجيل دخوله الأول بها، سيُطلب منه تعيين كلمة مرور جديدة خاصة به.
               </p>
+
+              {createdAdminInfo && (
+                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: 16, borderRadius: 12, marginTop: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <h4 style={{ margin: "0 0 6px 0", fontSize: 15, fontWeight: 800, color: "#15803D" }}>
+                        تم إنشاء حساب المشرف وتوليد كلمة مرور مؤقتة بنجاح! 🎉
+                      </h4>
+                      <p style={{ margin: "0 0 8px 0", fontSize: 13, color: "#166534" }}>
+                        البريد: <strong>{createdAdminInfo.email}</strong> | الرتبة: <strong>{createdAdminInfo.role === "admin" ? "أدمن" : "مشرف"}</strong>
+                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FFFFFF", padding: "8px 12px", borderRadius: 8, border: "1px solid #86EFAC", width: "fit-content" }}>
+                        <span style={{ fontSize: 12, color: "#64748B" }}>كلمة المرور المؤقتة:</span>
+                        <code style={{ fontSize: 15, fontWeight: 800, color: "#0F172A", letterSpacing: 1 }}>{createdAdminInfo.tempPassword}</code>
+                      </div>
+                      <span style={{ display: "block", marginTop: 6, fontSize: 11.5, color: "#15803D" }}>
+                        🔒 سيُجبر المشرف فور تسجيل دخوله الأول بهذه الكلمة على استبدالها بكلمة سر دائمة خاصة به.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const msg = `مرحباً بك! تم إنشاء حسابك في لوحة تحكم المتجر بنجاح:\nالبريد: ${createdAdminInfo.email}\nكلمة المرور المؤقتة: ${createdAdminInfo.tempPassword}\n(يرجى تسجيل الدخول وتعيين كلمة مرور جديدة خاصة بك).`;
+                        navigator.clipboard.writeText(msg);
+                        alert("تم نسخ بيانات الدخول جاهزة للإرسال في واتساب 📋");
+                      }}
+                      style={{
+                        padding: "8px 14px",
+                        background: "#15803D",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Copy size={14} /> نسخ البيانات للواتساب
+                    </button>
+                  </div>
+                </div>
+              )}
             </form>
 
             <div style={styles.modernCard}>
@@ -4670,6 +4796,76 @@ const result = {
                   <MessageCircle size={16} /> إرسال عبر واتساب الآن
                 </a>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ---- نافذة إجبار المشرف على تغيير كلمة المرور المؤقتة (Forced Change Password Modal) ---- */}
+        {mustChangePassword && (
+          <div style={{ ...styles.modalOverlay, zIndex: 99999, background: "rgba(11, 32, 39, 0.88)", backdropFilter: "blur(8px)" }}>
+            <div style={{ ...styles.modalDialog, maxWidth: 440, textAlign: "center", padding: 24, borderRadius: 16 }}>
+              <div style={{ width: 52, height: 52, borderRadius: 16, background: "#FEF3C7", color: "#D97706", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+                <Key size={28} />
+              </div>
+              <h3 style={{ margin: "0 0 6px 0", fontSize: 18, fontWeight: 800, color: "#0B2027" }}>
+                تعيين كلمة مرور جديدة لحسابك 🔐
+              </h3>
+              <p style={{ margin: "0 0 16px 0", fontSize: 13, color: "#5B7278", lineHeight: 1.6 }}>
+                مرحباً بك في الفريق! لقد سجلت الدخول باستخدام كلمة مرور مؤقتة. لحماية حسابك والمتجر، يرجى إنشاء كلمة مرور دائمة خاصة بك للمتابعة.
+              </p>
+
+              <form onSubmit={handleForcedPasswordChange} style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "right" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                    كلمة المرور الجديدة (8 خانات على الأقل):
+                  </label>
+                  <input
+                    type="password"
+                    style={{ ...styles.input, width: "100%" }}
+                    placeholder="••••••••"
+                    value={forcedNewPassword}
+                    onChange={(e) => setForcedNewPassword(e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                    تأكيد كلمة المرور الجديدة:
+                  </label>
+                  <input
+                    type="password"
+                    style={{ ...styles.input, width: "100%" }}
+                    placeholder="••••••••"
+                    value={forcedPasswordConfirm}
+                    onChange={(e) => setForcedPasswordConfirm(e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                </div>
+
+                {forcedPasswordError && (
+                  <div style={{ background: "#FEE2E2", color: "#B91C1C", padding: "8px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 700 }}>
+                    {forcedPasswordError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={forcedPasswordSaving}
+                  style={{
+                    ...styles.primaryBtn,
+                    width: "100%",
+                    padding: "12px",
+                    fontSize: 14,
+                    fontWeight: 800,
+                    marginTop: 6,
+                  }}
+                >
+                  {forcedPasswordSaving ? "جارٍ الحفظ والتحديث..." : "حفظ كلمة المرور والدخول للوحة التحكم"}
+                </button>
+              </form>
             </div>
           </div>
         )}
