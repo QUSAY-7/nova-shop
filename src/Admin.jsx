@@ -2526,42 +2526,51 @@ export default function Admin() {
     if (settingsForm.store_description) localStorage.setItem("nova_store_description", settingsForm.store_description);
     if (settingsForm.store_city) localStorage.setItem("nova_store_city", settingsForm.store_city);
     if (settingsForm.store_area) localStorage.setItem("nova_store_area", settingsForm.store_area);
-    if (settingsForm.store_address_detail) localStorage.setItem("nova_store_address_detail", settingsForm.store_address_detail);
-    if (settingsForm.store_map_link) localStorage.setItem("nova_store_map_link", settingsForm.store_map_link);
-
-    // تجهيز الحقول كاملة
-    const payload = {
+    // قائمة الحقول المراد تحديثها
+    const candidatePayload = {
       store_name: settingsForm.store_name || "",
       store_url: settingsForm.store_url || "",
-      store_description: settingsForm.store_description || "",
       whatsapp_number: settingsForm.whatsapp_number || "",
       bank_account: settingsForm.bank_account || "",
       facebook_url: settingsForm.facebook_url || "",
       instagram_url: settingsForm.instagram_url || "",
       logo_url: settingsForm.logo_url || "",
-      store_country: settingsForm.store_country || "ليبيا",
+      store_description: settingsForm.store_description || "",
       store_city: settingsForm.store_city || "طرابلس",
       store_area: settingsForm.store_area || "سوق الجمعة",
       store_address_detail: settingsForm.store_address_detail || "",
       store_map_link: settingsForm.store_map_link || "",
     };
 
-    let { error } = await supabase
-      .from("store_settings")
-      .update(payload)
-      .eq("id", 1);
+    let activePayload = { ...candidatePayload };
+    let updateError = null;
 
-    if (error) {
-      // محاولة بديلة إذا كان هناك عمود باسم description بدلاً من store_description
-      const altPayload = { ...payload, description: payload.store_description };
-      const res = await supabase.from("store_settings").update(altPayload).eq("id", 1);
-      if (!res.error) error = null;
+    // محاولة ذكية: إذا اعترضت قاعدة البيانات على أي عمود غير موجود، يتم حذفه وإعادة المحاولة تلقائياً
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { error } = await supabase.from("store_settings").update(activePayload).eq("id", 1);
+      if (!error) {
+        updateError = null;
+        break;
+      }
+      updateError = error;
+
+      // فحص اسم العمود المفقود من رسالة الخطأ (مثل Could not find the 'xyz' column)
+      const missingColMatch = error.message.match(/Could not find the '([^']+)' column/i);
+      if (missingColMatch && missingColMatch[1]) {
+        const missingCol = missingColMatch[1];
+        if (missingCol === "store_description") {
+          activePayload.description = settingsForm.store_description || "";
+        }
+        delete activePayload[missingCol];
+      } else {
+        break;
+      }
     }
 
     setSettingsSaving(false);
 
-    if (error) {
-      alert("صار خطأ أثناء حفظ الإعدادات: " + error.message);
+    if (updateError) {
+      alert("صار خطأ أثناء حفظ الإعدادات: " + updateError.message);
       return;
     }
 
