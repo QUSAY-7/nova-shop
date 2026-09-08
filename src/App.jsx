@@ -220,8 +220,17 @@ export default function App() {
 
       if (!isMounted) return;
 
-      if (!error) {
-        setSettings(data);
+      const localDesc = localStorage.getItem("nova_store_description") || "";
+      if (!error && data) {
+        setSettings({
+          ...data,
+          store_description: data.store_description || data.description || localDesc,
+        });
+      } else if (localDesc) {
+        setSettings((prev) => ({
+          ...(prev || {}),
+          store_description: localDesc,
+        }));
       }
     };
 
@@ -881,13 +890,16 @@ export default function App() {
         @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
         .badge-pulse svg{ width:18px; height:18px; color:#fff; }
 
-        /* Hero logo full-width mode */
-        .hero-logo-mode{ padding:0 !important; }
-        .hero-full-logo{ width:100%; max-width:100%; height:auto; max-height:72vh; object-fit:cover; display:block; }
-        .hero-logo-desc{ padding:16px 16px 0; text-align:center; max-width:var(--container); margin:0 auto; }
-        .hero-logo-name{ font-family:'Almarai',sans-serif; font-weight:800; font-size:22px; color:var(--ink); margin-bottom:6px; }
-        .hero-logo-text{ font-size:13px; color:var(--muted); line-height:1.7; }
-        .hero-logo-trust{ padding:16px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:var(--container); margin:0 auto; }
+        /* Hero banner mode */
+        .hero-banner-container{ width:100%; max-width:var(--container); margin:0 auto 12px; border-radius:var(--radius-lg); overflow:hidden; box-shadow:0 8px 24px rgba(11,32,39,0.06); border:1px solid var(--line); background:#fff; }
+        .hero-banner-img{ width:100%; height:auto; max-height:280px; object-fit:cover; display:block; }
+        @media (min-width: 640px){
+          .hero-banner-img{ max-height:360px; }
+        }
+        @media (min-width: 1024px){
+          .hero-banner-container{ max-width:100%; max-height:420px; }
+          .hero-banner-img{ max-height:420px; }
+        }
 
         .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
         .trust-item{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px 6px; border-radius:18px; background:var(--surface); border:1px solid var(--line); }
@@ -1506,60 +1518,51 @@ export default function App() {
 
 
       {/* ===== Hero ===== */}
-      {settings?.logo_url ? (
-        /* ── وضع الشعار: يملأ العرض الكامل بدون نصوص فوقه ── */
-        <section id="home" className="hero hero-logo-mode">
-          <img
-            src={settings.logo_url}
-            alt={settings?.store_name || "شعار المتجر"}
-            className="hero-full-logo"
-          />
-          {/* وصف المتجر تحت الشعار */}
-          {(settings?.store_name || settings?.description) && (
-            <div className="hero-logo-desc">
-              {settings?.store_name && <h1 className="hero-logo-name">{settings.store_name}</h1>}
-              {settings?.description && <p className="hero-logo-text">{settings.description}</p>}
-            </div>
-          )}
-          <div className="hero-logo-trust">
-            {[
-              { icon: Truck, label: "شحن لكل المدن" },
-              { icon: ShieldCheck, label: "فحص قبل الدفع" },
-              { icon: MessageCircle, label: "دعم واتساب" },
-            ].map(({ icon: Icon, label }) => (
-              <div key={label} className="trust-item">
-                <Icon />
-                <span>{label}</span>
-              </div>
-            ))}
+      <section id="home" className={`hero ${settings?.logo_url ? "hero-with-banner" : ""}`}>
+        {settings?.logo_url && (
+          <div className="hero-banner-container">
+            <img
+              src={settings.logo_url}
+              alt={settings?.store_name || "شعار المتجر"}
+              className="hero-banner-img"
+            />
           </div>
-        </section>
-      ) : (
-        /* ── الوضع الافتراضي: النص الأصلي + أنيميشن الطرد ── */
-        <section id="home" className="hero">
-          <div className="container">
-            <div className="hero-top">
-              <span className="eyebrow">
-                📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
-              </span>
-              <h1 className="h1">تسوّق إلكترونياتك وإكسسواراتك بثقة، من أول طلب</h1>
-              <p className="h1-sub">تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية.</p>
+        )}
 
-              <div className="trust-row">
-                {[
-                  { icon: Truck, label: "شحن لكل المدن" },
-                  { icon: ShieldCheck, label: "فحص قبل الدفع" },
-                  { icon: MessageCircle, label: "دعم واتساب" },
-                ].map(({ icon: Icon, label }) => (
-                  <div key={label} className="trust-item">
-                    <Icon />
-                    <span>{label}</span>
-                  </div>
-                ))}
-              </div>
+        <div className="container">
+          <div className="hero-top" style={{ marginTop: settings?.logo_url ? 16 : 0 }}>
+            <span className="eyebrow">
+              📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
+            </span>
+
+            {/* اسم المتجر وعنوان الترحيب */}
+            <h1 className="h1">
+              {settings?.store_name || "تسوّق إلكترونياتك وإكسسواراتك بثقة"}
+            </h1>
+
+            {/* وصف المتجر الكامل من الإعدادات */}
+            <p className="h1-sub">
+              {settings?.store_description ||
+                settings?.description ||
+                "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}
+            </p>
+
+            <div className="trust-row">
+              {[
+                { icon: Truck, label: "شحن لكل المدن" },
+                { icon: ShieldCheck, label: "فحص قبل الدفع" },
+                { icon: MessageCircle, label: "دعم واتساب" },
+              ].map(({ icon: Icon, label }) => (
+                <div key={label} className="trust-item">
+                  <Icon />
+                  <span>{label}</span>
+                </div>
+              ))}
             </div>
+          </div>
 
-            {/* أنيميشن الطرد الأصلي */}
+          {/* أنيميشن الطرد يظهر في حال عدم وجود شعار لتزيين المتجر */}
+          {!settings?.logo_url && (
             <div className="parcel-wrap">
               <div className="parcel-glow" />
               <div className="parcel-float">
@@ -1581,9 +1584,9 @@ export default function App() {
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-      )}
+          )}
+        </div>
+      </section>
 
 
 
