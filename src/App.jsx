@@ -890,14 +890,40 @@ export default function App() {
         @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
         .badge-pulse svg{ width:18px; height:18px; color:#fff; }
 
-        /* Hero banner mode */
-        .hero-banner-container{ width:100%; max-width:var(--container); margin:0 auto 12px; border-radius:var(--radius-lg); overflow:hidden; box-shadow:0 8px 24px rgba(11,32,39,0.06); border:1px solid var(--line); background:#fff; }
-        .hero-banner-img{ width:100%; height:auto; max-height:280px; object-fit:cover; display:block; }
+        /* Hero luxury banner mode */
+        .hero-banner-container{
+          width:100%;
+          max-width:var(--container);
+          margin:0 auto 16px;
+          border-radius:24px;
+          overflow:hidden;
+          box-shadow:0 12px 36px rgba(11,32,39,0.1), 0 2px 10px rgba(14,124,134,0.06);
+          border:1px solid rgba(227,236,237,0.8);
+          background: radial-gradient(circle at 50% 50%, #0F2A33 0%, #07161A 100%);
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          position:relative;
+          padding: 8px;
+        }
+        .hero-banner-img{
+          width:100%;
+          height:auto;
+          max-height:300px;
+          object-fit:contain;
+          display:block;
+          border-radius:18px;
+          transition: transform 0.3s ease;
+        }
+        .hero-banner-img:hover{
+          transform: scale(1.01);
+        }
         @media (min-width: 640px){
+          .hero-banner-container{ max-width:680px; padding: 12px; }
           .hero-banner-img{ max-height:360px; }
         }
         @media (min-width: 1024px){
-          .hero-banner-container{ max-width:100%; max-height:420px; }
+          .hero-banner-container{ max-width:860px; padding: 16px; margin-bottom: 24px; }
           .hero-banner-img{ max-height:420px; }
         }
 
