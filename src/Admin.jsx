@@ -5021,25 +5021,6 @@ const result = {
                     الملغية: {invoiceStats.cancelledCount} ({invoiceStats.cancelledTotal.toLocaleString()} د.ل)
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={() => exportSalesToExcel(filteredInvoices, settingsForm.store_name || "NOVA SHOP")}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "6px 14px",
-                    borderRadius: 999,
-                    border: "1px solid #BBF7D0",
-                    background: "#15803D",
-                    color: "#FFFFFF",
-                    fontWeight: 700,
-                    fontSize: 12.5,
-                    cursor: "pointer",
-                  }}
-                >
-                  📊 تصدير الفواتير لـ Excel
-                </button>
               </div>
             </div>
 

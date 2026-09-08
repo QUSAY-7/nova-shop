@@ -221,18 +221,31 @@ export default function App() {
       if (!isMounted) return;
 
       const localDesc = localStorage.getItem("nova_store_description") || "";
+      const localCity = localStorage.getItem("nova_store_city") || "طرابلس";
+      const localArea = localStorage.getItem("nova_store_area") || "سوق الجمعة";
+      const localMapLink = localStorage.getItem("nova_store_map_link") || "";
+      const localDetail = localStorage.getItem("nova_store_address_detail") || "";
+
       if (!error && data) {
         const finalDesc = data.store_description || data.description || localDesc;
         setSettings({
           ...data,
           store_description: finalDesc,
           description: finalDesc,
+          store_city: data.store_city || localCity,
+          store_area: data.store_area || localArea,
+          store_map_link: data.store_map_link || localMapLink,
+          store_address_detail: data.store_address_detail || localDetail,
         });
-      } else if (localDesc) {
+      } else {
         setSettings((prev) => ({
           ...(prev || {}),
           store_description: localDesc,
           description: localDesc,
+          store_city: localCity,
+          store_area: localArea,
+          store_map_link: localMapLink,
+          store_address_detail: localDetail,
         }));
       }
     };
@@ -1542,9 +1555,30 @@ export default function App() {
 
         <div className="container">
           <div className="hero-top" style={{ marginTop: settings?.logo_url ? 16 : 0 }}>
-            <span className="eyebrow">
-              📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+              <span className="eyebrow">
+                📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
+              </span>
+              {settings?.store_map_link && (
+                <a
+                  href={settings.store_map_link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="eyebrow"
+                  style={{
+                    background: "#E0F2FE",
+                    color: "#0369A1",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    textDecoration: "underline",
+                    cursor: "pointer",
+                  }}
+                >
+                  🗺️ موقعنا على الخريطة ↗
+                </a>
+              )}
+            </div>
 
             {/* اسم المتجر وعنوان الترحيب */}
             <h1 className="h1">
