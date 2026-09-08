@@ -872,9 +872,8 @@ export default function App() {
         .hero{ padding: 28px 0 8px; }
         .hero-top{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px; }
         .eyebrow{ font-size:12px; font-weight:700; padding:6px 14px; border-radius:999px; background:var(--teal-light); color:var(--teal-dark); }
-        .h1{ font-family:'Almarai',sans-serif; font-weight:800; font-size:26px; line-height:1.4; max-width:100%; margin: 4px 0; }
-        .h1-sub{ font-size:14.5px; color:var(--muted); max-width:860px; width:100%; line-height:1.8; text-align:center; margin: 0 auto 10px; }
-        .hero-wide-container{ width:100%; max-width:920px; margin:0 auto; padding:0 16px; }
+        .h1{ font-family:'Almarai',sans-serif; font-weight:800; font-size:26px; line-height:1.5; max-width:380px; }
+        .h1-sub{ font-size:14px; color:var(--muted); max-width:340px; line-height:1.7; }
 
         .parcel-wrap{ position:relative; width:100%; max-width:260px; aspect-ratio:1/1; margin:20px auto 0; display:flex; align-items:center; justify-content:center; }
         .parcel-glow{ position:absolute; inset:24px; border-radius:32px; filter:blur(30px); opacity:.4; background: radial-gradient(circle at 50% 40%, var(--teal), transparent 70%); }
@@ -1560,7 +1559,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="hero-wide-container">
+        <div className="container">
           <div className="hero-top" style={{ marginTop: settings?.logo_url ? 16 : 0 }}>
             <span className="eyebrow">
               📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
@@ -1571,8 +1570,8 @@ export default function App() {
               {settings?.store_name || "تسوّق إلكترونياتك وإكسسواراتك بثقة"}
             </h1>
 
-            {/* وصف المتجر الكامل من الإعدادات - يمتد أفقياً بالكامل */}
-            <p className="h1-sub" style={{ whiteSpace: "pre-line" }}>
+            {/* وصف المتجر الكامل من الإعدادات */}
+            <p className="h1-sub" style={{ whiteSpace: "pre-line", maxWidth: "480px", margin: "0 auto", lineHeight: 1.8 }}>
               {settings?.store_description ||
                 settings?.description ||
                 "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}
