@@ -222,14 +222,17 @@ export default function App() {
 
       const localDesc = localStorage.getItem("nova_store_description") || "";
       if (!error && data) {
+        const finalDesc = data.store_description || data.description || localDesc;
         setSettings({
           ...data,
-          store_description: data.store_description || data.description || localDesc,
+          store_description: finalDesc,
+          description: finalDesc,
         });
       } else if (localDesc) {
         setSettings((prev) => ({
           ...(prev || {}),
           store_description: localDesc,
+          description: localDesc,
         }));
       }
     };
@@ -869,8 +872,9 @@ export default function App() {
         .hero{ padding: 28px 0 8px; }
         .hero-top{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px; }
         .eyebrow{ font-size:12px; font-weight:700; padding:6px 14px; border-radius:999px; background:var(--teal-light); color:var(--teal-dark); }
-        .h1{ font-family:'Almarai',sans-serif; font-weight:800; font-size:26px; line-height:1.5; max-width:380px; }
-        .h1-sub{ font-size:14px; color:var(--muted); max-width:340px; line-height:1.7; }
+        .h1{ font-family:'Almarai',sans-serif; font-weight:800; font-size:26px; line-height:1.4; max-width:100%; margin: 4px 0; }
+        .h1-sub{ font-size:14.5px; color:var(--muted); max-width:860px; width:100%; line-height:1.8; text-align:center; margin: 0 auto 10px; }
+        .hero-wide-container{ width:100%; max-width:920px; margin:0 auto; padding:0 16px; }
 
         .parcel-wrap{ position:relative; width:100%; max-width:260px; aspect-ratio:1/1; margin:20px auto 0; display:flex; align-items:center; justify-content:center; }
         .parcel-glow{ position:absolute; inset:24px; border-radius:32px; filter:blur(30px); opacity:.4; background: radial-gradient(circle at 50% 40%, var(--teal), transparent 70%); }
@@ -890,23 +894,40 @@ export default function App() {
         @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
         .badge-pulse svg{ width:18px; height:18px; color:#fff; }
 
-        /* Hero full-width complete banner mode */
-        .hero{ padding: 0 0 20px; }
+        /* Hero horizontal banner mode */
+        .hero{ padding: 12px 0 20px; }
         .hero-banner-container{
           width: 100%;
-          margin: 0 0 20px 0;
+          max-width: var(--container);
+          margin: 0 auto 16px;
+          padding: 0 16px;
+        }
+        .hero-banner-card{
+          width: 100%;
+          height: 140px;
+          border-radius: 20px;
           overflow: hidden;
-          background: transparent;
+          background: #ffffff;
+          border: 1px solid var(--line);
+          box-shadow: 0 4px 18px rgba(11,32,39,0.06);
           display: flex;
           align-items: center;
           justify-content: center;
-          position: relative;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.06);
         }
         .hero-banner-img{
           width: 100%;
-          height: auto;
+          height: 100%;
+          object-fit: contain;
           display: block;
+          padding: 6px;
+        }
+        @media (min-width: 640px){
+          .hero-banner-container{ max-width: 600px; }
+          .hero-banner-card{ height: 180px; }
+        }
+        @media (min-width: 1024px){
+          .hero-banner-container{ max-width: 720px; }
+          .hero-banner-card{ height: 210px; }
         }
 
         .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
@@ -1529,15 +1550,17 @@ export default function App() {
       <section id="home" className={`hero ${settings?.logo_url ? "hero-with-banner" : ""}`}>
         {settings?.logo_url && (
           <div className="hero-banner-container">
-            <img
-              src={settings.logo_url}
-              alt={settings?.store_name || "شعار المتجر"}
-              className="hero-banner-img"
-            />
+            <div className="hero-banner-card">
+              <img
+                src={settings.logo_url}
+                alt={settings?.store_name || "شعار المتجر"}
+                className="hero-banner-img"
+              />
+            </div>
           </div>
         )}
 
-        <div className="container">
+        <div className="hero-wide-container">
           <div className="hero-top" style={{ marginTop: settings?.logo_url ? 16 : 0 }}>
             <span className="eyebrow">
               📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
@@ -1548,8 +1571,8 @@ export default function App() {
               {settings?.store_name || "تسوّق إلكترونياتك وإكسسواراتك بثقة"}
             </h1>
 
-            {/* وصف المتجر الكامل من الإعدادات */}
-            <p className="h1-sub" style={{ whiteSpace: "pre-line", maxWidth: "480px", margin: "0 auto", lineHeight: 1.8 }}>
+            {/* وصف المتجر الكامل من الإعدادات - يمتد أفقياً بالكامل */}
+            <p className="h1-sub" style={{ whiteSpace: "pre-line" }}>
               {settings?.store_description ||
                 settings?.description ||
                 "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}

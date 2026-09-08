@@ -2505,18 +2505,26 @@ export default function Admin() {
       localStorage.setItem("nova_store_description", settingsForm.store_description);
     }
 
-    // محاولة الحفظ في Supabase
+    // محاولة الحفظ في Supabase (مع دعم اسم العمود description أو store_description)
+    const payload = {
+      ...settingsForm,
+      description: settingsForm.store_description || settingsForm.description || "",
+    };
+
     let { error } = await supabase
       .from("store_settings")
-      .update(settingsForm)
+      .update(payload)
       .eq("id", 1);
 
-    // معالجة إذا كانت الأعمدة غير منشأة بعد في قاعدة بيانات Supabase
-    if (error && (error.message.includes("store_description") || error.message.includes("store_url"))) {
-      const { store_description, store_url, ...restSettings } = settingsForm;
+    // معالجة إذا كانت الأعمدة store_description أو store_url غير منشأة بعد
+    if (error) {
+      const { store_description, store_url, ...restSettings } = payload;
       const fallbackResult = await supabase
         .from("store_settings")
-        .update(restSettings)
+        .update({
+          ...restSettings,
+          description: settingsForm.store_description || "",
+        })
         .eq("id", 1);
 
       if (!fallbackResult.error) {
