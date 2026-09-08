@@ -890,31 +890,23 @@ export default function App() {
         @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
         .badge-pulse svg{ width:18px; height:18px; color:#fff; }
 
-        /* Hero full-width edge-to-edge banner mode */
-        .hero{ padding: 0 0 16px; }
+        /* Hero full-width complete banner mode */
+        .hero{ padding: 0 0 20px; }
         .hero-banner-container{
           width: 100%;
-          margin: 0 0 18px 0;
+          margin: 0 0 20px 0;
           overflow: hidden;
-          background: #000;
+          background: transparent;
           display: flex;
           align-items: center;
           justify-content: center;
           position: relative;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06);
         }
         .hero-banner-img{
           width: 100%;
           height: auto;
-          max-height: 260px;
-          object-fit: cover;
           display: block;
-        }
-        @media (min-width: 640px){
-          .hero-banner-img{ max-height: 340px; }
-        }
-        @media (min-width: 1024px){
-          .hero-banner-img{ max-height: 440px; }
         }
 
         .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
