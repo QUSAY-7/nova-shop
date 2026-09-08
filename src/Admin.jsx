@@ -2500,12 +2500,17 @@ export default function Admin() {
       setSettingsForm({
         store_name: data.store_name || "",
         store_url: data.store_url || localStorage.getItem("nova_store_url") || "",
-        store_description: data.store_description || localStorage.getItem("nova_store_description") || "",
+        store_description: data.store_description || data.description || localStorage.getItem("nova_store_description") || "",
         whatsapp_number: data.whatsapp_number || "",
         bank_account: data.bank_account || "",
         facebook_url: data.facebook_url || "",
         instagram_url: data.instagram_url || "",
         logo_url: data.logo_url || "",
+        store_country: data.store_country || "ليبيا",
+        store_city: data.store_city || localStorage.getItem("nova_store_city") || "طرابلس",
+        store_area: data.store_area || localStorage.getItem("nova_store_area") || "سوق الجمعة",
+        store_address_detail: data.store_address_detail || localStorage.getItem("nova_store_address_detail") || "",
+        store_map_link: data.store_map_link || localStorage.getItem("nova_store_map_link") || "",
       });
     }
     setSettingsLoading(false);
@@ -2513,7 +2518,10 @@ export default function Admin() {
 
   async function handleSettingsSubmit(e) {
     e.preventDefault();
-    // حفظ الرابط والوصف وموقع المتجر محلياً دائماً
+    setSettingsSaving(true);
+    setSettingsSaved(false);
+
+    // حفظ محلياً دائماً كنسخة احتياطية
     if (settingsForm.store_url) localStorage.setItem("nova_store_url", settingsForm.store_url);
     if (settingsForm.store_description) localStorage.setItem("nova_store_description", settingsForm.store_description);
     if (settingsForm.store_city) localStorage.setItem("nova_store_city", settingsForm.store_city);
@@ -2521,34 +2529,33 @@ export default function Admin() {
     if (settingsForm.store_address_detail) localStorage.setItem("nova_store_address_detail", settingsForm.store_address_detail);
     if (settingsForm.store_map_link) localStorage.setItem("nova_store_map_link", settingsForm.store_map_link);
 
-    // الحقول الأساسية المؤكد وجودها في جدول store_settings في Supabase
-    const baseSettingsPayload = {
-      store_name: settingsForm.store_name,
-      whatsapp_number: settingsForm.whatsapp_number,
-      bank_account: settingsForm.bank_account,
-      facebook_url: settingsForm.facebook_url,
-      instagram_url: settingsForm.instagram_url,
-      logo_url: settingsForm.logo_url,
+    // تجهيز الحقول كاملة
+    const payload = {
+      store_name: settingsForm.store_name || "",
+      store_url: settingsForm.store_url || "",
+      store_description: settingsForm.store_description || "",
+      whatsapp_number: settingsForm.whatsapp_number || "",
+      bank_account: settingsForm.bank_account || "",
+      facebook_url: settingsForm.facebook_url || "",
+      instagram_url: settingsForm.instagram_url || "",
+      logo_url: settingsForm.logo_url || "",
+      store_country: settingsForm.store_country || "ليبيا",
+      store_city: settingsForm.store_city || "طرابلس",
+      store_area: settingsForm.store_area || "سوق الجمعة",
+      store_address_detail: settingsForm.store_address_detail || "",
+      store_map_link: settingsForm.store_map_link || "",
     };
 
-    // محاولة الحفظ أولاً بكافة الحقول
     let { error } = await supabase
       .from("store_settings")
-      .update(settingsForm)
+      .update(payload)
       .eq("id", 1);
 
-    // إذا فشل بسبب عدم وجود عمود معين مثل description أو store_city، نحفظ الحقول الأساسية بنجاح 100%
     if (error) {
-      const fallbackResult = await supabase
-        .from("store_settings")
-        .update(baseSettingsPayload)
-        .eq("id", 1);
-
-      if (!fallbackResult.error) {
-        error = null;
-      } else {
-        error = fallbackResult.error;
-      }
+      // محاولة بديلة إذا كان هناك عمود باسم description بدلاً من store_description
+      const altPayload = { ...payload, description: payload.store_description };
+      const res = await supabase.from("store_settings").update(altPayload).eq("id", 1);
+      if (!res.error) error = null;
     }
 
     setSettingsSaving(false);
