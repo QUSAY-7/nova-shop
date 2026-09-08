@@ -2513,37 +2513,35 @@ export default function Admin() {
 
   async function handleSettingsSubmit(e) {
     e.preventDefault();
-    setSettingsSaving(true);
-    setSettingsSaved(false);
+    // حفظ الرابط والوصف وموقع المتجر محلياً دائماً
+    if (settingsForm.store_url) localStorage.setItem("nova_store_url", settingsForm.store_url);
+    if (settingsForm.store_description) localStorage.setItem("nova_store_description", settingsForm.store_description);
+    if (settingsForm.store_city) localStorage.setItem("nova_store_city", settingsForm.store_city);
+    if (settingsForm.store_area) localStorage.setItem("nova_store_area", settingsForm.store_area);
+    if (settingsForm.store_address_detail) localStorage.setItem("nova_store_address_detail", settingsForm.store_address_detail);
+    if (settingsForm.store_map_link) localStorage.setItem("nova_store_map_link", settingsForm.store_map_link);
 
-    // حفظ الرابط والوصف محلياً دائماً
-    if (settingsForm.store_url) {
-      localStorage.setItem("nova_store_url", settingsForm.store_url);
-    }
-    if (settingsForm.store_description) {
-      localStorage.setItem("nova_store_description", settingsForm.store_description);
-    }
-
-    // محاولة الحفظ في Supabase (مع دعم اسم العمود description أو store_description)
-    const payload = {
-      ...settingsForm,
-      description: settingsForm.store_description || settingsForm.description || "",
+    // الحقول الأساسية المؤكد وجودها في جدول store_settings في Supabase
+    const baseSettingsPayload = {
+      store_name: settingsForm.store_name,
+      whatsapp_number: settingsForm.whatsapp_number,
+      bank_account: settingsForm.bank_account,
+      facebook_url: settingsForm.facebook_url,
+      instagram_url: settingsForm.instagram_url,
+      logo_url: settingsForm.logo_url,
     };
 
+    // محاولة الحفظ أولاً بكافة الحقول
     let { error } = await supabase
       .from("store_settings")
-      .update(payload)
+      .update(settingsForm)
       .eq("id", 1);
 
-    // معالجة إذا كانت الأعمدة store_description أو store_url غير منشأة بعد
+    // إذا فشل بسبب عدم وجود عمود معين مثل description أو store_city، نحفظ الحقول الأساسية بنجاح 100%
     if (error) {
-      const { store_description, store_url, ...restSettings } = payload;
       const fallbackResult = await supabase
         .from("store_settings")
-        .update({
-          ...restSettings,
-          description: settingsForm.store_description || "",
-        })
+        .update(baseSettingsPayload)
         .eq("id", 1);
 
       if (!fallbackResult.error) {
