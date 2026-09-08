@@ -220,33 +220,15 @@ export default function App() {
 
       if (!isMounted) return;
 
-      const localDesc = localStorage.getItem("nova_store_description") || "";
-      const localCity = localStorage.getItem("nova_store_city") || "طرابلس";
-      const localArea = localStorage.getItem("nova_store_area") || "سوق الجمعة";
-      const localMapLink = localStorage.getItem("nova_store_map_link") || "";
-      const localDetail = localStorage.getItem("nova_store_address_detail") || "";
-
       if (!error && data) {
-        const finalDesc = data.store_description || data.description || localDesc;
         setSettings({
           ...data,
-          store_description: finalDesc,
-          description: finalDesc,
-          store_city: data.store_city || localCity,
-          store_area: data.store_area || localArea,
-          store_map_link: data.store_map_link || localMapLink,
-          store_address_detail: data.store_address_detail || localDetail,
+          store_description: data.store_description || data.description || "",
+          store_city: data.store_city || "",
+          store_area: data.store_area || "",
+          store_map_link: data.store_map_link || "",
+          store_address_detail: data.store_address_detail || "",
         });
-      } else {
-        setSettings((prev) => ({
-          ...(prev || {}),
-          store_description: localDesc,
-          description: localDesc,
-          store_city: localCity,
-          store_area: localArea,
-          store_map_link: localMapLink,
-          store_address_detail: localDetail,
-        }));
       }
     };
 
@@ -1580,17 +1562,17 @@ export default function App() {
               )}
             </div>
 
-            {/* اسم المتجر وعنوان الترحيب */}
-            <h1 className="h1">
-              {settings?.store_name || "تسوّق إلكترونياتك وإكسسواراتك بثقة"}
-            </h1>
+            {/* اسم المتجر */}
+            {settings?.store_name && (
+              <h1 className="h1">{settings.store_name}</h1>
+            )}
 
-            {/* وصف المتجر الكامل من الإعدادات */}
-            <p className="h1-sub" style={{ whiteSpace: "pre-line", maxWidth: "480px", margin: "0 auto", lineHeight: 1.8 }}>
-              {settings?.store_description ||
-                settings?.description ||
-                "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}
-            </p>
+            {/* وصف المتجر: يظهر فقط ما يكتبه التاجر بدون نصوص ثابتة إطلاقاً */}
+            {(settings?.store_description || settings?.description) && (
+              <p className="h1-sub" style={{ whiteSpace: "pre-line", maxWidth: "560px", margin: "0 auto 12px", lineHeight: 1.8 }}>
+                {settings.store_description || settings.description}
+              </p>
+            )}
 
             <div className="trust-row">
               {[
