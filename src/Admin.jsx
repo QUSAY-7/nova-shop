@@ -3255,49 +3255,6 @@ const result = {
               </div>
             </div>
 
-            {/* أزرار التصدير والإكسل السريعة */}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", margin: "-6px 0 6px" }}>
-              <button
-                type="button"
-                onClick={() => exportSalesToExcel(orders, settingsForm.store_name || "NOVA SHOP")}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  border: "1px solid #BBF7D0",
-                  background: "#F0FDF4",
-                  color: "#15803D",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                }}
-              >
-                📊 تصدير شيت المبيعات والعمليات (Excel)
-              </button>
-              <button
-                type="button"
-                onClick={() => downloadCashFlowTemplate(settingsForm.store_name || "NOVA SHOP")}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  border: "1px solid #BAE6FD",
-                  background: "#F0F9FF",
-                  color: "#0369A1",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                }}
-              >
-                💼 تحميل شيت التدفق النقدي والميزانية (Cash Flow)
-              </button>
-            </div>
 
             {/* البطاقات الخمس الرئيسية */}
             <div style={styles.metricCardsGrid}>
