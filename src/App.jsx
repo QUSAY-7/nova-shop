@@ -890,41 +890,31 @@ export default function App() {
         @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
         .badge-pulse svg{ width:18px; height:18px; color:#fff; }
 
-        /* Hero luxury banner mode */
+        /* Hero full-width edge-to-edge banner mode */
+        .hero{ padding: 0 0 16px; }
         .hero-banner-container{
-          width:100%;
-          max-width:var(--container);
-          margin:0 auto 16px;
-          border-radius:24px;
-          overflow:hidden;
-          box-shadow:0 12px 36px rgba(11,32,39,0.1), 0 2px 10px rgba(14,124,134,0.06);
-          border:1px solid rgba(227,236,237,0.8);
-          background: radial-gradient(circle at 50% 50%, #0F2A33 0%, #07161A 100%);
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          position:relative;
-          padding: 8px;
+          width: 100%;
+          margin: 0 0 18px 0;
+          overflow: hidden;
+          background: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.12);
         }
         .hero-banner-img{
-          width:100%;
-          height:auto;
-          max-height:300px;
-          object-fit:contain;
-          display:block;
-          border-radius:18px;
-          transition: transform 0.3s ease;
-        }
-        .hero-banner-img:hover{
-          transform: scale(1.01);
+          width: 100%;
+          height: auto;
+          max-height: 260px;
+          object-fit: cover;
+          display: block;
         }
         @media (min-width: 640px){
-          .hero-banner-container{ max-width:680px; padding: 12px; }
-          .hero-banner-img{ max-height:360px; }
+          .hero-banner-img{ max-height: 340px; }
         }
         @media (min-width: 1024px){
-          .hero-banner-container{ max-width:860px; padding: 16px; margin-bottom: 24px; }
-          .hero-banner-img{ max-height:420px; }
+          .hero-banner-img{ max-height: 440px; }
         }
 
         .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
@@ -1567,7 +1557,7 @@ export default function App() {
             </h1>
 
             {/* وصف المتجر الكامل من الإعدادات */}
-            <p className="h1-sub">
+            <p className="h1-sub" style={{ whiteSpace: "pre-line", maxWidth: "480px", margin: "0 auto", lineHeight: 1.8 }}>
               {settings?.store_description ||
                 settings?.description ||
                 "تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية."}
