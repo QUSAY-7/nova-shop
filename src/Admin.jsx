@@ -35,9 +35,22 @@ import {
   Activity,
   RefreshCw,
   MessageCircle,
+  Wallet,
+  Landmark,
+  MapPin,
+  Building,
+  ArrowDownRight,
+  Receipt,
+  PieChart,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import ExcelJS from "exceljs";
+import {
+  LIBYA_CITIES,
+  LIBYA_DELIVERY_CITIES_AREAS,
+  getAreasForCity,
+  getDeliveryInfoForCity,
+} from "./libyaDeliveryData";
 
 // ============================================================================
 // 1. INTEGRATION LAYER: NORMALIZED INTERNAL MODELS (النماذج الموحدة)
@@ -1759,12 +1772,13 @@ export default function Admin() {
     ? [{ id: "products", label: "المنتجات" }]
     : [
         { id: "dashboard", label: "لوحة الإحصائيات" },
-        { id: "settings", label: "إعدادات المتجر" },
-        { id: "integrations", label: "الدفع والتوصيل" },
+        { id: "finance", label: "الإدارة المالية 💰" },
         { id: "orders", label: "الطلبات" },
         { id: "invoices", label: "الفواتير" },
         { id: "customers", label: "العملاء" },
         { id: "products", label: "المنتجات" },
+        { id: "integrations", label: "الدفع والتوصيل" },
+        { id: "settings", label: "إعدادات المتجر" },
         ...(isOwner
           ? [
               { id: "team", label: "إدارة الفريق" },
@@ -1979,11 +1993,125 @@ export default function Admin() {
     facebook_url: "",
     instagram_url: "",
     logo_url: "",
+    // موقع المتجر في ليبيا
+    store_country: "ليبيا",
+    store_city: "طرابلس",
+    store_area: "سوق الجمعة",
+    store_address_detail: "",
+    store_map_link: "",
+    city_rates: {},
   };
   const [settingsForm, setSettingsForm] = useState(emptySettingsForm);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // ---- إدارة التدفق المالي والحركات المالية 💰 ----
+  const [financialTransactions, setFinancialTransactions] = useState([]);
+  const [financeLoading, setFinanceLoading] = useState(false);
+  const [financeSaving, setFinanceSaving] = useState(false);
+  const [financeFilterType, setFinanceFilterType] = useState("all"); // all | income | expense | capital
+  const [financeSearchQuery, setFinanceSearchQuery] = useState("");
+  const [financeModalOpen, setFinanceModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
+
+  const emptyTransactionForm = {
+    type: "income", // income | expense | capital
+    category: "مبيعات",
+    amount: "",
+    payment_method: "cash", // cash | bank | ezone
+    description: "",
+    date: new Date().toISOString().slice(0, 10),
+    notes: "",
+  };
+  const [transactionForm, setTransactionForm] = useState(emptyTransactionForm);
+
+  // تحميل الحركات المالية من Supabase / LocalStorage
+  useEffect(() => {
+    loadFinancialTransactions();
+  }, []);
+
+  async function loadFinancialTransactions() {
+    setFinanceLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("financial_transactions")
+        .select("*")
+        .order("date", { ascending: false });
+
+      if (!error && data) {
+        setFinancialTransactions(data);
+      } else {
+        // Fallback to localStorage if table is not created yet
+        const saved = JSON.parse(localStorage.getItem("nova_financial_transactions") || "[]");
+        setFinancialTransactions(saved);
+      }
+    } catch {
+      const saved = JSON.parse(localStorage.getItem("nova_financial_transactions") || "[]");
+      setFinancialTransactions(saved);
+    }
+    setFinanceLoading(false);
+  }
+
+  async function saveTransaction(e) {
+    if (e) e.preventDefault();
+    if (!transactionForm.amount || Number(transactionForm.amount) <= 0) {
+      alert("يرجى إدخال مبلغ صحيح للحركة المالية");
+      return;
+    }
+    setFinanceSaving(true);
+    const newRecord = {
+      ...transactionForm,
+      amount: Number(transactionForm.amount),
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      if (editingTransaction?.id) {
+        const { error } = await supabase
+          .from("financial_transactions")
+          .update(newRecord)
+          .eq("id", editingTransaction.id);
+
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("financial_transactions")
+          .insert([newRecord])
+          .select();
+
+        if (error) throw error;
+      }
+      await loadFinancialTransactions();
+    } catch (err) {
+      console.warn("Supabase financial_transactions fallback:", err.message);
+      // Fallback local storage
+      const current = JSON.parse(localStorage.getItem("nova_financial_transactions") || "[]");
+      let updated;
+      if (editingTransaction?.id) {
+        updated = current.map((t) => (t.id === editingTransaction.id ? { ...t, ...newRecord } : t));
+      } else {
+        updated = [{ ...newRecord, id: "FT-" + Date.now() }, ...current];
+      }
+      localStorage.setItem("nova_financial_transactions", JSON.stringify(updated));
+      setFinancialTransactions(updated);
+    }
+
+    setFinanceSaving(false);
+    setFinanceModalOpen(false);
+    setEditingTransaction(null);
+    setTransactionForm(emptyTransactionForm);
+  }
+
+  async function deleteTransaction(id) {
+    if (!window.confirm("هل أنت متأكد من حذف هذه الحركة المالية؟")) return;
+    try {
+      await supabase.from("financial_transactions").delete().eq("id", id);
+    } catch {}
+    const updated = financialTransactions.filter((t) => t.id !== id);
+    setFinancialTransactions(updated);
+    localStorage.setItem("nova_financial_transactions", JSON.stringify(updated));
+  }
 
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
@@ -2193,6 +2321,82 @@ export default function Admin() {
       recentOrders: orders.slice(0, 6),
     };
   }, [orders, products, timeFilter]);
+
+  // ---- حساب المؤشرات المالية المتقدمة (Finance & Cash Flow KPIs) ----
+  const financeStats = useMemo(() => {
+    // 1. رأس المال المستثمر (تمويل)
+    const totalCapital = financialTransactions
+      .filter((t) => t.type === "capital")
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    // 2. المبيعات والإيرادات من الحركات اليدوية
+    const manualIncome = financialTransactions
+      .filter((t) => t.type === "income")
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    // 3. المبيعات التلقائية من الطلبات المؤكدة
+    const validOrders = orders.filter((o) => o.status !== "ملغي");
+    const autoSalesRevenue = validOrders.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+
+    // إجمالي الإيرادات (المبيعات)
+    const totalRevenue = autoSalesRevenue + manualIncome;
+
+    // 4. تكلفة البضاعة المباعة التلقائية (COGS)
+    const productsByTitle = {};
+    products.forEach((p) => {
+      productsByTitle[p.title] = p;
+    });
+
+    let autoCogs = 0;
+    validOrders.forEach((o) => {
+      (o.items || []).forEach((it) => {
+        const prod = productsByTitle[it.title];
+        if (prod && prod.cost_price != null) {
+          autoCogs += (Number(prod.cost_price) || 0) * (Number(it.qty) || 1);
+        }
+      });
+    });
+
+    // 5. المصروفات التشغيلية
+    const totalExpenses = financialTransactions
+      .filter((t) => t.type === "expense")
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    // تفصيل المصروفات حسب التصنيف
+    const expensesByCategory = {};
+    financialTransactions
+      .filter((t) => t.type === "expense")
+      .forEach((t) => {
+        const cat = t.category || "عام";
+        expensesByCategory[cat] = (expensesByCategory[cat] || 0) + (Number(t.amount) || 0);
+      });
+
+    // مجمل الربح = الإيرادات - تكلفة البضاعة المباعة
+    const grossProfit = totalRevenue - autoCogs;
+
+    // صافي الربح الحقيقي = مجمل الربح - جميع المصروفات التشغيلية
+    const netProfit = grossProfit - totalExpenses;
+
+    // السيولة النقدية المتاحة (Cash in Hand) = رأس المال + الإيرادات - المصروفات - تكلفة البضاعة
+    const cashInHand = totalCapital + totalRevenue - totalExpenses - autoCogs;
+
+    // هامش صافي الربح
+    const profitMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0;
+
+    return {
+      totalCapital,
+      totalRevenue,
+      autoSalesRevenue,
+      manualIncome,
+      autoCogs,
+      totalExpenses,
+      expensesByCategory,
+      grossProfit,
+      netProfit,
+      cashInHand,
+      profitMargin,
+    };
+  }, [financialTransactions, orders, products]);
 
   const filteredInvoices = useMemo(() => {
     if (!invoiceSearch.trim()) return orders;
@@ -3487,6 +3691,79 @@ const result = {
                   </div>
                 </div>
 
+                {/* ── موقع المتجر والمدن الليبية 📍 ── */}
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 14, padding: 18, marginTop: 10 }}>
+                  <h4 style={{ margin: "0 0 12px 0", fontSize: 16, fontWeight: 800, color: "#0B2027", display: "flex", alignItems: "center", gap: 8 }}>
+                    <MapPin size={18} color="#0E7C86" /> 📍 موقع المتجر الفعلي داخل ليبيا
+                  </h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>الدولة</label>
+                      <input
+                        style={{ ...styles.input, background: "#F1F5F9" }}
+                        value="ليبيا 🇱🇾"
+                        disabled
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>المدينة</label>
+                      <select
+                        style={styles.select}
+                        value={settingsForm.store_city || "طرابلس"}
+                        onChange={(e) => {
+                          const newCity = e.target.value;
+                          const areas = getAreasForCity(newCity);
+                          setSettingsForm({
+                            ...settingsForm,
+                            store_city: newCity,
+                            store_area: areas[0] || newCity,
+                          });
+                        }}
+                      >
+                        {LIBYA_CITIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>المنطقة / المحلة</label>
+                      <select
+                        style={styles.select}
+                        value={settingsForm.store_area || "سوق الجمعة"}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, store_area: e.target.value })}
+                      >
+                        {getAreasForCity(settingsForm.store_city || "طرابلس").map((a) => (
+                          <option key={a} value={a}>{a}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>العنوان بالتفصيل (الشارع / المبنى)</label>
+                      <input
+                        style={styles.input}
+                        placeholder="مثال: شارع السيدي، مبنى رقم 12"
+                        value={settingsForm.store_address_detail || ""}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, store_address_detail: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>رابط الموقع على الخريطة (Google Maps / OpenStreetMap)</label>
+                      <input
+                        style={styles.input}
+                        placeholder="https://maps.google.com/..."
+                        value={settingsForm.store_map_link || ""}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, store_map_link: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#0E7C86", fontWeight: 700 }}>
+                    📍 العنوان الظاهر للزبائن: {settingsForm.store_city || "طرابلس"} — {settingsForm.store_area || "سوق الجمعة"}، ليبيا
+                  </div>
+                </div>
+
                 <div style={styles.row}>
                   <button type="submit" disabled={settingsSaving} style={styles.primaryBtn}>
                     {settingsSaving ? "جارٍ الحفظ..." : "حفظ الإعدادات"}
@@ -3498,6 +3775,455 @@ const result = {
               </>
             )}
           </form>
+        )}
+
+        {/* ========================================================
+            تبويب: الإدارة المالية والتدفق النقدي (Finance & Cash Flow 💰)
+           ======================================================== */}
+        {activeTab === "finance" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* ترويسة الإدارة المالية وأزرار الإجراءات */}
+            <div style={styles.dashHeader}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
+                    الإدارة المالية والتدفق النقدي 💰
+                  </h2>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#DCFCE7", color: "#15803D" }}>
+                    مخصص للسوق الليبي
+                  </span>
+                </div>
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#5B7278" }}>
+                  تتبع رأس المال، الإيرادات، تكلفة البضاعة، المصروفات التشغيلية، وصافي الربح الحقيقي بدقة متناهية
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTransaction(null);
+                    setTransactionForm(emptyTransactionForm);
+                    setFinanceModalOpen(true);
+                  }}
+                  style={{ ...styles.primaryBtn, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}
+                >
+                  <Plus size={16} /> ➕ إضافة حركة مالية
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadCashFlowTemplate(settingsForm.store_name || "NOVA SHOP")}
+                  style={{ ...styles.secondaryBtn, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, background: "#F0F9FF", color: "#0369A1", border: "1px solid #BAE6FD" }}
+                >
+                  <FileText size={16} /> 📥 تصدير شيت التدفق النقدي (Excel)
+                </button>
+              </div>
+            </div>
+
+            {/* 📊 بطاقات الملخص المالي الرئيسي (Financial KPIs) */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+              {/* رأس المال */}
+              <div style={{ ...styles.modernCard, padding: 16, borderTop: "4px solid #0284C7" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: "#64748B" }}>💵 رأس المال المستثمر</span>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#E0F2FE", color: "#0284C7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Landmark size={18} />
+                  </div>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#0B2027" }}>
+                  {financeStats.totalCapital.toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#0284C7", marginTop: 4 }}>
+                  التمويل والسيولة الأساسية المخصصة
+                </div>
+              </div>
+
+              {/* إجمالي الإيرادات */}
+              <div style={{ ...styles.modernCard, padding: 16, borderTop: "4px solid #16A34A" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: "#64748B" }}>📈 إجمالي الإيرادات (المبيعات)</span>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#DCFCE7", color: "#16A34A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <TrendingUp size={18} />
+                  </div>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#15803D" }}>
+                  {financeStats.totalRevenue.toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#5B7278", marginTop: 4 }}>
+                  مبيعات الطلبات: {financeStats.autoSalesRevenue.toLocaleString()} د.ل
+                </div>
+              </div>
+
+              {/* تكلفة البضاعة المباعة COGS */}
+              <div style={{ ...styles.modernCard, padding: 16, borderTop: "4px solid #D97706" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: "#64748B" }}>🏷️ تكلفة البضاعة المباعة (COGS)</span>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#FEF3C7", color: "#D97706", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Package size={18} />
+                  </div>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#B45309" }}>
+                  {financeStats.autoCogs.toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#5B7278", marginTop: 4 }}>
+                  مجمل الربح: {financeStats.grossProfit.toLocaleString()} د.ل
+                </div>
+              </div>
+
+              {/* المصروفات التشغيلية */}
+              <div style={{ ...styles.modernCard, padding: 16, borderTop: "4px solid #DC2626" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: "#64748B" }}>💸 المصروفات التشغيلية</span>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#FEE2E2", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <ArrowDownRight size={18} />
+                  </div>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#B91C1C" }}>
+                  {financeStats.totalExpenses.toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#5B7278", marginTop: 4 }}>
+                  إعلانات، شحن، إيجار، مشتريات...
+                </div>
+              </div>
+
+              {/* صافي الربح الحقيقي */}
+              <div style={{ ...styles.modernCard, padding: 16, borderTop: "4px solid #0E7C86", background: "#F0FDF4" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: "#0E7C86" }}>🏆 صافي الربح الحقيقي (Net Profit)</span>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#0E7C86", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <DollarSign size={18} />
+                  </div>
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: financeStats.netProfit >= 0 ? "#15803D" : "#B91C1C" }}>
+                  {financeStats.netProfit.toLocaleString()} <span style={{ fontSize: 15 }}>د.ل</span>
+                </div>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "#0E7C86", marginTop: 4 }}>
+                  هامش الربح الصافي: {financeStats.profitMargin}%
+                </div>
+              </div>
+
+              {/* السيولة النقدية المتاحة */}
+              <div style={{ ...styles.modernCard, padding: 16, borderTop: "4px solid #8B5CF6" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: "#64748B" }}>💼 الكاش والسيولة المتاحة</span>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#EDE9FE", color: "#8B5CF6", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Wallet size={18} />
+                  </div>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#6D28D9" }}>
+                  {financeStats.cashInHand.toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#5B7278", marginTop: 4 }}>
+                  في حساب البنك واليد (Cash in Hand)
+                </div>
+              </div>
+            </div>
+
+            {/* 📋 جدول وسجل الحركات المالية المتقدم */}
+            <div style={styles.modernCard}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0B2027" }}>
+                  📋 سجل الحركات والتدفقات المالية ({financialTransactions.length})
+                </h3>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {/* فلترة النوع */}
+                  <select
+                    style={{ ...styles.select, padding: "6px 12px", fontSize: 12.5 }}
+                    value={financeFilterType}
+                    onChange={(e) => setFinanceFilterType(e.target.value)}
+                  >
+                    <option value="all">كل الحركات</option>
+                    <option value="income">إيرادات / دخل (+)</option>
+                    <option value="expense">مصروفات (-)</option>
+                    <option value="capital">تمويل / رأس مال 💵</option>
+                  </select>
+
+                  {/* بحث بالبيان أو التصنيف */}
+                  <input
+                    style={{ ...styles.input, padding: "6px 12px", fontSize: 12.5, width: 180 }}
+                    placeholder="بحث في الحركات..."
+                    value={financeSearchQuery}
+                    onChange={(e) => setFinanceSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {financeLoading ? (
+                <p style={{ color: "#888" }}>جارٍ تحميل الحركات المالية...</p>
+              ) : financialTransactions.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "32px 16px", color: "#64748B" }}>
+                  <Landmark size={36} style={{ margin: "0 auto 8px", opacity: 0.5 }} />
+                  <p style={{ fontWeight: 700, margin: 0 }}>لا توجد حركات مالية مسجلة بعد</p>
+                  <span style={{ fontSize: 12 }}>اضغط على «إضافة حركة مالية» لتسجيل رأس المال، المشتريات، أو الإعلانات.</span>
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>التاريخ</th>
+                        <th style={styles.th}>النوع</th>
+                        <th style={styles.th}>التصنيف</th>
+                        <th style={styles.th}>المبلغ</th>
+                        <th style={styles.th}>طريقة الدفع</th>
+                        <th style={styles.th}>الوصف / البيان</th>
+                        <th style={styles.th}>الإجراء</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {financialTransactions
+                        .filter((t) => {
+                          if (financeFilterType !== "all" && t.type !== financeFilterType) return false;
+                          if (financeSearchQuery.trim()) {
+                            const q = financeSearchQuery.toLowerCase();
+                            return (
+                              (t.description || "").toLowerCase().includes(q) ||
+                              (t.category || "").toLowerCase().includes(q)
+                            );
+                          }
+                          return true;
+                        })
+                        .map((t) => {
+                          const isIncome = t.type === "income";
+                          const isExpense = t.type === "expense";
+                          const isCapital = t.type === "capital";
+
+                          const typeBadgeBg = isIncome ? "#DCFCE7" : isExpense ? "#FEE2E2" : "#E0F2FE";
+                          const typeBadgeColor = isIncome ? "#15803D" : isExpense ? "#B91C1C" : "#0369A1";
+                          const typeLabel = isIncome ? "دخل / إيراد (+)" : isExpense ? "مصروف (-)" : "رأس مال 💵";
+
+                          return (
+                            <tr key={t.id} style={styles.tr}>
+                              <td style={{ ...styles.td, fontSize: 12, color: "#64748B" }}>
+                                {t.date || (t.created_at ? t.created_at.slice(0, 10) : "-")}
+                              </td>
+                              <td style={styles.td}>
+                                <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 800, background: typeBadgeBg, color: typeBadgeColor }}>
+                                  {typeLabel}
+                                </span>
+                              </td>
+                              <td style={{ ...styles.td, fontWeight: 700 }}>{t.category || "عام"}</td>
+                              <td style={{ ...styles.td, fontWeight: 800, fontSize: 13.5, color: isIncome ? "#15803D" : isExpense ? "#B91C1C" : "#0369A1" }}>
+                                {isExpense ? `-${t.amount}` : `+${t.amount}`} د.ل
+                              </td>
+                              <td style={{ ...styles.td, fontSize: 12 }}>
+                                {t.payment_method === "cash" ? "نقدي (كاش)" : t.payment_method === "bank" ? "مصرفي (تحويل)" : "دفع إلكتروني"}
+                              </td>
+                              <td style={{ ...styles.td, fontSize: 12.5, color: "#334155" }}>
+                                {t.description || "-"}
+                              </td>
+                              <td style={styles.td}>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <button
+                                    onClick={() => {
+                                      setEditingTransaction(t);
+                                      setTransactionForm({
+                                        type: t.type || "expense",
+                                        category: t.category || "عام",
+                                        amount: String(t.amount || ""),
+                                        payment_method: t.payment_method || "cash",
+                                        description: t.description || "",
+                                        date: t.date || new Date().toISOString().slice(0, 10),
+                                        notes: t.notes || "",
+                                      });
+                                      setFinanceModalOpen(true);
+                                    }}
+                                    style={{ ...styles.secondaryBtn, padding: "4px 8px", fontSize: 11 }}
+                                  >
+                                    تعديل
+                                  </button>
+                                  <button
+                                    onClick={() => deleteTransaction(t.id)}
+                                    style={{ ...styles.deleteBtn, padding: "4px 8px", fontSize: 11 }}
+                                  >
+                                    حذف
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* ➕ نافذة إضافة / تعديل حركة مالية (Modal) */}
+            {financeModalOpen && (
+              <div style={styles.modalOverlay}>
+                <div style={{ ...styles.modalDialog, maxWidth: 500 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #E2E8F0", paddingBottom: 12, marginBottom: 16 }}>
+                    <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0B2027" }}>
+                      {editingTransaction ? "تعديل حركة مالية" : "➕ إضافة حركة مالية جديدة"}
+                    </h3>
+                    <button
+                      onClick={() => setFinanceModalOpen(false)}
+                      style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#64748B" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <form onSubmit={saveTransaction} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 4 }}>نوع الحركة المالية *</label>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => setTransactionForm({ ...transactionForm, type: "income", category: "مبيعات" })}
+                          style={{
+                            padding: "8px 4px",
+                            borderRadius: 10,
+                            border: "1px solid " + (transactionForm.type === "income" ? "#16A34A" : "#E2E8F0"),
+                            background: transactionForm.type === "income" ? "#DCFCE7" : "#fff",
+                            color: transactionForm.type === "income" ? "#15803D" : "#475569",
+                            fontWeight: 800,
+                            fontSize: 12,
+                            cursor: "pointer",
+                          }}
+                        >
+                          دخل / إيراد (+)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTransactionForm({ ...transactionForm, type: "expense", category: "إعلانات" })}
+                          style={{
+                            padding: "8px 4px",
+                            borderRadius: 10,
+                            border: "1px solid " + (transactionForm.type === "expense" ? "#DC2626" : "#E2E8F0"),
+                            background: transactionForm.type === "expense" ? "#FEE2E2" : "#fff",
+                            color: transactionForm.type === "expense" ? "#B91C1C" : "#475569",
+                            fontWeight: 800,
+                            fontSize: 12,
+                            cursor: "pointer",
+                          }}
+                        >
+                          مصروف (-)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTransactionForm({ ...transactionForm, type: "capital", category: "رأس مال" })}
+                          style={{
+                            padding: "8px 4px",
+                            borderRadius: 10,
+                            border: "1px solid " + (transactionForm.type === "capital" ? "#0284C7" : "#E2E8F0"),
+                            background: transactionForm.type === "capital" ? "#E0F2FE" : "#fff",
+                            color: transactionForm.type === "capital" ? "#0369A1" : "#475569",
+                            fontWeight: 800,
+                            fontSize: 12,
+                            cursor: "pointer",
+                          }}
+                        >
+                          تمويل / رأس مال 💵
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 4 }}>المبلغ (د.ل) *</label>
+                        <input
+                          style={styles.input}
+                          type="number"
+                          step="0.01"
+                          placeholder="مثال: 500"
+                          value={transactionForm.amount}
+                          onChange={(e) => setTransactionForm({ ...transactionForm, amount: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 4 }}>التاريخ</label>
+                        <input
+                          style={styles.input}
+                          type="date"
+                          value={transactionForm.date}
+                          onChange={(e) => setTransactionForm({ ...transactionForm, date: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 4 }}>التصنيف</label>
+                        <select
+                          style={styles.select}
+                          value={transactionForm.category}
+                          onChange={(e) => setTransactionForm({ ...transactionForm, category: e.target.value })}
+                        >
+                          {transactionForm.type === "income" && (
+                            <>
+                              <option value="مبيعات">مبيعات</option>
+                              <option value="استرداد">استرداد مبالغ</option>
+                              <option value="إيراد آخر">إيراد آخر</option>
+                            </>
+                          )}
+                          {transactionForm.type === "expense" && (
+                            <>
+                              <option value="إعلانات">إعلانات وتسويق</option>
+                              <option value="شراء بضاعة">شراء بضاعة (مورد)</option>
+                              <option value="توصيل">توصيل وشحن</option>
+                              <option value="رواتب">رواتب ومكافآت</option>
+                              <option value="تغليف">أكياس ومواد تغليف</option>
+                              <option value="مصاريف عامة">مصاريف عامة</option>
+                            </>
+                          )}
+                          {transactionForm.type === "capital" && (
+                            <>
+                              <option value="رأس مال">رأس مال المتجر</option>
+                              <option value="زيادة رأس مال">زيادة رأس مال</option>
+                              <option value="قرض / تمويل">تمويل / استثمار</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 4 }}>طريقة الدفع</label>
+                        <select
+                          style={styles.select}
+                          value={transactionForm.payment_method}
+                          onChange={(e) => setTransactionForm({ ...transactionForm, payment_method: e.target.value })}
+                        >
+                          <option value="cash">نقدي (كاش في اليد)</option>
+                          <option value="bank">مصرفي (حساب البنك)</option>
+                          <option value="ezone">محفظة إلكترونية (Ezone Pay)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 4 }}>البيان / الوصف</label>
+                      <input
+                        style={styles.input}
+                        placeholder="مثال: إعلان ممول فيسبوك، شراء بضاعة من المورد، إلخ"
+                        value={transactionForm.description}
+                        onChange={(e) => setTransactionForm({ ...transactionForm, description: e.target.value })}
+                      />
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => setFinanceModalOpen(false)}
+                        style={styles.secondaryBtn}
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={financeSaving}
+                        style={styles.primaryBtn}
+                      >
+                        {financeSaving ? "جارٍ الحفظ..." : editingTransaction ? "حفظ التعديل" : "إضافة الحركة"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* ========================================================

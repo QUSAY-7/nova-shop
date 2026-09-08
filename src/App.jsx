@@ -30,6 +30,12 @@ import {
   WalletMinimal,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
+import {
+  LIBYA_CITIES,
+  getAreasForCity,
+  getDeliveryInfoForCity,
+  formatDeliveryAddress,
+} from "./libyaDeliveryData";
 
 /* ---------------------------------------------------------
   إعدادات المتجر — تُجلب الآن من جدول store_settings بـ Supabase
@@ -75,6 +81,8 @@ export default function App() {
   const [payment, setPayment] = useState("cash");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [deliveryCity, setDeliveryCity] = useState("طرابلس");
+  const [deliveryArea, setDeliveryArea] = useState("سوق الجمعة");
   const [customerAddress, setCustomerAddress] = useState("");
   const [copied, setCopied] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
@@ -299,10 +307,18 @@ export default function App() {
   );
 
   const totalQty = cartItems.reduce((sum, l) => sum + l.qty, 0);
-  const totalPrice = cartItems.reduce(
+  const itemsSubtotal = cartItems.reduce(
     (sum, l) => sum + l.qty * getEffectivePrice(l.product, l.variant),
     0
   );
+
+  // حساب رسوم ومدة التوصيل تلقائياً حسب المدينة
+  const deliveryInfo = useMemo(() => {
+    return getDeliveryInfoForCity(deliveryCity, settings?.city_rates);
+  }, [deliveryCity, settings?.city_rates]);
+
+  const deliveryCost = itemsSubtotal > 0 ? deliveryInfo.rate : 0;
+  const totalPrice = itemsSubtotal + deliveryCost;
 
   const setQty = (key, qty, meta) => {
     setCart((c) => {
@@ -364,10 +380,16 @@ export default function App() {
   };
 
   const saveOrder = async () => {
-    if (!customerName.trim() || !customerPhone.trim() || !customerAddress.trim()) {
-      alert("من فضلك أكمل بياناتك (الاسم، الهاتف، العنوان) قبل إتمام الطلب");
+    if (!customerName.trim() || !customerPhone.trim() || !deliveryCity) {
+      alert("من فضلك أكمل بياناتك (الاسم، الهاتف، واختيار المدينة) قبل إتمام الطلب");
       return false;
     }
+
+    const formattedFullAddress = formatDeliveryAddress({
+      city: deliveryCity,
+      area: deliveryArea,
+      addressDetails: customerAddress.trim(),
+    });
 
     const items = cartItems.map((l) => ({
       product_id: l.product.id,
@@ -383,11 +405,15 @@ export default function App() {
       .insert([
         {
           items,
+          subtotal: itemsSubtotal,
+          shipping_cost: deliveryCost,
           total_price: totalPrice,
-                    payment_method: payment === "cash" ? "كاش" : payment === "bank" ? "تحويل بنكي" : "Ezone Pay (دفع إلكتروني)",
-          customer_name: customerName,
-          customer_phone: customerPhone,
-          customer_address: customerAddress,
+          payment_method: payment === "cash" ? "كاش" : payment === "bank" ? "تحويل بنكي" : "Ezone Pay (دفع إلكتروني)",
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone.trim(),
+          delivery_city: deliveryCity,
+          delivery_area: deliveryArea || deliveryCity,
+          customer_address: formattedFullAddress,
         },
       ])
       .select()
@@ -409,11 +435,14 @@ export default function App() {
           body: JSON.stringify({
             order: {
               id: insertedOrder.id,
-              customer_name: customerName,
-              customer_phone: customerPhone,
-              customer_address: customerAddress,
+              customer_name: customerName.trim(),
+              customer_phone: customerPhone.trim(),
+              delivery_city: deliveryCity,
+              delivery_area: deliveryArea || deliveryCity,
+              customer_address: formattedFullAddress,
               items,
               total_price: totalPrice,
+              shipping_cost: deliveryCost,
             },
           }),
         }).catch(() => {});
@@ -536,6 +565,8 @@ export default function App() {
     setCustomerName("");
     setCustomerPhone("");
     setCustomerAddress("");
+    setDeliveryCity("طرابلس");
+    setDeliveryArea("سوق الجمعة");
     return true;
   };
 
@@ -604,8 +635,11 @@ export default function App() {
       lines.push(`${l.product.title}${variantLabel} (${code}) × ${l.qty} — ${price * l.qty} د.ل`);
     });
     lines.push("");
-    lines.push(`الإجمالي: ${totalPrice} د.ل`);
-    lines.push(`طريقة الدفع: ${payment === "cash" ? "كاش عند الاستلام" : "تحويل بنكي"}`);
+    lines.push(`مجموع المنتجات: ${itemsSubtotal} د.ل`);
+    lines.push(`التوصيل لـ (${deliveryCity} - ${deliveryArea}): ${deliveryCost} د.ل`);
+    lines.push(`الإجمالي النهائي: ${totalPrice} د.ل`);
+    lines.push(`طريقة الدفع: ${payment === "cash" ? "كاش عند الاستلام" : payment === "bank" ? "تحويل بنكي" : "دفع إلكتروني Ezone"}`);
+    if (customerAddress.trim()) lines.push(`العنوان بالتفصيل: ${customerAddress.trim()}`);
     if (payment === "bank") lines.push(`رقم الحساب: ${settings?.bank_account || ""}`);
     return encodeURIComponent(lines.join("\n"));
   };
@@ -1347,19 +1381,65 @@ export default function App() {
                     onChange={(e) => setCustomerPhone(e.target.value)}
                   />
                 </div>
+
+                {/* حقول التوصيل المنظمة للمدن والمناطق الليبية */}
                 <div className="field-block">
-                  <span className="field-label">عنوان التوصيل</span>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
+                    <div>
+                      <span className="field-label">المدينة 🇱🇾</span>
+                      <select
+                        className="customer-input"
+                        value={deliveryCity}
+                        onChange={(e) => {
+                          const newCity = e.target.value;
+                          setDeliveryCity(newCity);
+                          const areas = getAreasForCity(newCity);
+                          setDeliveryArea(areas[0] || newCity);
+                        }}
+                        style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff", fontWeight: 700 }}
+                      >
+                        {LIBYA_CITIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <span className="field-label">المنطقة / الحي</span>
+                      <select
+                        className="customer-input"
+                        value={deliveryArea}
+                        onChange={(e) => setDeliveryArea(e.target.value)}
+                        style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff" }}
+                      >
+                        {getAreasForCity(deliveryCity).map((a) => (
+                          <option key={a} value={a}>
+                            {a}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <span className="field-label">تفاصيل العنوان / أقرب نقطة دالة</span>
                   <input
                     type="text"
                     className="customer-input"
-                    placeholder="المدينة، الحي، أقرب نقطة دالة"
+                    placeholder="الشارع، رقم المبنى، أو علامة مميزة (اختياري)"
                     value={customerAddress}
                     onChange={(e) => setCustomerAddress(e.target.value)}
                   />
+                  <div style={{ marginTop: "6px", display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--teal-dark)", background: "var(--teal-light)", padding: "6px 10px", borderRadius: "8px" }}>
+                    <span>🚚 رسوم التوصيل لـ ({deliveryCity}): <strong>{deliveryCost} د.ل</strong></span>
+                    <span>⏳ مدة الوصول: <strong>{deliveryInfo.days} {deliveryInfo.days === 1 ? "يوم" : "أيام"}</strong></span>
+                  </div>
                 </div>
+
                 <div className="field-block">
                   <span className="field-label">طريقة الدفع</span>
-                                    <div className="payment-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+                  <div className="payment-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
                     <button onClick={() => setPayment("cash")} className={`pay-btn ${payment === "cash" ? "active" : ""}`}>
                       <Banknote /> كاش
                     </button>
@@ -1388,9 +1468,19 @@ export default function App() {
                 </div>
 
                 <div className="cart-total-row">
-                  <div className="total-line">
-                    <span className="qty-label">الإجمالي</span>
-                    <span className="total-amount">{totalPrice} د.ل</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "12px", fontSize: "13px", color: "var(--muted)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>سعر المنتجات:</span>
+                      <span>{itemsSubtotal} د.ل</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>رسوم التوصيل ({deliveryCity}):</span>
+                      <span>{deliveryCost} د.ل</span>
+                    </div>
+                    <div style={{ borderTop: "1px dashed var(--line)", marginTop: "4px", paddingTop: "6px", display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "16px", color: "var(--teal-dark)" }}>
+                      <span>الإجمالي النهائي:</span>
+                      <span className="total-amount">{totalPrice} د.ل</span>
+                    </div>
                   </div>
                                     <button
                     className="cta-button"
@@ -1449,7 +1539,9 @@ export default function App() {
         <section id="home" className="hero">
           <div className="container">
             <div className="hero-top">
-              <span className="eyebrow">توصيل لكل مدن ليبيا 🇱🇾</span>
+              <span className="eyebrow">
+                📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
+              </span>
               <h1 className="h1">تسوّق إلكترونياتك وإكسسواراتك بثقة، من أول طلب</h1>
               <p className="h1-sub">تشكيلة مختارة بعناية من الإلكترونيات والإكسسوارات والإضاءة، تصل لباب بيتك في أي مدينة ليبية.</p>
 
