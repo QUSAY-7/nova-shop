@@ -893,40 +893,23 @@ export default function App() {
         @keyframes pulseRing{ 0%{ box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{ box-shadow:0 0 0 14px rgba(14,124,134,0);} }
         .badge-pulse svg{ width:18px; height:18px; color:#fff; }
 
-        /* Hero horizontal banner mode */
-        .hero{ padding: 12px 0 20px; }
+        /* Hero full-width complete banner mode */
+        .hero{ padding: 0 0 20px; }
         .hero-banner-container{
           width: 100%;
-          max-width: var(--container);
-          margin: 0 auto 16px;
-          padding: 0 16px;
-        }
-        .hero-banner-card{
-          width: 100%;
-          height: 140px;
-          border-radius: 20px;
+          margin: 0 0 20px 0;
           overflow: hidden;
-          background: #ffffff;
-          border: 1px solid var(--line);
-          box-shadow: 0 4px 18px rgba(11,32,39,0.06);
+          background: transparent;
           display: flex;
           align-items: center;
           justify-content: center;
+          position: relative;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06);
         }
         .hero-banner-img{
           width: 100%;
-          height: 100%;
-          object-fit: contain;
+          height: auto;
           display: block;
-          padding: 6px;
-        }
-        @media (min-width: 640px){
-          .hero-banner-container{ max-width: 600px; }
-          .hero-banner-card{ height: 180px; }
-        }
-        @media (min-width: 1024px){
-          .hero-banner-container{ max-width: 720px; }
-          .hero-banner-card{ height: 210px; }
         }
 
         .trust-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
@@ -1549,13 +1532,11 @@ export default function App() {
       <section id="home" className={`hero ${settings?.logo_url ? "hero-with-banner" : ""}`}>
         {settings?.logo_url && (
           <div className="hero-banner-container">
-            <div className="hero-banner-card">
-              <img
-                src={settings.logo_url}
-                alt={settings?.store_name || "شعار المتجر"}
-                className="hero-banner-img"
-              />
-            </div>
+            <img
+              src={settings.logo_url}
+              alt={settings?.store_name || "شعار المتجر"}
+              className="hero-banner-img"
+            />
           </div>
         )}
 

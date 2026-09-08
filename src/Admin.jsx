@@ -1472,10 +1472,14 @@ export async function exportSalesToExcel(orders = [], storeName = "NOVA SHOP") {
       tracking: o.tracking_number || (o.delivery_provider ? "درب السبيل" : "توصيل عادي"),
     });
 
-    row.height = 24;
+    row.height = 28;
     row.eachCell((cell, colNumber) => {
       cell.font = { name: "Arial", size: 10.5 };
-      cell.alignment = { vertical: "middle", horizontal: (colNumber === 4 || colNumber === 6 || colNumber === 7) ? "right" : "center" };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: (colNumber === 4 || colNumber === 6 || colNumber === 7) ? "right" : "center",
+        wrapText: true,
+      };
       cell.border = {
         top: { style: "thin", color: { argb: "FFE2E8F0" } },
         left: { style: "thin", color: { argb: "FFE2E8F0" } },
@@ -1501,19 +1505,34 @@ export async function exportSalesToExcel(orders = [], storeName = "NOVA SHOP") {
     });
   });
 
-  // 4. صف الإجماليات
+  // 4. ضبط اتساع الأعمدة تلقائياً بناءً على محتوى البيانات (Auto-Fit Columns)
+  sheet.columns.forEach((column) => {
+    let maxLength = 0;
+    column.eachCell({ includeEmpty: false }, (cell) => {
+      const valStr = cell.value ? String(cell.value) : "";
+      // حساب الطول مع اعتبار الكلمات متعددة الأسطر
+      const lines = valStr.split("\n");
+      lines.forEach((l) => {
+        if (l.length > maxLength) maxLength = l.length;
+      });
+    });
+    // إضافة هوامش مريحة (padding) لمنع تقطيع أي كلمة في الإكسل
+    column.width = Math.max(maxLength + 5, 14);
+  });
+
+  // 5. صف الإجماليات
   const summaryRow = sheet.addRow({
     id: `الإجمالي الكلي (${orders.length} طلب)`,
     total_price: totalAmount,
     cod_amount: totalCash,
     online_amount: totalOnline,
   });
-  summaryRow.height = 28;
+  summaryRow.height = 30;
   sheet.mergeCells(`A${summaryRow.number}:G${summaryRow.number}`);
   summaryRow.eachCell((cell) => {
     cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FF0F172A" } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
-    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
     cell.border = {
       top: { style: "medium", color: { argb: "FF0E7C86" } },
       bottom: { style: "medium", color: { argb: "FF0E7C86" } },
@@ -1759,8 +1778,8 @@ export default function Admin() {
   const [credsSaving, setCredsSaving] = useState(false);
   const [credsMessage, setCredsMessage] = useState("");
 
-  // ---- تبويبات لوحة التحكم ----
-  const [activeTab, setActiveTab] = useState("dashboard");
+  // ---- تبويبات لوحة التحكم (إعدادات المتجر هي التبويب الأول) ----
+  const [activeTab, setActiveTab] = useState("settings");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [timeFilter, setTimeFilter] = useState("30days"); // today | 7days | 30days | all
 
@@ -1771,6 +1790,7 @@ export default function Admin() {
   const TABS = isModerator
     ? [{ id: "products", label: "المنتجات" }]
     : [
+        { id: "settings", label: "إعدادات المتجر ⚙️" },
         { id: "dashboard", label: "لوحة الإحصائيات" },
         { id: "finance", label: "الإدارة المالية 💰" },
         { id: "orders", label: "الطلبات" },
@@ -1778,7 +1798,6 @@ export default function Admin() {
         { id: "customers", label: "العملاء" },
         { id: "products", label: "المنتجات" },
         { id: "integrations", label: "الدفع والتوصيل" },
-        { id: "settings", label: "إعدادات المتجر" },
         ...(isOwner
           ? [
               { id: "team", label: "إدارة الفريق" },
@@ -3820,10 +3839,35 @@ const result = {
                 </button>
                 <button
                   type="button"
-                  onClick={() => downloadCashFlowTemplate(settingsForm.store_name || "NOVA SHOP")}
-                  style={{ ...styles.secondaryBtn, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, background: "#F0F9FF", color: "#0369A1", border: "1px solid #BAE6FD" }}
+                  onClick={() => exportSalesToExcel(orders, settingsForm.store_name || "NOVA SHOP")}
+                  style={{
+                    ...styles.secondaryBtn,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 13,
+                    background: "#F0FDF4",
+                    color: "#15803D",
+                    border: "1px solid #BBF7D0",
+                  }}
                 >
-                  <FileText size={16} /> 📥 تصدير شيت التدفق النقدي (Excel)
+                  <FileText size={16} /> 📊 تصدير شيت المبيعات والعمليات (Excel)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadCashFlowTemplate(settingsForm.store_name || "NOVA SHOP")}
+                  style={{
+                    ...styles.secondaryBtn,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 13,
+                    background: "#F0F9FF",
+                    color: "#0369A1",
+                    border: "1px solid #BAE6FD",
+                  }}
+                >
+                  <FileText size={16} /> 💼 شيت التدفق النقدي والميزانية (Excel)
                 </button>
               </div>
             </div>
@@ -4863,46 +4907,6 @@ const result = {
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>الطلبات ({orders.length})</h3>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  onClick={() => exportSalesToExcel(orders, settingsForm.store_name || "NOVA SHOP")}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "8px 14px",
-                    borderRadius: 10,
-                    border: "1px solid #BBF7D0",
-                    background: "#F0FDF4",
-                    color: "#15803D",
-                    fontWeight: 700,
-                    fontSize: 12.5,
-                    cursor: "pointer",
-                  }}
-                >
-                  📊 تصدير شيت المبيعات (Excel)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => downloadCashFlowTemplate(settingsForm.store_name || "NOVA SHOP")}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "8px 14px",
-                    borderRadius: 10,
-                    border: "1px solid #E0F2FE",
-                    background: "#F0F9FF",
-                    color: "#0369A1",
-                    fontWeight: 700,
-                    fontSize: 12.5,
-                    cursor: "pointer",
-                  }}
-                >
-                  💼 شيت التدفق النقدي والميزانية (Cash Flow)
-                </button>
-              </div>
             </div>
             {ordersLoading ? (
               <p>جارٍ تحميل الطلبات...</p>
