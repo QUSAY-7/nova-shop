@@ -407,30 +407,52 @@ export default function App() {
       price: getEffectivePrice(l.product, l.variant),
     }));
 
-    const { data: insertedOrder, error } = await supabase
-      .from("orders")
-      .insert([
-        {
-          items,
-          subtotal: itemsSubtotal,
-          shipping_cost: deliveryCost,
-          total_price: totalPrice,
-          payment_method: payment === "cash" ? "كاش" : payment === "bank" ? "تحويل بنكي" : "Ezone Pay (دفع إلكتروني)",
-          customer_name: customerName.trim(),
-          customer_phone: customerPhone.trim(),
-          delivery_city: deliveryCity,
-          delivery_area: deliveryArea || deliveryCity,
-          customer_address: formattedFullAddress,
-        },
-      ])
-      .select()
-      .single();
+    // تجهيز كائن الطلب مع الحقول الأساسية
+    const baseOrderRecord = {
+      items,
+      total_price: totalPrice,
+      payment_method: payment === "cash" ? "كاش" : payment === "bank" ? "تحويل بنكي" : "Ezone Pay (دفع إلكتروني)",
+      customer_name: customerName.trim(),
+      customer_phone: customerPhone.trim(),
+      customer_address: formattedFullAddress,
+    };
 
-         // ========== إرسال تلقائي لشركة درب السبيل للتوصيل ==========
+    // تجربة الإدراج مع الحقول الإضافية (subtotal, shipping_cost, delivery_city, delivery_area)
+    const fullOrderRecord = {
+      ...baseOrderRecord,
+      subtotal: itemsSubtotal,
+      shipping_cost: deliveryCost,
+      delivery_city: deliveryCity,
+      delivery_area: deliveryArea || deliveryCity,
+    };
+
+    let insertedOrder = null;
+    let insertError = null;
+
+    const resFull = await supabase.from("orders").insert([fullOrderRecord]).select().single();
+    if (!resFull.error && resFull.data) {
+      insertedOrder = resFull.data;
+    } else {
+      insertError = resFull.error;
+      // محاولة بديلة بالحقول الأساسية فقط في حال لم تكن الأعمدة الإضافية مضافة في جدول orders
+      const resBase = await supabase.from("orders").insert([baseOrderRecord]).select().single();
+      if (!resBase.error && resBase.data) {
+        insertedOrder = resBase.data;
+        insertError = null;
+      }
+    }
+
+    if (!insertedOrder) {
+      console.error("❌ فشل حفظ الطلب في قاعدة البيانات:", insertError);
+      alert("⚠️ تعذر حفظ الطلب في قاعدة البيانات.\n\nالسبب: " + (insertError?.message || "خطأ غير معروف"));
+      return false;
+    }
+
+    // ========== إرسال تلقائي لشركة درب السبيل للتوصيل ==========
     try {
       const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
       const darbCfg = storedConfigs["darb_assabil"];
-      if (darbCfg && darbCfg.isActive !== false) {
+      if (darbCfg && darbCfg.isActive !== false && insertedOrder?.id) {
         await supabase.from("orders").update({
           tracking_number: `DS-${insertedOrder.id}`,
           delivery_provider: "darb_assabil",
@@ -822,18 +844,52 @@ export default function App() {
         /* ---------- Drawers ---------- */
         .drawer-overlay{ position:fixed; inset:0; z-index:50; display:flex; justify-content:flex-end; }
         .drawer-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.4); }
-        .drawer{ position:relative; width:300px; max-width:85%; height:100%; background:#fff; box-shadow:-8px 0 30px rgba(0,0,0,.15); padding:20px; display:flex; flex-direction:column; animation: slideIn .22s ease; }
+        .drawer{
+          position:relative;
+          width:min(92vw, 420px);
+          height:100dvh;
+          max-height:100dvh;
+          background:#fff;
+          box-shadow:-8px 0 30px rgba(0,0,0,.15);
+          padding:0;
+          display:flex;
+          flex-direction:column;
+          animation: slideIn .22s ease;
+          overflow:hidden;
+        }
         @keyframes slideIn{ from{ transform:translateX(100%);} to{ transform:translateX(0);} }
-        .drawer-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-shrink:0; }
+        .drawer-head{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          padding:16px 20px;
+          border-bottom:1px solid var(--line);
+          flex-shrink:0;
+          background:#fff;
+          z-index:2;
+        }
         .drawer-title{ font-family:'Almarai',sans-serif; font-weight:800; font-size:17px; }
-        .drawer-nav{ display:flex; flex-direction:column; gap:2px; }
+        .drawer-nav{ display:flex; flex-direction:column; gap:2px; padding:16px; flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
         .drawer-nav a{ padding:13px 12px; border-radius:12px; font-size:15px; font-weight:500; transition: background .15s; }
         .drawer-nav a:active{ background:var(--teal-light); }
-        .drawer-foot{ margin-top:auto; padding-top:20px; border-top:1px solid var(--line); flex-shrink:0; }
+        .drawer-foot{ margin-top:auto; padding:16px 20px; border-top:1px solid var(--line); flex-shrink:0; background:#fff; }
         .wa-link{ display:flex; align-items:center; gap:8px; padding:13px 12px; border-radius:12px; font-weight:700; color:var(--success); font-size:15px; }
 
-        .cart-scroll{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; margin:-4px; padding:4px; }
-        .cart-empty{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; color:var(--muted); }
+        /* منطقة محتوى السلة القابلة للتمرير على iPhone */
+        .cart-body{
+          flex:1;
+          min-height:0;
+          overflow-y:auto;
+          -webkit-overflow-scrolling:touch;
+          overscroll-behavior:contain;
+          padding:16px 20px;
+          display:flex;
+          flex-direction:column;
+          gap:14px;
+        }
+
+        .cart-scroll{ display:flex; flex-direction:column; gap:10px; }
+        .cart-empty{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; color:var(--muted); padding:40px 16px; }
         .cart-empty svg{ width:34px; height:34px; opacity:.5; }
         .cart-empty span{ font-size:13px; }
 
@@ -855,7 +911,14 @@ export default function App() {
         .qty-btn svg{ width:13px; height:13px; }
         .qty-val{ width:16px; text-align:center; font-weight:700; font-size:13px; }
 
-        .cart-total-row{ margin-top:14px; padding-top:16px; border-top:1px solid var(--line); flex-shrink:0; }
+        .cart-total-row{
+          flex-shrink:0;
+          padding:14px 20px 20px;
+          border-top:1px solid var(--line);
+          background:#fff;
+          box-shadow:0 -6px 20px rgba(0,0,0,.04);
+          z-index:2;
+        }
         .total-line{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
         .total-amount{ font-family:'Almarai',sans-serif; font-weight:800; font-size:20px; color:var(--teal-dark); }
 
@@ -1344,147 +1407,149 @@ export default function App() {
                 <span>سلتك فارغة، أضف منتجاً لتبدأ طلبك</span>
               </div>
             ) : (
-              <div className="cart-scroll">
-                {cartItems.map(({ key, product, variant, qty }) => (
-                  <div key={key} className="cart-line">
-                    <div className="cart-thumb">
-                      <CartThumb product={product} />
-                    </div>
-                    <div className="cart-info">
-                      <p className="cart-name">
-                        {product.title}
-                        {variant && ` (${[variant.size, variant.color].filter(Boolean).join(" / ")})`}
-                      </p>
-                      <p className="cart-code">{product.code || product.id}</p>
-                      <div className="cart-line-bottom">
-                        <span className="cart-price">{getEffectivePrice(product, variant) * qty} د.ل</span>
-                        <div className="qty-control sm">
-                          <button className="qty-btn" onClick={() => dec(key)}>
-                            <Minus />
-                          </button>
-                          <span className="qty-val">{qty}</span>
-                          <button className="qty-btn" onClick={() => inc(key)}>
-                            <Plus />
-                          </button>
+              <>
+                {/* منطقة محتوى السلة القابلة للتمرير على شاشات الهواتف */}
+                <div className="cart-body">
+                  <div className="cart-scroll">
+                    {cartItems.map(({ key, product, variant, qty }) => (
+                      <div key={key} className="cart-line">
+                        <div className="cart-thumb">
+                          <CartThumb product={product} />
                         </div>
+                        <div className="cart-info">
+                          <p className="cart-name">
+                            {product.title}
+                            {variant && ` (${[variant.size, variant.color].filter(Boolean).join(" / ")})`}
+                          </p>
+                          <p className="cart-code">{product.code || product.id}</p>
+                          <div className="cart-line-bottom">
+                            <span className="cart-price">{getEffectivePrice(product, variant) * qty} د.ل</span>
+                            <div className="qty-control sm">
+                              <button className="qty-btn" onClick={() => dec(key)}>
+                                <Minus />
+                              </button>
+                              <span className="qty-val">{qty}</span>
+                              <button className="qty-btn" onClick={() => inc(key)}>
+                                <Plus />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <button className="cart-remove" onClick={() => setQty(key, 0)} aria-label="إزالة">
+                          <Trash2 />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="field-block">
+                    <span className="field-label">اسمك الكامل</span>
+                    <input
+                      type="text"
+                      className="customer-input"
+                      placeholder="مثال: محمد أحمد"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                    />
+                  </div>
+                  <div className="field-block">
+                    <span className="field-label">رقم هاتفك</span>
+                    <input
+                      type="tel"
+                      className="customer-input"
+                      placeholder="09XXXXXXXX"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                    />
+                  </div>
+
+                  {/* حقول التوصيل المنظمة للمدن والمناطق الليبية */}
+                  <div className="field-block">
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
+                      <div>
+                        <span className="field-label">المدينة 🇱🇾</span>
+                        <select
+                          className="customer-input"
+                          value={deliveryCity}
+                          onChange={(e) => {
+                            const newCity = e.target.value;
+                            setDeliveryCity(newCity);
+                            const areas = getAreasForCity(newCity);
+                            setDeliveryArea(areas[0] || newCity);
+                          }}
+                          style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff", fontWeight: 700 }}
+                        >
+                          {LIBYA_CITIES.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <span className="field-label">المنطقة / الحي</span>
+                        <select
+                          className="customer-input"
+                          value={deliveryArea}
+                          onChange={(e) => setDeliveryArea(e.target.value)}
+                          style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff" }}
+                        >
+                          {getAreasForCity(deliveryCity).map((a) => (
+                            <option key={a} value={a}>
+                              {a}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
-                    <button className="cart-remove" onClick={() => setQty(key, 0)} aria-label="إزالة">
-                      <Trash2 />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
 
-            {cartItems.length > 0 && (
-              <>
-                <div className="field-block">
-                  <span className="field-label">اسمك الكامل</span>
-                  <input
-                    type="text"
-                    className="customer-input"
-                    placeholder="مثال: محمد أحمد"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                  />
-                </div>
-                <div className="field-block">
-                  <span className="field-label">رقم هاتفك</span>
-                  <input
-                    type="tel"
-                    className="customer-input"
-                    placeholder="09XXXXXXXX"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                  />
-                </div>
-
-                {/* حقول التوصيل المنظمة للمدن والمناطق الليبية */}
-                <div className="field-block">
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
-                    <div>
-                      <span className="field-label">المدينة 🇱🇾</span>
-                      <select
-                        className="customer-input"
-                        value={deliveryCity}
-                        onChange={(e) => {
-                          const newCity = e.target.value;
-                          setDeliveryCity(newCity);
-                          const areas = getAreasForCity(newCity);
-                          setDeliveryArea(areas[0] || newCity);
-                        }}
-                        style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff", fontWeight: 700 }}
-                      >
-                        {LIBYA_CITIES.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <span className="field-label">المنطقة / الحي</span>
-                      <select
-                        className="customer-input"
-                        value={deliveryArea}
-                        onChange={(e) => setDeliveryArea(e.target.value)}
-                        style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff" }}
-                      >
-                        {getAreasForCity(deliveryCity).map((a) => (
-                          <option key={a} value={a}>
-                            {a}
-                          </option>
-                        ))}
-                      </select>
+                    <span className="field-label">تفاصيل العنوان / أقرب نقطة دالة</span>
+                    <input
+                      type="text"
+                      className="customer-input"
+                      placeholder="الشارع، رقم المبنى، أو علامة مميزة (اختياري)"
+                      value={customerAddress}
+                      onChange={(e) => setCustomerAddress(e.target.value)}
+                    />
+                    <div style={{ marginTop: "6px", display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--teal-dark)", background: "var(--teal-light)", padding: "6px 10px", borderRadius: "8px" }}>
+                      <span>🚚 رسوم التوصيل لـ ({deliveryCity}): <strong>{deliveryCost} د.ل</strong></span>
+                      <span>⏳ مدة الوصول: <strong>{deliveryInfo.days} {deliveryInfo.days === 1 ? "يوم" : "أيام"}</strong></span>
                     </div>
                   </div>
 
-                  <span className="field-label">تفاصيل العنوان / أقرب نقطة دالة</span>
-                  <input
-                    type="text"
-                    className="customer-input"
-                    placeholder="الشارع، رقم المبنى، أو علامة مميزة (اختياري)"
-                    value={customerAddress}
-                    onChange={(e) => setCustomerAddress(e.target.value)}
-                  />
-                  <div style={{ marginTop: "6px", display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--teal-dark)", background: "var(--teal-light)", padding: "6px 10px", borderRadius: "8px" }}>
-                    <span>🚚 رسوم التوصيل لـ ({deliveryCity}): <strong>{deliveryCost} د.ل</strong></span>
-                    <span>⏳ مدة الوصول: <strong>{deliveryInfo.days} {deliveryInfo.days === 1 ? "يوم" : "أيام"}</strong></span>
-                  </div>
-                </div>
-
-                <div className="field-block">
-                  <span className="field-label">طريقة الدفع</span>
-                  <div className="payment-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-                    <button onClick={() => setPayment("cash")} className={`pay-btn ${payment === "cash" ? "active" : ""}`}>
-                      <Banknote /> كاش
-                    </button>
-                    <button onClick={() => setPayment("bank")} className={`pay-btn ${payment === "bank" ? "active" : ""}`}>
-                      <Landmark /> تحويل بنكي
-                    </button>
-                    <button onClick={() => setPayment("ezone")} className={`pay-btn ${payment === "ezone" ? "active" : ""}`}>
-                      <Wallet /> دفع إلكتروني
-                    </button>
-                  </div>
-                  {payment === "bank" && (
-                    <div className="bank-box">
-                      <span className="bank-number">{settings?.bank_account}</span>
-                      <button onClick={copyAccount} className="copy-btn">
-                        {copied ? <Check className="ok" /> : <Copy />}
+                  <div className="field-block">
+                    <span className="field-label">طريقة الدفع</span>
+                    <div className="payment-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+                      <button onClick={() => setPayment("cash")} className={`pay-btn ${payment === "cash" ? "active" : ""}`}>
+                        <Banknote /> كاش
+                      </button>
+                      <button onClick={() => setPayment("bank")} className={`pay-btn ${payment === "bank" ? "active" : ""}`}>
+                        <Landmark /> تحويل بنكي
+                      </button>
+                      <button onClick={() => setPayment("ezone")} className={`pay-btn ${payment === "ezone" ? "active" : ""}`}>
+                        <Wallet /> دفع إلكتروني
                       </button>
                     </div>
-                  )}
-                  {payment === "ezone" && (
-                    <div style={{ marginTop: "10px", padding: "10px 12px", background: "var(--teal-light)", borderRadius: "12px", fontSize: "12px", color: "var(--teal-dark)", lineHeight: 1.6 }}>
-                      🔒 <strong>الدفع الإلكتروني المباشر:</strong>
-                      <br />
-                      عند الضغط على إتمام الطلب، سيتم نقلك مباشرة إلى بوابة الدفع الآمنة لاختيار وسيلة الدفع المفضلة (سداد، إدفع لي، موبي كاش، تداول، مصرفي باي، إلخ).
-                    </div>
-                  )}
+                    {payment === "bank" && (
+                      <div className="bank-box">
+                        <span className="bank-number">{settings?.bank_account}</span>
+                        <button onClick={copyAccount} className="copy-btn">
+                          {copied ? <Check className="ok" /> : <Copy />}
+                        </button>
+                      </div>
+                    )}
+                    {payment === "ezone" && (
+                      <div style={{ marginTop: "10px", padding: "10px 12px", background: "var(--teal-light)", borderRadius: "12px", fontSize: "12px", color: "var(--teal-dark)", lineHeight: 1.6 }}>
+                        🔒 <strong>الدفع الإلكتروني المباشر:</strong>
+                        <br />
+                        عند الضغط على إتمام الطلب، سيتم نقلك مباشرة إلى بوابة الدفع الآمنة لاختيار وسيلة الدفع المفضلة (سداد، إدفع لي، موبي كاش، تداول، مصرفي باي، إلخ).
+                      </div>
+                    )}
+                  </div>
                 </div>
 
+                {/* تذييل السلة الثابت في الأسفل دائماً */}
                 <div className="cart-total-row">
                   <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "12px", fontSize: "13px", color: "var(--muted)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1500,7 +1565,7 @@ export default function App() {
                       <span className="total-amount">{totalPrice} د.ل</span>
                     </div>
                   </div>
-                                    <button
+                  <button
                     className="cta-button"
                     onClick={async () => {
                       const ok = await saveOrder();
