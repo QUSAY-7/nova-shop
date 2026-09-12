@@ -36,6 +36,9 @@ import {
   getDeliveryInfoForCity,
   formatDeliveryAddress,
 } from "./libyaDeliveryData";
+import { submitOrder, initiateEzonePayment } from "./services/orderService";
+import ProductCard from "./features/products/ProductCard";
+import CartDrawer from "./features/products/cart/CartDrawer";
 
 /* ---------------------------------------------------------
   إعدادات المتجر — تُجلب الآن من جدول store_settings بـ Supabase
@@ -386,9 +389,8 @@ export default function App() {
     });
   };
 
-  // Updated saveOrder: now posts to the secure server‑side endpoint
+  // حفظ وإرسال الطلب عبر طبقة الخدمات المستقلة orderService
   const saveOrder = async () => {
-    // Validate required fields
     if (!customerName.trim() || !customerPhone.trim() || !deliveryCity) {
       alert("من فضلك أكمل بياناتك (الاسم، الهاتف، واختيار المدينة) قبل إتمام الطلب");
       return false;
@@ -400,7 +402,6 @@ export default function App() {
       addressDetails: customerAddress.trim(),
     });
 
-        // Build payload with item details and delivery cost
     const items = cartItems.map((l) => ({
       product_id: l.product.id,
       variant_id: l.variant?.id || null,
@@ -411,127 +412,43 @@ export default function App() {
       price: getEffectivePrice(l.product, l.variant),
     }));
 
-    const requestBody = {
-      items,
-      customer_name: customerName.trim(),
-      customer_phone: customerPhone.trim(),
-      customer_address: formattedFullAddress,
-      payment_method: payment,
-      delivery_city: deliveryCity,
-      delivery_area: deliveryArea || deliveryCity,
-      shipping_cost: deliveryCost,
-    };
+    let insertedOrder = null;
+    let verifiedTotal = 0;
 
-    // Call the new API endpoint
-    let apiResponse;
     try {
-      const res = await fetch("/api/create-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+      const result = await submitOrder({
+        customerName,
+        customerPhone,
+        customerAddress,
+        deliveryCity,
+        deliveryArea,
+        formattedFullAddress,
+        items,
+        paymentMethod: payment,
+        shippingCost: deliveryCost,
       });
-      const text = await res.text();
-            if (!res.ok) {
-        let errMsg = text;
-        try {
-          const err = JSON.parse(text);
-          errMsg = err.error || err.message || text;
-        } catch (_) {}
-        alert(`⚠️ فشل إنشاء الطلب: ${errMsg}`);
-        return false;
-      }
-      apiResponse = JSON.parse(text);
-    } catch (e) {
-      console.error("❌ API error:", e);
-      alert("⚠️ تعذر الاتصال بخادم الإنشاء. يرجى المحاولة لاحقاً.");
+      insertedOrder = result.order;
+      verifiedTotal = result.verifiedTotal;
+    } catch (err) {
+      console.error("❌ Order submission error:", err);
+      alert(`⚠️ فشل إنشاء الطلب: ${err.message || "حدث خطأ غير متوقع"}`);
       return false;
     }
 
-    const { order: insertedOrder, verified_total } = apiResponse;
-    if (!insertedOrder) {
-      alert("⚠️ لم يتم إرجاع بيانات الطلب من الخادم.");
-      return false;
-    }
-
-    // ================= Dispatch to Darb Assabil =================
-    try {
-      const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
-      const darbCfg = storedConfigs["darb_assabil"];
-      if (darbCfg && darbCfg.isActive !== false && insertedOrder?.id) {
-        await supabase.from("orders").update({
-          tracking_number: `DS-${insertedOrder.id}`,
-          delivery_provider: "darb_assabil",
-        }).eq("id", insertedOrder.id);
-
-        await fetch("/api/dispatch-shipment", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            order: {
-              id: insertedOrder.id,
-              customer_name: customerName.trim(),
-              customer_phone: customerPhone.trim(),
-              delivery_city: deliveryCity,
-              delivery_area: deliveryArea || deliveryCity,
-              customer_address: formattedFullAddress,
-              items,
-              total_price: verified_total,
-              shipping_cost: deliveryCost,
-            },
-          }),
-        });
-      }
-    } catch (e) {
-      console.warn("Darb Assabil dispatch error:", e);
-    }
-
-    // ================= Ezone Pay =================
+    // ================= الدفع الإلكتروني عبر Ezone Pay =================
     if (payment === "ezone") {
       try {
-        const nameParts = (customerName || "زبون المتجر").trim().split(" ");
-        let firstName = nameParts[0] || "زبون";
-        let lastName = nameParts.slice(1).join(" ") || "المتجر";
-        if (firstName.length < 3) firstName = firstName + "...".slice(0, 3 - firstName.length);
-        if (lastName.length < 3) lastName = lastName + "...".slice(0, 3 - lastName.length);
-
-        const ezonePayload = {
-          Title: `طلب متجر #${insertedOrder.id}`,
-          OrderReference: `ORD-${insertedOrder.id}`,
-          IsUniqueOrderReference: true,
-          InternalReference: `NOVA-${insertedOrder.id}`,
-          Amount: Number(verified_total),
-          Currency: 1, // 1 = LYD
-          Note: "طلب شراء عبر المتجر الإلكتروني",
-          Customer: {
-            FirstName: firstName,
-            LastName: lastName,
-            PhoneNumber: customerPhone || "0910000000",
-          },
-          RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
-        };
-
-        const ezRes = await fetch("/api/ezone-pay", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payload: ezonePayload }),
+        const payLink = await initiateEzonePayment({
+          orderId: insertedOrder.id,
+          customerName,
+          customerPhone,
+          totalPrice: verifiedTotal,
         });
-        const ezText = await ezRes.text();
-        if (ezRes.ok) {
-          const result = JSON.parse(ezText);
-          if (result.success && result.data?.Link) {
-            window.location.href = result.data.Link;
-            return true;
-          } else {
-            alert("⚠️ لم يتم إرجاع رابط الدفع من Ezone Pay.");
-            return true;
-          }
-        } else {
-          alert(`⚠️ خطأ Ezone Pay (${ezRes.status})`);
-          return true;
-        }
+        window.location.href = payLink;
+        return true;
       } catch (e) {
-        console.error("Ezone Pay exception:", e);
-        alert("⚠️ فشل الاتصال بـ Ezone Pay.");
+        console.error("Ezone Pay error:", e);
+        alert(`⚠️ خطأ في الدفع الإلكتروني: ${e.message}\nتم حفظ طلبك وسيتم التواصل معك.`);
         return true;
       }
     }
@@ -1338,204 +1255,42 @@ export default function App() {
       )}
 
       {/* ===== Cart drawer ===== */}
-      {cartOpen && (
-        <div className="drawer-overlay">
-          <div className="drawer-backdrop" onClick={() => setCartOpen(false)} />
-          <div className="drawer">
-            <div className="drawer-head">
-              <span className="drawer-title" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <ShoppingCart size={20} color="var(--teal)" /> سلتك ({totalQty})
-              </span>
-              <button onClick={() => setCartOpen(false)} className="icon-btn">
-                <X size={16} />
-              </button>
-            </div>
-
-            {cartItems.length === 0 ? (
-              <div className="cart-empty">
-                <ShoppingCart size={36} />
-                <span>سلتك فارغة، أضف منتجاً لتبدأ طلبك</span>
-              </div>
-            ) : (
-              <>
-                {/* منطقة محتوى السلة القابلة للتمرير على شاشات الهواتف */}
-                <div className="cart-body">
-                  <div className="cart-scroll">
-                    {cartItems.map(({ key, product, variant, qty }) => (
-                      <div key={key} className="cart-line">
-                        <div className="cart-thumb">
-                          <CartThumb product={product} />
-                        </div>
-                        <div className="cart-info">
-                          <p className="cart-name">
-                            {product.title}
-                            {variant && ` (${[variant.size, variant.color].filter(Boolean).join(" / ")})`}
-                          </p>
-                          <p className="cart-code">{product.code || product.id}</p>
-                          <div className="cart-line-bottom">
-                            <span className="cart-price">{getEffectivePrice(product, variant) * qty} د.ل</span>
-                            <div className="qty-control sm">
-                              <button className="qty-btn" onClick={() => dec(key)}>
-                                <Minus />
-                              </button>
-                              <span className="qty-val">{qty}</span>
-                              <button className="qty-btn" onClick={() => inc(key)}>
-                                <Plus />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                        <button className="cart-remove" onClick={() => setQty(key, 0)} aria-label="إزالة">
-                          <Trash2 />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="field-block">
-                    <span className="field-label">اسمك الكامل</span>
-                    <input
-                      type="text"
-                      className="customer-input"
-                      placeholder="مثال: محمد أحمد"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                    />
-                  </div>
-                  <div className="field-block">
-                    <span className="field-label">رقم هاتفك</span>
-                    <input
-                      type="tel"
-                      className="customer-input"
-                      placeholder="09XXXXXXXX"
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                    />
-                  </div>
-
-                  {/* حقول التوصيل المنظمة للمدن والمناطق الليبية */}
-                  <div className="field-block">
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
-                      <div>
-                        <span className="field-label">المدينة 🇱🇾</span>
-                        <select
-                          className="customer-input"
-                          value={deliveryCity}
-                          onChange={(e) => {
-                            const newCity = e.target.value;
-                            setDeliveryCity(newCity);
-                            const areas = getAreasForCity(newCity);
-                            setDeliveryArea(areas[0] || newCity);
-                          }}
-                          style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff", fontWeight: 700 }}
-                        >
-                          {LIBYA_CITIES.map((c) => (
-                            <option key={c} value={c}>
-                              {c}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <span className="field-label">المنطقة / الحي</span>
-                        <select
-                          className="customer-input"
-                          value={deliveryArea}
-                          onChange={(e) => setDeliveryArea(e.target.value)}
-                          style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff" }}
-                        >
-                          {getAreasForCity(deliveryCity).map((a) => (
-                            <option key={a} value={a}>
-                              {a}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <span className="field-label">تفاصيل العنوان / أقرب نقطة دالة</span>
-                    <input
-                      type="text"
-                      className="customer-input"
-                      placeholder="الشارع، رقم المبنى، أو علامة مميزة (اختياري)"
-                      value={customerAddress}
-                      onChange={(e) => setCustomerAddress(e.target.value)}
-                    />
-                    <div style={{ marginTop: "6px", display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--teal-dark)", background: "var(--teal-light)", padding: "6px 10px", borderRadius: "8px" }}>
-                      <span>🚚 رسوم التوصيل لـ ({deliveryCity}): <strong>{deliveryCost} د.ل</strong></span>
-                      <span>⏳ مدة الوصول: <strong>{deliveryInfo.days} {deliveryInfo.days === 1 ? "يوم" : "أيام"}</strong></span>
-                    </div>
-                  </div>
-
-                  <div className="field-block">
-                    <span className="field-label">طريقة الدفع</span>
-                    <div className="payment-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-                      <button onClick={() => setPayment("cash")} className={`pay-btn ${payment === "cash" ? "active" : ""}`}>
-                        <Banknote /> كاش
-                      </button>
-                      <button onClick={() => setPayment("bank")} className={`pay-btn ${payment === "bank" ? "active" : ""}`}>
-                        <Landmark /> تحويل بنكي
-                      </button>
-                      <button onClick={() => setPayment("ezone")} className={`pay-btn ${payment === "ezone" ? "active" : ""}`}>
-                        <Wallet /> دفع إلكتروني
-                      </button>
-                    </div>
-                    {payment === "bank" && (
-                      <div className="bank-box">
-                        <span className="bank-number">{settings?.bank_account}</span>
-                        <button onClick={copyAccount} className="copy-btn">
-                          {copied ? <Check className="ok" /> : <Copy />}
-                        </button>
-                      </div>
-                    )}
-                    {payment === "ezone" && (
-                      <div style={{ marginTop: "10px", padding: "10px 12px", background: "var(--teal-light)", borderRadius: "12px", fontSize: "12px", color: "var(--teal-dark)", lineHeight: 1.6 }}>
-                        🔒 <strong>الدفع الإلكتروني المباشر:</strong>
-                        <br />
-                        عند الضغط على إتمام الطلب، سيتم نقلك مباشرة إلى بوابة الدفع الآمنة لاختيار وسيلة الدفع المفضلة (سداد، إدفع لي، موبي كاش، تداول، مصرفي باي، إلخ).
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* تذييل السلة الثابت في الأسفل دائماً */}
-                <div className="cart-total-row">
-                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "12px", fontSize: "13px", color: "var(--muted)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>سعر المنتجات:</span>
-                      <span>{itemsSubtotal} د.ل</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>رسوم التوصيل ({deliveryCity}):</span>
-                      <span>{deliveryCost} د.ل</span>
-                    </div>
-                    <div style={{ borderTop: "1px dashed var(--line)", marginTop: "4px", paddingTop: "6px", display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "16px", color: "var(--teal-dark)" }}>
-                      <span>الإجمالي النهائي:</span>
-                      <span className="total-amount">{totalPrice} د.ل</span>
-                    </div>
-                  </div>
-                  <button
-                    className="cta-button"
-                    onClick={async () => {
-                      const ok = await saveOrder();
-                      if (ok && payment !== "ezone") {
-                        window.open(waLink, "_blank", "noopener,noreferrer");
-                      }
-                    }}
-                  >
-                    {payment === "ezone" ? (
-                      <><Wallet size={18} /> الدفع الإلكتروني وإتمام الطلب</>
-                    ) : (
-                      <><MessageCircle size={18} /> إتمام الطلب عبر واتساب</>
-                    )}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <CartDrawer
+        isOpen={cartOpen}
+        onClose={() => setCartOpen(false)}
+        cartItems={cartItems}
+        totalQty={totalQty}
+        itemsSubtotal={itemsSubtotal}
+        deliveryCost={deliveryCost}
+        totalPrice={totalPrice}
+        deliveryInfo={deliveryInfo}
+        customerName={customerName}
+        setCustomerName={setCustomerName}
+        customerPhone={customerPhone}
+        setCustomerPhone={setCustomerPhone}
+        deliveryCity={deliveryCity}
+        setDeliveryCity={setDeliveryCity}
+        deliveryArea={deliveryArea}
+        setDeliveryArea={setDeliveryArea}
+        customerAddress={customerAddress}
+        setCustomerAddress={setCustomerAddress}
+        payment={payment}
+        setPayment={setPayment}
+        settings={settings}
+        copied={copied}
+        onCopyAccount={copyAccount}
+        onInc={inc}
+        onDec={dec}
+        onRemoveItem={(key) => setQty(key, 0)}
+        getEffectivePrice={getEffectivePrice}
+        onCheckout={async () => {
+          const ok = await saveOrder();
+          if (ok && payment !== "ezone") {
+            window.open(waLink, "_blank", "noopener,noreferrer");
+          }
+        }}
+        cartThumb={CartThumb}
+      />
 
 
       {/* ===== Hero ===== */}
@@ -1719,111 +1474,33 @@ export default function App() {
               <div className="product-grid">
                 {filteredProducts.map((product) => {
                   const variantOptions = getVariantsForProduct(product.id);
-                  const hasVariants = variantOptions.length > 0;
-                  const selectedVariant = hasVariants ? getSelectedVariant(product.id) : null;
-                  const effectivePrice = getEffectivePrice(product, selectedVariant);
-                  const effectiveStock = hasVariants
-                    ? (selectedVariant ? getEffectiveStock(product, selectedVariant) : 0)
-                    : product.stock;
+                  const selectedVariant = variantOptions.length > 0 ? getSelectedVariant(product.id) : null;
                   const key = cartKey(product.id, selectedVariant);
-                  const qty = cart[key]?.qty || 0;
-                  const compareAt = product.compare_at ?? product.compareAt ?? null;
-                  const sizeOptions = Array.from(new Set(variantOptions.map((v) => v.size).filter(Boolean)));
-                  const colorOptions = Array.from(new Set(variantOptions.map((v) => v.color).filter(Boolean)));
 
                   return (
-                    <div key={product.id} className="product-card">
-                      <div
-                        className="product-thumb"
-                        onClick={() => openGallery(product)}
-                        style={{ cursor: getProductImages(product).length > 0 ? "pointer" : "default" }}
-                      >
-                        <span className="product-cat-pill">{product.category}</span>
-                        {product.stock === 0 && (
-                          <span className="out-of-stock-badge">نفد المخزون</span>
-                        )}
-                        <ProductThumb product={product} />
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "6px" }}>
-                        <p className="product-name">{product.title}</p>
-                        <button
-                          onClick={() => handleShare(product)}
-                          aria-label="مشاركة المنتج"
-                          style={{ flexShrink: 0, width: "26px", height: "26px", borderRadius: "999px", background: "var(--teal-light)", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >
-                          <Copy size={12} style={{ color: "var(--teal-dark)" }} />
-                        </button>
-                      </div>
-                      <p className="product-desc-sm">{product.description || product.desc}</p>
-                      {!hasVariants && product.stock > 0 && product.stock <= 5 && (
-                        <p className="low-stock-note">باقي {product.stock} قطع فقط!</p>
-                      )}
-
-                      {hasVariants && (
-                        <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
-                          {sizeOptions.length > 0 && (
-                            <select
-                              value={selectedVariants[product.id]?.size || ""}
-                              onChange={(e) => setSelectedVariant(product.id, "size", e.target.value)}
-                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
-                            >
-                              <option value="">المقاس</option>
-                              {sizeOptions.map((s) => (
-                                <option key={s} value={s}>{s}</option>
-                              ))}
-                            </select>
-                          )}
-                          {colorOptions.length > 0 && (
-                            <select
-                              value={selectedVariants[product.id]?.color || ""}
-                              onChange={(e) => setSelectedVariant(product.id, "color", e.target.value)}
-                              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
-                            >
-                              <option value="">اللون</option>
-                              {colorOptions.map((c) => (
-                                <option key={c} value={c}>{c}</option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="product-price-row">
-                        <span className="product-price">{effectivePrice} د.ل</span>
-                        {compareAt && <span className="product-compare">{compareAt} د.ل</span>}
-                      </div>
-                      <div className="product-action">
-                        {hasVariants && !selectedVariant ? (
-                          <button className="add-btn" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
-                            اختر الخيار أولاً
-                          </button>
-                        ) : effectiveStock === 0 ? (
-                          <button className="add-btn" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
-                            نفد المخزون
-                          </button>
-                        ) : qty === 0 ? (
-                          <button className="add-btn" onClick={() => addToCart(product)}>
-                            <Plus size={14} /> أضف للسلة
-                          </button>
-                        ) : (
-                          <div className="qty-control">
-                            <button className="qty-btn" onClick={() => dec(key)}>
-                              <Minus />
-                            </button>
-                            <span className="qty-val">{qty}</span>
-                            <button
-                              className="qty-btn"
-                              onClick={() => inc(key)}
-                              disabled={qty >= effectiveStock}
-                              style={qty >= effectiveStock ? { opacity: 0.4, cursor: "not-allowed" } : {}}
-                            >
-                              <Plus />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      variantOptions={variantOptions}
+                      selectedVariant={selectedVariant}
+                      selectedVariants={selectedVariants}
+                      onSelectVariant={setSelectedVariant}
+                      effectivePrice={getEffectivePrice(product, selectedVariant)}
+                      effectiveStock={
+                        variantOptions.length > 0
+                          ? (selectedVariant ? getEffectiveStock(product, selectedVariant) : 0)
+                          : product.stock
+                      }
+                      qty={cart[key]?.qty || 0}
+                      onAddToCart={addToCart}
+                      onInc={inc}
+                      onDec={dec}
+                      cartKeyStr={key}
+                      onOpenGallery={openGallery}
+                      onShare={handleShare}
+                      productImages={getProductImages(product)}
+                      categoryIcon={getCategoryIcon(product.category)}
+                    />
                   );
                 })}
               </div>
