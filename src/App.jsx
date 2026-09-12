@@ -400,12 +400,15 @@ export default function App() {
       addressDetails: customerAddress.trim(),
     });
 
-    // Build minimal payload for server‑side validation
+        // Build payload with item details and delivery cost
     const items = cartItems.map((l) => ({
       product_id: l.product.id,
-      variant_id: l.variant?.id,
+      variant_id: l.variant?.id || null,
+      size: l.variant?.size || null,
+      color: l.variant?.color || null,
       qty: l.qty,
       title: l.product.title,
+      price: getEffectivePrice(l.product, l.variant),
     }));
 
     const requestBody = {
@@ -416,6 +419,7 @@ export default function App() {
       payment_method: payment,
       delivery_city: deliveryCity,
       delivery_area: deliveryArea || deliveryCity,
+      shipping_cost: deliveryCost,
     };
 
     // Call the new API endpoint
@@ -427,9 +431,13 @@ export default function App() {
         body: JSON.stringify(requestBody),
       });
       const text = await res.text();
-      if (!res.ok) {
-        const err = JSON.parse(text);
-        alert(`⚠️ فشل إنشاء الطلب: ${err.error || res.status}`);
+            if (!res.ok) {
+        let errMsg = text;
+        try {
+          const err = JSON.parse(text);
+          errMsg = err.error || err.message || text;
+        } catch (_) {}
+        alert(`⚠️ فشل إنشاء الطلب: ${errMsg}`);
         return false;
       }
       apiResponse = JSON.parse(text);

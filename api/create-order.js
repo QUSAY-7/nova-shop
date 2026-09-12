@@ -1,140 +1,200 @@
 // api/create-order.js
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl =
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  "https://ugeekzmtavxcfrhtfrjq.supabase.co";
 
-if (!supabaseUrl || !serviceRoleKey) {
-  console.error("Supabase URL or service‑role key missing");
-}
+const serviceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY;
 
-const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-// Delivery fees map – keep in sync with src/libyaDeliveryData.js
-const deliveryFees = {
-  "طرابلس": 5,
-  "بنغازي": 7,
-  // Add other cities as needed
-};
+const supabase = createClient(supabaseUrl, serviceRoleKey || "");
 
 export default async function handler(req, res) {
+  // CORS Headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const {
-    items,
-    customer_name,
-    customer_phone,
-    customer_address,
-    payment_method,
-    delivery_city,
-    delivery_area,
-  } = req.body;
+  try {
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const {
+      items,
+      customer_name,
+      customer_phone,
+      customer_address,
+      payment_method,
+      delivery_city,
+      delivery_area,
+      shipping_cost,
+    } = body;
 
-  // Basic validation
-  if (!items?.length || !customer_name || !customer_phone || !delivery_city) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  // Verify prices & stock, compute total
-  let total = 0;
-  for (const item of items) {
-    // Fetch product (or variant) to get authoritative price & stock
-    let price = 0;
-    let stock = 0;
-
-    if (item.variant_id) {
-      const { data: variant, error: varErr } = await supabase
-        .from("product_variants")
-        .select("price, quantity")
-        .eq("id", item.variant_id)
-        .single();
-      if (varErr) {
-        return res.status(400).json({ error: `Variant ${item.variant_id} not found` });
-      }
-      price = variant.price;
-      stock = variant.quantity;
-    } else {
-      const { data: product, error: prodErr } = await supabase
-        .from("products")
-        .select("price, stock")
-        .eq("id", item.product_id)
-        .single();
-      if (prodErr) {
-        return res.status(400).json({ error: `Product ${item.product_id} not found` });
-      }
-      price = product.price;
-      stock = product.stock;
+    // Validation
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "السلة فارغة، يرجى إضافة منتجات" });
+    }
+    if (!customer_name || !customer_phone || !delivery_city) {
+      return res.status(400).json({ error: "يرجى إكمال جميع بيانات الطلب (الاسم، الهاتف، المدينة)" });
     }
 
-    if (stock < item.qty) {
-      return res.status(400).json({ error: `Insufficient stock for ${item.title}` });
-    }
-    total += price * item.qty;
-  }
+    // Verify prices & stock
+    let subtotal = 0;
+    const verifiedItems = [];
 
-  // Add delivery fee
-  const deliveryFee = deliveryFees[delivery_city] ?? 0;
-  total += deliveryFee;
-
-  const orderRecord = {
-    items,
-    total_price: total,
-    payment_method,
-    customer_name,
-    customer_phone,
-    customer_address,
-    delivery_city,
-    delivery_area: delivery_area || delivery_city,
-    shipping_cost: deliveryFee,
-  };
-
-  const { data: inserted, error: insertErr } = await supabase
-    .from("orders")
-    .insert([orderRecord])
-    .select()
-    .single();
-
-  if (insertErr) {
-    console.error("Order insert error", insertErr);
-    return res.status(500).json({ error: insertErr.message });
-  }
-
-  // Fire‑and‑forget stock deduction – do not block order response
-  (async () => {
     for (const item of items) {
+      let authoritativePrice = 0;
+      let stock = 999;
+
       if (item.variant_id) {
         const { data: variant } = await supabase
           .from("product_variants")
-          .select("quantity")
+          .select("price, quantity")
           .eq("id", item.variant_id)
           .single();
-        const newQty = Math.max(0, variant.quantity - item.qty);
-        await supabase
-          .from("product_variants")
-          .update({ quantity: newQty })
-          .eq("id", item.variant_id);
-      } else {
+
+        if (variant) {
+          authoritativePrice = Number(variant.price || 0);
+          stock = Number(variant.quantity ?? 999);
+        }
+      } else if (item.product_id) {
         const { data: product } = await supabase
           .from("products")
-          .select("stock")
+          .select("price, sale_price, stock")
           .eq("id", item.product_id)
           .single();
-        const newStock = Math.max(0, product.stock - item.qty);
-        await supabase
-          .from("products")
-          .update({ stock: newStock })
-          .eq("id", item.product_id);
+
+        if (product) {
+          authoritativePrice = Number(product.sale_price || product.price || 0);
+          stock = Number(product.stock ?? 999);
+        }
+      }
+
+      // Fallback
+      if (!authoritativePrice && item.price) {
+        authoritativePrice = Number(item.price);
+      }
+
+      const qty = Number(item.qty || 1);
+
+      if (stock < qty) {
+        return res.status(400).json({
+          error: `الكمية المطلوبة من (${item.title || "المنتج"}) غير متوفرة في المخزون (المتوفر: ${stock})`,
+        });
+      }
+
+      subtotal += authoritativePrice * qty;
+
+      verifiedItems.push({
+        product_id: item.product_id,
+        variant_id: item.variant_id || null,
+        title: item.title,
+        size: item.size || null,
+        color: item.color || null,
+        qty,
+        price: authoritativePrice,
+      });
+    }
+
+    const deliveryFee = Number(shipping_cost ?? 10);
+    const total = subtotal + deliveryFee;
+
+    const baseOrderRecord = {
+      items: verifiedItems,
+      total_price: total,
+      payment_method:
+        payment_method === "cash"
+          ? "كاش"
+          : payment_method === "bank"
+          ? "تحويل بنكي"
+          : payment_method === "ezone"
+          ? "Ezone Pay (دفع إلكتروني)"
+          : payment_method || "كاش",
+      customer_name: String(customer_name).trim(),
+      customer_phone: String(customer_phone).trim(),
+      customer_address: customer_address || "",
+    };
+
+    const fullOrderRecord = {
+      ...baseOrderRecord,
+      subtotal,
+      shipping_cost: deliveryFee,
+      delivery_city,
+      delivery_area: delivery_area || delivery_city,
+    };
+
+    let insertedOrder = null;
+    let insertErr = null;
+
+    const resFull = await supabase.from("orders").insert([fullOrderRecord]).select().single();
+    if (!resFull.error && resFull.data) {
+      insertedOrder = resFull.data;
+    } else {
+      insertErr = resFull.error;
+      const resBase = await supabase.from("orders").insert([baseOrderRecord]).select().single();
+      if (!resBase.error && resBase.data) {
+        insertedOrder = resBase.data;
+        insertErr = null;
       }
     }
-  })();
 
-  // CORS for Vercel Edge
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (!insertedOrder) {
+      console.error("Order insertion failed:", insertErr);
+      return res.status(500).json({ error: insertErr?.message || "تعذر حفظ الطلب في قاعدة البيانات" });
+    }
 
-  return res.status(200).json({ order: inserted, verified_total: total });
+    // Fire-and-forget inventory deduction
+    (async () => {
+      try {
+        for (const item of verifiedItems) {
+          if (item.variant_id) {
+            const { data: v } = await supabase
+              .from("product_variants")
+              .select("quantity")
+              .eq("id", item.variant_id)
+              .single();
+            if (v && typeof v.quantity === "number") {
+              await supabase
+                .from("product_variants")
+                .update({ quantity: Math.max(0, v.quantity - item.qty) })
+                .eq("id", item.variant_id);
+            }
+          } else if (item.product_id) {
+            const { data: p } = await supabase
+              .from("products")
+              .select("stock")
+              .eq("id", item.product_id)
+              .single();
+            if (p && typeof p.stock === "number") {
+              await supabase
+                .from("products")
+                .update({ stock: Math.max(0, p.stock - item.qty) })
+                .eq("id", item.product_id);
+            }
+          }
+        }
+      } catch (stockErr) {
+        console.warn("Background stock deduction error:", stockErr);
+      }
+    })();
+
+    return res.status(200).json({
+      order: insertedOrder,
+      verified_total: total,
+    });
+  } catch (err) {
+    console.error("Handler error:", err);
+    return res.status(500).json({ error: err.message || "حدث خطأ غير متوقع في الخادم" });
+  }
 }
