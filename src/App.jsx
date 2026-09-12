@@ -386,7 +386,9 @@ export default function App() {
     });
   };
 
+  // Updated saveOrder: now posts to the secure server‑side endpoint
   const saveOrder = async () => {
+    // Validate required fields
     if (!customerName.trim() || !customerPhone.trim() || !deliveryCity) {
       alert("من فضلك أكمل بياناتك (الاسم، الهاتف، واختيار المدينة) قبل إتمام الطلب");
       return false;
@@ -398,57 +400,52 @@ export default function App() {
       addressDetails: customerAddress.trim(),
     });
 
+    // Build minimal payload for server‑side validation
     const items = cartItems.map((l) => ({
       product_id: l.product.id,
-      title: l.product.title,
-      size: l.variant?.size || null,
-      color: l.variant?.color || null,
+      variant_id: l.variant?.id,
       qty: l.qty,
-      price: getEffectivePrice(l.product, l.variant),
+      title: l.product.title,
     }));
 
-    // تجهيز كائن الطلب مع الحقول الأساسية
-    const baseOrderRecord = {
+    const requestBody = {
       items,
-      total_price: totalPrice,
-      payment_method: payment === "cash" ? "كاش" : payment === "bank" ? "تحويل بنكي" : "Ezone Pay (دفع إلكتروني)",
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
       customer_address: formattedFullAddress,
-    };
-
-    // تجربة الإدراج مع الحقول الإضافية (subtotal, shipping_cost, delivery_city, delivery_area)
-    const fullOrderRecord = {
-      ...baseOrderRecord,
-      subtotal: itemsSubtotal,
-      shipping_cost: deliveryCost,
+      payment_method: payment,
       delivery_city: deliveryCity,
       delivery_area: deliveryArea || deliveryCity,
     };
 
-    let insertedOrder = null;
-    let insertError = null;
-
-    const resFull = await supabase.from("orders").insert([fullOrderRecord]).select().single();
-    if (!resFull.error && resFull.data) {
-      insertedOrder = resFull.data;
-    } else {
-      insertError = resFull.error;
-      // محاولة بديلة بالحقول الأساسية فقط في حال لم تكن الأعمدة الإضافية مضافة في جدول orders
-      const resBase = await supabase.from("orders").insert([baseOrderRecord]).select().single();
-      if (!resBase.error && resBase.data) {
-        insertedOrder = resBase.data;
-        insertError = null;
+    // Call the new API endpoint
+    let apiResponse;
+    try {
+      const res = await fetch("/api/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        const err = JSON.parse(text);
+        alert(`⚠️ فشل إنشاء الطلب: ${err.error || res.status}`);
+        return false;
       }
-    }
-
-    if (!insertedOrder) {
-      console.error("❌ فشل حفظ الطلب في قاعدة البيانات:", insertError);
-      alert("⚠️ تعذر حفظ الطلب في قاعدة البيانات.\n\nالسبب: " + (insertError?.message || "خطأ غير معروف"));
+      apiResponse = JSON.parse(text);
+    } catch (e) {
+      console.error("❌ API error:", e);
+      alert("⚠️ تعذر الاتصال بخادم الإنشاء. يرجى المحاولة لاحقاً.");
       return false;
     }
 
-    // ========== إرسال تلقائي لشركة درب السبيل للتوصيل ==========
+    const { order: insertedOrder, verified_total } = apiResponse;
+    if (!insertedOrder) {
+      alert("⚠️ لم يتم إرجاع بيانات الطلب من الخادم.");
+      return false;
+    }
+
+    // ================= Dispatch to Darb Assabil =================
     try {
       const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
       const darbCfg = storedConfigs["darb_assabil"];
@@ -458,7 +455,7 @@ export default function App() {
           delivery_provider: "darb_assabil",
         }).eq("id", insertedOrder.id);
 
-        fetch("/api/dispatch-shipment", {
+        await fetch("/api/dispatch-shipment", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -470,17 +467,17 @@ export default function App() {
               delivery_area: deliveryArea || deliveryCity,
               customer_address: formattedFullAddress,
               items,
-              total_price: totalPrice,
+              total_price: verified_total,
               shipping_cost: deliveryCost,
             },
           }),
-        }).catch(() => {});
+        });
       }
     } catch (e) {
-      console.warn("Darb Assabil dispatch:", e);
+      console.warn("Darb Assabil dispatch error:", e);
     }
 
-    // ========== الدفع الإلكتروني عبر Ezone Pay ==========
+    // ================= Ezone Pay =================
     if (payment === "ezone") {
       try {
         const nameParts = (customerName || "زبون المتجر").trim().split(" ");
@@ -494,7 +491,7 @@ export default function App() {
           OrderReference: `ORD-${insertedOrder.id}`,
           IsUniqueOrderReference: true,
           InternalReference: `NOVA-${insertedOrder.id}`,
-          Amount: Number(totalPrice),
+          Amount: Number(verified_total),
           Currency: 1, // 1 = LYD
           Note: "طلب شراء عبر المتجر الإلكتروني",
           Customer: {
@@ -505,88 +502,33 @@ export default function App() {
           RedirectUrl: `${window.location.origin}/?payment_success=true&order_id=${insertedOrder.id}`,
         };
 
-        console.log("📤 Ezone Pay: إرسال طلب الدفع...", ezonePayload);
-
-        const ezoneRes = await fetch("/api/ezone-pay", {
+        const ezRes = await fetch("/api/ezone-pay", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ payload: ezonePayload }),
         });
-
-        const responseText = await ezoneRes.text();
-        console.log("📥 Ezone Pay Response:", ezoneRes.status, responseText);
-
-        if (ezoneRes.ok) {
-          const result = JSON.parse(responseText);
+        const ezText = await ezRes.text();
+        if (ezRes.ok) {
+          const result = JSON.parse(ezText);
           if (result.success && result.data?.Link) {
             window.location.href = result.data.Link;
             return true;
           } else {
-            console.error("❌ Ezone Pay: لم يتم إرجاع رابط الدفع", result);
-            alert("⚠️ تعذر إنشاء رابط الدفع الإلكتروني. تم حفظ طلبك وسيتم التواصل معك.\n\nتفاصيل: " + (result.error || result.message || "لا يوجد رابط دفع"));
+            alert("⚠️ لم يتم إرجاع رابط الدفع من Ezone Pay.");
             return true;
           }
         } else {
-          let errorDetail = responseText;
-          try {
-            const errData = JSON.parse(responseText);
-            errorDetail = errData.error || errData.details?.message || responseText;
-          } catch(e) {}
-          console.error("❌ Ezone Pay HTTP Error:", ezoneRes.status, responseText);
-          alert("⚠️ خطأ Ezone Pay (HTTP " + ezoneRes.status + "):\n\n" + errorDetail + "\n\nتم حفظ طلبك وسيتم التواصل معك.");
+          alert(`⚠️ خطأ Ezone Pay (${ezRes.status})`);
           return true;
         }
-      } catch (ezErr) {
-        console.error("❌ Ezone Pay Exception:", ezErr);
-        alert("⚠️ تعذر الاتصال بخدمة الدفع الإلكتروني. تم حفظ طلبك وسيتم التواصل معك.\n\nالخطأ: " + ezErr.message);
+      } catch (e) {
+        console.error("Ezone Pay exception:", e);
+        alert("⚠️ فشل الاتصال بـ Ezone Pay.");
         return true;
       }
     }
 
-    // خصم الكمية من المخزون (المنتج نفسه أو خيار المقاس/اللون حسب الحالة)
-    for (const line of cartItems) {
-      if (line.variant) {
-        const newQty = Math.max(0, line.variant.quantity - line.qty);
-        const { error: variantError } = await supabase
-          .from("product_variants")
-          .update({ quantity: newQty })
-          .eq("id", line.variant.id);
-        if (variantError) {
-          console.error(`فشل تحديث كمية خيار المنتج ${line.product.title}:`, variantError.message);
-        }
-      } else {
-        const newStock = Math.max(0, line.product.stock - line.qty);
-        const { error: stockError } = await supabase
-          .from("products")
-          .update({ stock: newStock })
-          .eq("id", line.product.id);
-        if (stockError) {
-          console.error(`فشل تحديث مخزون المنتج ${line.product.title}:`, stockError.message);
-        }
-      }
-    }
-
-    // تحديث الحالة محلياً فوراً
-    setProducts((prev) =>
-      prev.map((p) => {
-        const line = cartItems.find((l) => l.product.id === p.id && !l.variant);
-        return line ? { ...p, stock: Math.max(0, p.stock - line.qty) } : p;
-      })
-    );
-
-    setVariantsByProduct((prev) => {
-      const next = { ...prev };
-      cartItems.forEach((line) => {
-        if (line.variant) {
-          next[line.product.id] = (next[line.product.id] || []).map((v) =>
-            v.id === line.variant.id ? { ...v, quantity: Math.max(0, v.quantity - line.qty) } : v
-          );
-        }
-      });
-      return next;
-    });
-
-    // إفراغ السلة وبيانات الزبون بعد إتمام الطلب
+    // Update UI state (stock already adjusted server‑side, but keep local sync)
     setLastOrder(insertedOrder);
     setShowInvoicePrompt(true);
     setCart({});
