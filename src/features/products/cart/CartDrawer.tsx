@@ -1,4 +1,4 @@
-// CartDrawer.jsx
+// src/features/products/cart/CartDrawer.tsx
 import React from "react";
 import {
   ShoppingCart,
@@ -15,6 +15,72 @@ import {
 } from "lucide-react";
 import { LIBYA_CITIES, getAreasForCity } from "../../../libyaDeliveryData";
 
+// ─── الأنواع ───
+interface ProductData {
+  id: string;
+  title: string;
+  image?: string;
+  code?: string;
+  [key: string]: unknown;
+}
+
+interface VariantData {
+  size?: string;
+  color?: string;
+  price?: number;
+  [key: string]: unknown;
+}
+
+interface CartItemEntry {
+  key: string;
+  product: ProductData;
+  variant?: VariantData | null;
+  qty: number;
+}
+
+interface DeliveryInfoData {
+  rate: number;
+  days: number;
+}
+
+interface StoreSettingsData {
+  bank_account?: string;
+  [key: string]: unknown;
+}
+
+interface CartDrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cartItems?: CartItemEntry[];
+  totalQty?: number;
+  itemsSubtotal?: number;
+  deliveryCost?: number;
+  totalPrice?: number;
+  deliveryInfo?: DeliveryInfoData;
+  customerName: string;
+  setCustomerName: (name: string) => void;
+  customerPhone: string;
+  setCustomerPhone: (phone: string) => void;
+  deliveryCity: string;
+  setDeliveryCity: (city: string) => void;
+  deliveryArea: string;
+  setDeliveryArea: (area: string) => void;
+  customerAddress: string;
+  setCustomerAddress: (address: string) => void;
+  payment: string;
+  setPayment: (method: string) => void;
+  settings: StoreSettingsData | null;
+  copied: boolean;
+  onCopyAccount: () => void;
+  onInc: (key: string) => void;
+  onDec: (key: string) => void;
+  onRemoveItem: (key: string) => void;
+  getEffectivePrice: (product: ProductData, variant?: VariantData | null) => number;
+  onCheckout: () => void;
+  cartThumb?: React.ComponentType<{ product: ProductData }>;
+}
+
+// ─── المكون ───
 export default function CartDrawer({
   isOpen,
   onClose,
@@ -45,7 +111,7 @@ export default function CartDrawer({
   getEffectivePrice,
   onCheckout,
   cartThumb: CartThumb,
-}) {
+}: CartDrawerProps) {
   if (!isOpen) return null;
 
   return (
@@ -68,7 +134,6 @@ export default function CartDrawer({
           </div>
         ) : (
           <>
-            {/* منطقة محتوى السلة القابلة للتمرير على شاشات الهواتف */}
             <div className="cart-body">
               <div className="cart-scroll">
                 {cartItems.map(({ key, product, variant, qty }) => (
@@ -133,7 +198,6 @@ export default function CartDrawer({
                 />
               </div>
 
-              {/* حقول التوصيل المنظمة للمدن والمناطق الليبية */}
               <div className="field-block">
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
                   <div>
@@ -149,7 +213,7 @@ export default function CartDrawer({
                       }}
                       style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff", fontWeight: 700 }}
                     >
-                      {LIBYA_CITIES.map((c) => (
+                      {LIBYA_CITIES.map((c: string) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
@@ -165,7 +229,7 @@ export default function CartDrawer({
                       onChange={(e) => setDeliveryArea(e.target.value)}
                       style={{ width: "100%", height: "42px", padding: "0 10px", borderRadius: "12px", border: "1px solid var(--line)", background: "#fff" }}
                     >
-                      {getAreasForCity(deliveryCity).map((a) => (
+                      {getAreasForCity(deliveryCity).map((a: string) => (
                         <option key={a} value={a}>
                           {a}
                         </option>
@@ -219,7 +283,6 @@ export default function CartDrawer({
               </div>
             </div>
 
-            {/* تذييل السلة الثابت في الأسفل دائماً */}
             <div className="cart-total-row">
               <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "12px", fontSize: "13px", color: "var(--muted)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>

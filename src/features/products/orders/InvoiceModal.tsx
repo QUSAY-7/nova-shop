@@ -1,13 +1,39 @@
-// InvoiceModal.jsx
+// src/features/products/orders/InvoiceModal.tsx
 import React from "react";
 import { X } from "lucide-react";
+
+interface InvoiceItem {
+  title: string;
+  price: number;
+  qty: number;
+  size?: string;
+  color?: string;
+}
+
+interface InvoiceOrder {
+  id: string;
+  items: InvoiceItem[];
+  total_price: number;
+  customer_name: string;
+  customer_phone: string;
+  customer_address: string;
+  payment_method: string;
+  created_at: string;
+}
+
+interface InvoiceModalProps {
+  order: InvoiceOrder | null;
+  onClose: () => void;
+  storeName?: string;
+  onPrint: (order: InvoiceOrder) => void;
+}
 
 export default function InvoiceModal({
   order,
   onClose,
   storeName = "NOVA SHOP",
   onPrint,
-}) {
+}: InvoiceModalProps) {
   if (!order) return null;
 
   return (

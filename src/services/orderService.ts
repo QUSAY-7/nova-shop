@@ -1,9 +1,53 @@
-// src/services/orderService.js
+// src/services/orderService.ts
 import { supabase } from "../supabaseClient";
+import type { EzonePayload } from "../types";
 
-/**
- * دالة إرسال وحفظ الطلب عبر الخادم الآمن
- */
+// ─── أنواع المدخلات ───
+interface SubmitOrderParams {
+  customerName: string;
+  customerPhone: string;
+  customerAddress: string;
+  deliveryCity: string;
+  deliveryArea: string;
+  formattedFullAddress: string;
+  items: Array<{
+    product_id: string;
+    name: string;
+    price: number;
+    quantity: number;
+    size?: string;
+    color?: string;
+    image_url?: string;
+  }>;
+  paymentMethod: string;
+  shippingCost: number;
+}
+
+interface SubmitOrderResult {
+  order: { id: string; [key: string]: unknown };
+  verifiedTotal: number;
+}
+
+interface DispatchParams {
+  orderId: string;
+  customerName: string;
+  customerPhone: string;
+  deliveryCity: string;
+  deliveryArea: string;
+  formattedFullAddress: string;
+  items: SubmitOrderParams["items"];
+  totalPrice: number;
+  shippingCost: number;
+}
+
+interface EzonePaymentParams {
+  orderId: string;
+  customerName: string;
+  customerPhone: string;
+  totalPrice: number;
+}
+
+// ─── إرسال وحفظ الطلب ───
 export async function submitOrder({
   customerName,
   customerPhone,
@@ -14,7 +58,7 @@ export async function submitOrder({
   items,
   paymentMethod,
   shippingCost,
-}) {
+}: SubmitOrderParams): Promise<SubmitOrderResult> {
   const requestBody = {
     items,
     customer_name: customerName.trim(),
@@ -49,7 +93,6 @@ export async function submitOrder({
     throw new Error("لم يتم إرجاع بيانات الطلب من الخادم.");
   }
 
-  // إرسال تلقائي لشركة الشحن درب السبيل إن كانت مفعلة
   await dispatchDarbAssabil({
     orderId: insertedOrder.id,
     customerName,
@@ -68,9 +111,7 @@ export async function submitOrder({
   };
 }
 
-/**
- * إرسال الشحنة لشركة درب السبيل للتوصيل
- */
+// ─── إرسال الشحنة لدرب السبيل ───
 async function dispatchDarbAssabil({
   orderId,
   customerName,
@@ -81,15 +122,20 @@ async function dispatchDarbAssabil({
   items,
   totalPrice,
   shippingCost,
-}) {
+}: DispatchParams): Promise<void> {
   try {
-    const storedConfigs = JSON.parse(localStorage.getItem("nova_integration_providers_config") || "{}");
+    const storedConfigs = JSON.parse(
+      localStorage.getItem("nova_integration_providers_config") || "{}"
+    );
     const darbCfg = storedConfigs["darb_assabil"];
     if (darbCfg && darbCfg.isActive !== false && orderId) {
-      await supabase.from("orders").update({
-        tracking_number: `DS-${orderId}`,
-        delivery_provider: "darb_assabil",
-      }).eq("id", orderId);
+      await supabase
+        .from("orders")
+        .update({
+          tracking_number: `DS-${orderId}`,
+          delivery_provider: "darb_assabil",
+        })
+        .eq("id", orderId);
 
       await fetch("/api/dispatch-shipment", {
         method: "POST",
@@ -114,28 +160,28 @@ async function dispatchDarbAssabil({
   }
 }
 
-/**
- * بدء عملية الدفع الإلكتروني عبر Ezone Pay
- */
+// ─── الدفع الإلكتروني عبر Ezone ───
 export async function initiateEzonePayment({
   orderId,
   customerName,
   customerPhone,
   totalPrice,
-}) {
+}: EzonePaymentParams): Promise<string> {
   const nameParts = (customerName || "زبون المتجر").trim().split(" ");
   let firstName = nameParts[0] || "زبون";
   let lastName = nameParts.slice(1).join(" ") || "المتجر";
-  if (firstName.length < 3) firstName = firstName + "...".slice(0, 3 - firstName.length);
-  if (lastName.length < 3) lastName = lastName + "...".slice(0, 3 - lastName.length);
+  if (firstName.length < 3)
+    firstName = firstName + "...".slice(0, 3 - firstName.length);
+  if (lastName.length < 3)
+    lastName = lastName + "...".slice(0, 3 - lastName.length);
 
-  const ezonePayload = {
+  const ezonePayload: EzonePayload = {
     Title: `طلب متجر #${orderId}`,
     OrderReference: `ORD-${orderId}`,
     IsUniqueOrderReference: true,
     InternalReference: `NOVA-${orderId}`,
     Amount: Number(totalPrice),
-    Currency: 1, // 1 = LYD
+    Currency: 1,
     Note: "طلب شراء عبر المتجر الإلكتروني",
     Customer: {
       FirstName: firstName,

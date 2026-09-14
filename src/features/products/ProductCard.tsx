@@ -1,7 +1,54 @@
-// src/features/products/ProductCard.jsx
+// src/features/products/ProductCard.tsx
 import React from "react";
-import { Copy, Plus, Minus, LayoutGrid } from "lucide-react";
+import { Copy, Plus, Minus, LayoutGrid, type LucideIcon } from "lucide-react";
 
+// ─── الأنواع ───
+interface ProductData {
+  id: string;
+  title: string;
+  description?: string;
+  desc?: string;
+  image?: string;
+  category?: string;
+  stock: number;
+  compare_at?: number;
+  compareAt?: number;
+  [key: string]: unknown;
+}
+
+interface VariantOption {
+  size?: string;
+  color?: string;
+  [key: string]: unknown;
+}
+
+interface SelectedVariantMap {
+  [productId: string]: {
+    size?: string;
+    color?: string;
+  };
+}
+
+interface ProductCardProps {
+  product: ProductData;
+  variantOptions?: VariantOption[];
+  selectedVariant?: VariantOption | null;
+  selectedVariants?: SelectedVariantMap;
+  onSelectVariant: (productId: string, field: string, value: string) => void;
+  effectivePrice: number;
+  effectiveStock: number;
+  qty?: number;
+  onAddToCart: (product: ProductData) => void;
+  onInc: (cartKey: string) => void;
+  onDec: (cartKey: string) => void;
+  cartKeyStr: string;
+  onOpenGallery: (product: ProductData) => void;
+  onShare: (product: ProductData) => void;
+  productImages?: string[];
+  categoryIcon?: LucideIcon;
+}
+
+// ─── المكون ───
 export default function ProductCard({
   product,
   variantOptions = [],
@@ -19,7 +66,7 @@ export default function ProductCard({
   onShare,
   productImages = [],
   categoryIcon: CategoryIcon = LayoutGrid,
-}) {
+}: ProductCardProps) {
   const hasVariants = variantOptions.length > 0;
   const compareAt = product.compare_at ?? product.compareAt ?? null;
   const sizeOptions = Array.from(new Set(variantOptions.map((v) => v.size).filter(Boolean)));

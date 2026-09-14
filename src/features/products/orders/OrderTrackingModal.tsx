@@ -1,6 +1,52 @@
-// OrderTrackingModal.jsx
+// src/features/products/orders/OrderTrackingModal.tsx
 import React from "react";
 import { Package, X, Lock, MessageCircle, Search } from "lucide-react";
+
+interface OrderItem {
+  title: string;
+  qty: number;
+  price: number;
+  size?: string;
+  color?: string;
+}
+
+interface TrackedOrder {
+  id: string;
+  total_price: number;
+  created_at: string;
+  status?: string;
+  items: OrderItem[];
+  customer_name: string;
+  customer_phone: string;
+  customer_address: string;
+  payment_method: string;
+}
+
+interface OrderTrackingModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  orderTab: "local" | "lookup";
+  setOrderTab: (tab: "local" | "lookup") => void;
+  localOrders?: TrackedOrder[];
+  lookupPhone: string;
+  setLookupPhone: (phone: string) => void;
+  otpSent: boolean;
+  setOtpSent: (sent: boolean) => void;
+  otpCode: string;
+  setOtpCode: (code: string) => void;
+  otpInput: string;
+  setOtpInput: (input: string) => void;
+  otpVerified: boolean;
+  setOtpVerified: (verified: boolean) => void;
+  myOrders?: TrackedOrder[];
+  setMyOrders: (orders: TrackedOrder[]) => void;
+  myOrdersLoading: boolean;
+  myOrdersSearched: boolean;
+  setMyOrdersSearched: (searched: boolean) => void;
+  onSendOtp: () => void;
+  onVerifyOtp: () => void;
+  onViewInvoice: (order: TrackedOrder) => void;
+}
 
 export default function OrderTrackingModal({
   isOpen,
@@ -26,7 +72,7 @@ export default function OrderTrackingModal({
   onSendOtp,
   onVerifyOtp,
   onViewInvoice,
-}) {
+}: OrderTrackingModalProps) {
   if (!isOpen) return null;
 
   const handleClose = () => {
@@ -82,7 +128,6 @@ export default function OrderTrackingModal({
 
         {orderTab === "lookup" ? (
           <div className="field-block" style={{ marginTop: 0, flex: 1, overflowY: "auto" }}>
-            {/* ── الخطوة 1: إدخال رقم الهاتف ── */}
             {!otpSent && (
               <>
                 <div style={{ textAlign: "center", padding: "16px 0 10px", fontSize: "13px", color: "var(--muted)", lineHeight: 1.7 }}>
@@ -103,7 +148,6 @@ export default function OrderTrackingModal({
               </>
             )}
 
-            {/* ── الخطوة 2: إدخال OTP ── */}
             {otpSent && !otpVerified && (
               <>
                 <div style={{ textAlign: "center", padding: "12px", background: "var(--teal-light)", borderRadius: "14px", marginBottom: "14px", marginTop: "8px" }}>
@@ -140,7 +184,6 @@ export default function OrderTrackingModal({
               </>
             )}
 
-            {/* ── الخطوة 3: النتائج ── */}
             {otpVerified && (
               <div className="cart-scroll" style={{ marginTop: "12px" }}>
                 {myOrdersLoading ? (
