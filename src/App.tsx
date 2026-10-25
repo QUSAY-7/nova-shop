@@ -852,14 +852,26 @@ export default function App() {
         .badge-pulse svg{ width:18px; height:18px; color:#fff; }
 
         /* ---------- Sections & Clear Dividers ---------- */
-        .section{ padding: 14px 0; }
+        .section{ padding: 0; margin: 0; }
         .section-box{
           background: var(--surface);
-          border: 1.5px solid var(--line);
-          border-radius: 22px;
+          border-top: 2px solid var(--line);
+          border-bottom: 2px solid var(--line);
+          border-left: none;
+          border-right: none;
+          border-radius: 0;
           padding: 22px 16px;
           box-shadow: 0 4px 18px rgba(11, 32, 39, 0.035);
           position: relative;
+          width: 100%;
+          margin-bottom: 12px;
+        }
+        /* على الشاشات الكبيرة نضيف padding جانبي مريح */
+        @media (min-width: 640px){
+          .section-box{ padding: 28px 32px; }
+        }
+        @media (min-width: 1024px){
+          .section-box{ padding: 32px 64px; }
         }
         .section-head{
           display: flex;
@@ -893,53 +905,48 @@ export default function App() {
           gap: 4px;
         }
 
-        /* ---------- Horizontal Featured Products Scroll ---------- */
-        .scroll-arrows{
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-        .scroll-arrow-btn{
-          width: 32px;
-          height: 32px;
-          border-radius: 999px;
-          background: var(--teal-light);
-          color: var(--teal-dark);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid var(--line);
-          cursor: pointer;
-          transition: all .15s ease;
-        }
-        .scroll-arrow-btn:hover{
-          background: var(--teal);
-          color: #fff;
-        }
+        /* ---------- شريط التمرير الرمادي الأنيق للمنتجات المميزة ---------- */
         .featured-scroll{
           display: flex;
-          gap: 14px;
+          gap: 16px;
           overflow-x: auto;
           scroll-snap-type: x mandatory;
           -webkit-overflow-scrolling: touch;
-          padding: 8px 4px 12px;
-          scrollbar-width: none !important;
-          -ms-overflow-style: none !important;
+          padding: 8px 4px 16px;
+          scrollbar-width: thin;
+          scrollbar-color: #CBD5E1 #F1F5F9;
         }
         .featured-scroll::-webkit-scrollbar{
-          display: none !important;
-          width: 0 !important;
-          height: 0 !important;
+          height: 8px;
+          display: block;
+        }
+        .featured-scroll::-webkit-scrollbar-track{
+          background: #EEF2F6;
+          border-radius: 999px;
+        }
+        .featured-scroll::-webkit-scrollbar-thumb{
+          background: #CBD5E1;
+          border-radius: 999px;
+          transition: background .2s ease;
+        }
+        .featured-scroll::-webkit-scrollbar-thumb:hover{
+          background: var(--teal);
         }
         .featured-card{
-          flex: 0 0 205px;
-          max-width: 220px;
+          flex: 0 0 215px;
+          max-width: 230px;
           scroll-snap-align: start;
         }
         @media (min-width: 640px){
           .featured-card{
-            flex: 0 0 230px;
-            max-width: 240px;
+            flex: 0 0 235px;
+            max-width: 250px;
+          }
+        }
+        @media (min-width: 1024px){
+          .featured-card{
+            flex: 0 0 250px;
+            max-width: 270px;
           }
         }
 
@@ -1421,67 +1428,41 @@ export default function App() {
       {/* ===== Featured Products (قسم أفقي للمنتجات المميزة) ===== */}
       {!loading && featuredProducts.length > 0 && (
         <section id="featured" className="section">
-          <div className="container">
-            <div className="section-box">
-              <div className="section-head">
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <h2 className="section-title">
-                    <Sparkles size={20} color="var(--teal)" /> منتجات مميزة
-                  </h2>
-                  <span className="section-badge">
-                    <Star size={12} fill="var(--teal)" color="var(--teal)" /> مختاراتنا الأكثر طلباً
-                  </span>
-                </div>
-                <div className="scroll-arrows">
-                  <button
-                    type="button"
-                    onClick={() => scrollFeatured("right")}
-                    className="scroll-arrow-btn"
-                    title="السابق"
-                    aria-label="السابق"
-                  >
-                    <ChevronRight size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => scrollFeatured("left")}
-                    className="scroll-arrow-btn"
-                    title="التالي"
-                    aria-label="التالي"
-                  >
-                    <ChevronLeft size={18} />
-                  </button>
-                </div>
+          <div className="section-box">
+            <div className="section-head">
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <h2 className="section-title">منتجات مميزة</h2>
+                <span className="section-badge">مختاراتنا الأكثر طلباً</span>
               </div>
-              <div className="featured-scroll" ref={featuredScrollRef}>
-                {featuredProducts.map((product) => {
-                  const variantOptions = getVariantsForProduct(product.id);
-                  const selectedVariant = variantOptions.length > 0 ? getSelectedVariant(product.id) : null;
-                  const key = cartKey(product.id, selectedVariant);
-                  return (
-                    <div key={`feat-${product.id}`} className="featured-card">
-                      <ProductCard
-                        product={product}
-                        variantOptions={variantOptions}
-                        selectedVariant={selectedVariant}
-                        selectedVariants={selectedVariants}
-                        onSelectVariant={setSelectedVariant}
-                        effectivePrice={getEffectivePrice(product, selectedVariant)}
-                        effectiveStock={variantOptions.length > 0 ? (selectedVariant ? getEffectiveStock(product, selectedVariant) : 0) : product.stock}
-                        qty={cart[key]?.qty || 0}
-                        onAddToCart={addToCart}
-                        onInc={inc}
-                        onDec={dec}
-                        cartKeyStr={key}
-                        onOpenGallery={openGallery}
-                        onShare={handleShare}
-                        productImages={getProductImages(product)}
-                        categoryIcon={getCategoryIcon(product.category)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+            </div>
+            <div className="featured-scroll">
+              {featuredProducts.map((product) => {
+                const variantOptions = getVariantsForProduct(product.id);
+                const selectedVariant = variantOptions.length > 0 ? getSelectedVariant(product.id) : null;
+                const key = cartKey(product.id, selectedVariant);
+                return (
+                  <div key={`feat-${product.id}`} className="featured-card">
+                    <ProductCard
+                      product={product}
+                      variantOptions={variantOptions}
+                      selectedVariant={selectedVariant}
+                      selectedVariants={selectedVariants}
+                      onSelectVariant={setSelectedVariant}
+                      effectivePrice={getEffectivePrice(product, selectedVariant)}
+                      effectiveStock={variantOptions.length > 0 ? (selectedVariant ? getEffectiveStock(product, selectedVariant) : 0) : product.stock}
+                      qty={cart[key]?.qty || 0}
+                      onAddToCart={addToCart}
+                      onInc={inc}
+                      onDec={dec}
+                      cartKeyStr={key}
+                      onOpenGallery={openGallery}
+                      onShare={handleShare}
+                      productImages={getProductImages(product)}
+                      categoryIcon={getCategoryIcon(product.category)}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -1489,8 +1470,7 @@ export default function App() {
 
       {/* ===== Products ===== */}
       <section id="products" className="section">
-        <div className="container">
-          <div className="section-box">
+        <div className="section-box">
             <div className="section-head">
               <h2 className="section-title">
                 <LayoutGrid size={20} color="var(--teal)" /> كل المنتجات
@@ -1577,14 +1557,12 @@ export default function App() {
               </>
             )}
           </div>
-        </div>
       </section>
 
       {/* ===== Why ===== */}
       <section id="why" className="section">
-        <div className="container">
-          <div className="section-box">
-            <div className="section-head">
+        <div className="section-box">
+          <div className="section-head">
               <h2 className="section-title">
                 <ShieldCheck size={20} color="var(--teal)" /> لماذا تتسوق من {settings?.store_name || "متجرنا"}
               </h2>
@@ -1602,13 +1580,11 @@ export default function App() {
               ))}
             </div>
           </div>
-        </div>
       </section>
 
       {/* ===== FAQ ===== */}
       <section id="faq" className="section">
-        <div className="container">
-          <div className="section-box">
+        <div className="section-box">
             <div className="section-head">
               <h2 className="section-title">
                 <MessageCircle size={20} color="var(--teal)" /> الأسئلة الشائعة
@@ -1629,7 +1605,6 @@ export default function App() {
               ))}
             </div>
           </div>
-        </div>
       </section>
 
       {/* ===== Footer ===== */}
