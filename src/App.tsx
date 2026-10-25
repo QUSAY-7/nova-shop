@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   ShoppingCart,
   Package,
@@ -132,6 +132,16 @@ export default function App() {
   const [otpInput, setOtpInput] = useState("");
   const [otpVerified, setOtpVerified] = useState(false);
 
+  // مرجع شريط التمرير للمنتجات المميزة
+  const featuredScrollRef = useRef(null);
+  const scrollFeatured = (direction) => {
+    if (featuredScrollRef.current) {
+      // التمرير في الاتجاه المطلوب (RTL يدعم left بإشارة سالبة/موجبة)
+      const amount = direction === "left" ? -280 : 280;
+      featuredScrollRef.current.scrollBy({ left: amount, behavior: "smooth" });
+    }
+  };
+
   // تحميل طلبات الجهاز المحفوظة تلقائياً
   useEffect(() => {
     try {
@@ -221,13 +231,34 @@ export default function App() {
     return () => { isMounted = false; };
   }, []);
 
+  // توحيد وتصحيح التصنيفات المتشابهة لتفادي تكرار "ساعات نساىية" و "ساعات نسائية"
+  const cleanCategoryName = (cat) => {
+    if (!cat) return "";
+    let c = cat.trim();
+    if (
+      c === "ساعات نساىية" ||
+      c === "ساعات نسايه" ||
+      c === "ساعات نسائيه" ||
+      c.includes("ساعات نسائ") ||
+      c.includes("ساعات نساى")
+    ) {
+      return "ساعات نسائية";
+    }
+    return c;
+  };
+
   const CATEGORIES = useMemo(() => {
-    const unique = Array.from(new Set(products.map((p) => p.category).filter(Boolean)));
+    const unique = Array.from(
+      new Set(products.map((p) => cleanCategoryName(p.category)).filter(Boolean))
+    );
     return ["الكل", ...unique];
   }, [products]);
 
   const filteredProducts = useMemo(() => {
-    let list = activeCategory === "الكل" ? products : products.filter((p) => p.category === activeCategory);
+    let list =
+      activeCategory === "الكل"
+        ? products
+        : products.filter((p) => cleanCategoryName(p.category) === activeCategory);
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(
@@ -863,35 +894,182 @@ export default function App() {
         }
 
         /* ---------- Horizontal Featured Products Scroll ---------- */
+        .scroll-arrows{
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .scroll-arrow-btn{
+          width: 32px;
+          height: 32px;
+          border-radius: 999px;
+          background: var(--teal-light);
+          color: var(--teal-dark);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--line);
+          cursor: pointer;
+          transition: all .15s ease;
+        }
+        .scroll-arrow-btn:hover{
+          background: var(--teal);
+          color: #fff;
+        }
         .featured-scroll{
           display: flex;
-          gap: 12px;
+          gap: 14px;
           overflow-x: auto;
           scroll-snap-type: x mandatory;
           -webkit-overflow-scrolling: touch;
-          padding: 4px 2px 14px;
-          scrollbar-width: thin;
+          padding: 8px 4px 12px;
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
         }
         .featured-scroll::-webkit-scrollbar{
-          height: 5px;
-        }
-        .featured-scroll::-webkit-scrollbar-track{
-          background: var(--line);
-          border-radius: 999px;
-        }
-        .featured-scroll::-webkit-scrollbar-thumb{
-          background: var(--teal);
-          border-radius: 999px;
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
         }
         .featured-card{
-          flex: 0 0 200px;
-          max-width: 215px;
+          flex: 0 0 205px;
+          max-width: 220px;
           scroll-snap-align: start;
         }
         @media (min-width: 640px){
           .featured-card{
             flex: 0 0 230px;
             max-width: 240px;
+          }
+        }
+
+        /* ---------- شريط البحث والفلاتر المنظم ---------- */
+        .search-filter-wrapper{
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-bottom: 18px;
+          background: #F8FAFB;
+          border: 1px solid var(--line);
+          padding: 14px;
+          border-radius: 16px;
+        }
+        .search-box{
+          position: relative;
+          width: 100%;
+        }
+        .search-icon-inside{
+          position: absolute;
+          right: 14px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--muted);
+          pointer-events: none;
+          display: flex;
+          align-items: center;
+        }
+        .search-input{
+          width: 100%;
+          padding: 11px 40px 11px 36px;
+          border-radius: 12px;
+          border: 1.5px solid var(--line);
+          background: #fff;
+          font-family: inherit;
+          font-size: 13.5px;
+          color: var(--ink);
+          outline: none;
+          box-sizing: border-box;
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .search-input:focus{
+          border-color: var(--teal);
+          box-shadow: 0 0 0 3px rgba(14,124,134,0.1);
+        }
+        .search-clear{
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 22px;
+          height: 22px;
+          border-radius: 999px;
+          background: #E2E8F0;
+          color: var(--muted);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          line-height: 1;
+          cursor: pointer;
+          border: none;
+        }
+        .filters-row{
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .sort-select{
+          flex: 2 1 180px;
+          padding: 10px 14px;
+          border-radius: 12px;
+          border: 1.5px solid var(--line);
+          background: #fff;
+          font-family: inherit;
+          font-size: 13px;
+          color: var(--ink);
+          outline: none;
+          cursor: pointer;
+          transition: border-color .15s ease;
+        }
+        .sort-select:focus{
+          border-color: var(--teal);
+        }
+        .price-input{
+          flex: 1 1 110px;
+          padding: 10px 14px;
+          border-radius: 12px;
+          border: 1.5px solid var(--line);
+          background: #fff;
+          font-family: inherit;
+          font-size: 13px;
+          color: var(--ink);
+          outline: none;
+          transition: border-color .15s ease;
+        }
+        .price-input:focus{
+          border-color: var(--teal);
+        }
+        .filter-reset-btn{
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 10px 14px;
+          border-radius: 12px;
+          background: #FEE2E2;
+          color: #DC2626;
+          font-size: 12.5px;
+          font-weight: 700;
+          cursor: pointer;
+          border: none;
+          transition: background .15s;
+        }
+        .filter-reset-btn:hover{
+          background: #FECACA;
+        }
+
+        @media (min-width: 768px){
+          .search-filter-wrapper{
+            flex-direction: row;
+            align-items: center;
+            gap: 16px;
+          }
+          .search-box{
+            flex: 1 1 340px;
+          }
+          .filters-row{
+            flex: 1 1 auto;
+            justify-content: flex-end;
           }
         }
         .features-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
@@ -1246,14 +1424,36 @@ export default function App() {
           <div className="container">
             <div className="section-box">
               <div className="section-head">
-                <h2 className="section-title">
-                  <Sparkles size={20} color="var(--teal)" /> منتجات مميزة
-                </h2>
-                <span className="section-badge">
-                  <Star size={12} fill="var(--teal)" color="var(--teal)" /> مختاراتنا الأكثر طلباً
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <h2 className="section-title">
+                    <Sparkles size={20} color="var(--teal)" /> منتجات مميزة
+                  </h2>
+                  <span className="section-badge">
+                    <Star size={12} fill="var(--teal)" color="var(--teal)" /> مختاراتنا الأكثر طلباً
+                  </span>
+                </div>
+                <div className="scroll-arrows">
+                  <button
+                    type="button"
+                    onClick={() => scrollFeatured("right")}
+                    className="scroll-arrow-btn"
+                    title="السابق"
+                    aria-label="السابق"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => scrollFeatured("left")}
+                    className="scroll-arrow-btn"
+                    title="التالي"
+                    aria-label="التالي"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                </div>
               </div>
-              <div className="featured-scroll">
+              <div className="featured-scroll" ref={featuredScrollRef}>
                 {featuredProducts.map((product) => {
                   const variantOptions = getVariantsForProduct(product.id);
                   const selectedVariant = variantOptions.length > 0 ? getSelectedVariant(product.id) : null;
