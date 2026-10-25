@@ -646,28 +646,18 @@ export default function App() {
           display: block;
         }
 
-        .hero-split-banner::after {
-          content: '';
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 80px;
-          background: linear-gradient(to top, var(--bg), transparent);
-          pointer-events: none;
-        }
-
         .hero-split-content {
           position: relative;
           z-index: 2;
           width: 100%;
           max-width: 800px;
-          margin: -30px auto 0;
-          padding: 0 16px 32px;
+          margin: 0 auto;
+          padding: 24px 16px 32px;
           display: flex;
           flex-direction: column;
           align-items: center;
           text-align: center;
+          background: var(--bg);
         }
 
         .hero-split-content .h1-split {
@@ -676,14 +666,14 @@ export default function App() {
           font-size: clamp(1.6rem, 3.5vw, 2.4rem);
           font-weight: 900;
           line-height: 1.4;
-          margin: 0 0 10px;
+          margin: 0 0 8px;
         }
 
         .hero-split-content .h1-sub-split {
           color: var(--muted);
           font-size: 14px;
-          line-height: 1.8;
-          max-width: 560px;
+          line-height: 1.6;
+          max-width: 700px;
           margin: 0 auto 16px;
         }
 
@@ -717,12 +707,10 @@ export default function App() {
 
         @media (min-width: 640px) {
           .hero-split-banner { aspect-ratio: 16/6; }
-          .hero-split-content { margin-top: -40px; }
         }
 
         @media (min-width: 1024px) {
           .hero-split-banner { aspect-ratio: 16/5; }
-          .hero-split-content { margin-top: -50px; }
         }
 
         .hero .container {
@@ -1078,7 +1066,7 @@ export default function App() {
             )}
 
             {(settings?.store_description || settings?.description) && (
-              <p className="h1-sub-split" style={{ whiteSpace:"pre-line" }}>
+              <p className="h1-sub-split">
                 {settings.store_description || settings.description}
               </p>
             )}
