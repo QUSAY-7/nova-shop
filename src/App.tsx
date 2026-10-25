@@ -625,6 +625,106 @@ export default function App() {
           );
         }
 
+        /* ===== تصميم الهيرو المقسّم (صورة فوق + نصوص تحت) ===== */
+        .hero-split {
+          min-height: auto;
+          padding: 0;
+          background: none;
+        }
+
+        .hero-split-banner {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 16/7;
+          overflow: hidden;
+        }
+
+        .hero-split-banner img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .hero-split-banner::after {
+          content: '';
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          height: 80px;
+          background: linear-gradient(to top, var(--bg), transparent);
+          pointer-events: none;
+        }
+
+        .hero-split-content {
+          position: relative;
+          z-index: 2;
+          width: 100%;
+          max-width: 800px;
+          margin: -30px auto 0;
+          padding: 0 16px 32px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+        }
+
+        .hero-split-content .h1-split {
+          font-family: 'Almarai', sans-serif;
+          color: var(--ink);
+          font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+          font-weight: 900;
+          line-height: 1.4;
+          margin: 0 0 10px;
+        }
+
+        .hero-split-content .h1-sub-split {
+          color: var(--muted);
+          font-size: 14px;
+          line-height: 1.8;
+          max-width: 560px;
+          margin: 0 auto 16px;
+        }
+
+        .hero-split-content .eyebrow {
+          margin-bottom: 12px;
+        }
+
+        .hero-split-content .trust-row {
+          display: flex;
+          flex-direction: row;
+          justify-content: center;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 8px;
+          width: 100%;
+        }
+
+        .hero-split-content .trust-item {
+          background: var(--surface);
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          padding: 8px 16px;
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .hero-split-content .trust-item svg { color: var(--teal); }
+        .hero-split-content .trust-item span { color: var(--ink); font-size: 12px; font-weight: 700; }
+
+        @media (min-width: 640px) {
+          .hero-split-banner { aspect-ratio: 16/6; }
+          .hero-split-content { margin-top: -40px; }
+        }
+
+        @media (min-width: 1024px) {
+          .hero-split-banner { aspect-ratio: 16/5; }
+          .hero-split-content { margin-top: -50px; }
+        }
+
         .hero .container {
           position: relative;
           z-index: 2;
@@ -948,16 +1048,14 @@ export default function App() {
         cartThumb={CartThumb}
       />
 
-      {/* ===== Hero — خلفية كاملة مثل البُعد الحديث ===== */}
-      <section
-        id="home"
-        className="hero"
-        style={{ backgroundImage: heroBackground }}
-      >
-        <div className={`hero-overlay${hasCustomHero ? ' hero-overlay--custom' : ''}`} />
-
-        <div className="container">
-          <div className="hero-top">
+      {/* ===== Hero ===== */}
+      {hasCustomHero ? (
+        /* ── تصميم مقسّم: صورة بانر فوق + نصوص تحت ── */
+        <section id="home" className="hero-split">
+          <div className="hero-split-banner">
+            <img src={settings!.hero_image} alt={settings?.store_name || "بانر المتجر"} />
+          </div>
+          <div className="hero-split-content">
             <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", justifyContent:"center" }}>
               <span className="eyebrow">
                 📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
@@ -975,14 +1073,12 @@ export default function App() {
               )}
             </div>
 
-            {/* اسم المتجر */}
             {settings?.store_name && (
-              <h1 className="h1">{settings.store_name}</h1>
+              <h1 className="h1-split">{settings.store_name}</h1>
             )}
 
-            {/* وصف المتجر */}
             {(settings?.store_description || settings?.description) && (
-              <p className="h1-sub" style={{ whiteSpace:"pre-line", maxWidth:"560px", margin:"0 auto 12px", lineHeight:1.8 }}>
+              <p className="h1-sub-split" style={{ whiteSpace:"pre-line" }}>
                 {settings.store_description || settings.description}
               </p>
             )}
@@ -1000,9 +1096,60 @@ export default function App() {
               ))}
             </div>
           </div>
+        </section>
+      ) : (
+        /* ── تصميم افتراضي: خلفية داكنة + أنيميشن ── */
+        <section
+          id="home"
+          className="hero"
+          style={{ backgroundImage: heroBackground }}
+        >
+          <div className="hero-overlay" />
 
-          {/* أنيميشن الطرد — يظهر فقط إذا لم تُضَف صورة هيرو مخصصة */}
-          {!hasCustomHero && (
+          <div className="container">
+            <div className="hero-top">
+              <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", justifyContent:"center" }}>
+                <span className="eyebrow">
+                  📍 {settings?.store_city ? `${settings.store_city} — ${settings.store_area || ""}` : "توصيل لكل مدن ليبيا"} 🇱🇾
+                </span>
+                {settings?.store_map_link && (
+                  <a
+                    href={settings.store_map_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="eyebrow"
+                    style={{ background:"#E0F2FE", color:"#0369A1", display:"inline-flex", alignItems:"center", gap:4, textDecoration:"underline", cursor:"pointer" }}
+                  >
+                    🗺️ موقعنا على الخريطة ↗
+                  </a>
+                )}
+              </div>
+
+              {settings?.store_name && (
+                <h1 className="h1">{settings.store_name}</h1>
+              )}
+
+              {(settings?.store_description || settings?.description) && (
+                <p className="h1-sub" style={{ whiteSpace:"pre-line", maxWidth:"560px", margin:"0 auto 12px", lineHeight:1.8 }}>
+                  {settings.store_description || settings.description}
+                </p>
+              )}
+
+              <div className="trust-row">
+                {[
+                  { icon: Truck, label: "شحن لكل المدن" },
+                  { icon: ShieldCheck, label: "فحص قبل الدفع" },
+                  { icon: MessageCircle, label: "دعم واتساب" },
+                ].map(({ icon: Icon, label }) => (
+                  <div key={label} className="trust-item">
+                    <Icon size={18} />
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* أنيميشن الطرد — يظهر فقط بدون صورة مخصصة */}
             <div className="parcel-wrap">
               <div className="parcel-glow" />
               <div className="parcel-float">
@@ -1016,9 +1163,9 @@ export default function App() {
                 </div>
               </div>
             </div>
-          )}
-        </div>
-      </section>
+          </div>
+        </section>
+      )}
 
       {/* ===== Products ===== */}
       <section id="products" className="section">
