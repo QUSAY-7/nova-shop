@@ -29,6 +29,9 @@ import {
   Trash2,
   Wallet,
   WalletMinimal,
+  Sparkles,
+  Star,
+  Flame,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
@@ -237,6 +240,17 @@ export default function App() {
     else if (sortBy === "price-desc") list = [...list].sort((a, b) => b.price - a.price);
     return list;
   }, [activeCategory, products, searchQuery, sortBy, minPrice, maxPrice]);
+
+  // المنتجات المميزة (لعرضها في قسم أفقي مميز)
+  const featuredProducts = useMemo(() => {
+    const explicit = products.filter((p) => p.is_featured || p.featured);
+    if (explicit.length > 0) return explicit;
+    const withDiscount = products.filter(
+      (p) => (p.compare_at && Number(p.compare_at) > Number(p.price)) || (p.compareAt && Number(p.compareAt) > Number(p.price))
+    );
+    if (withDiscount.length > 0) return withDiscount.slice(0, 8);
+    return products.slice(0, 6);
+  }, [products]);
 
   const getVariantsForProduct = (productId) => variantsByProduct[productId] || [];
 
@@ -806,9 +820,80 @@ export default function App() {
         @keyframes pulseRing{ 0%{box-shadow:0 0 0 0 rgba(14,124,134,.35);} 100%{box-shadow:0 0 0 14px rgba(14,124,134,0);} }
         .badge-pulse svg{ width:18px; height:18px; color:#fff; }
 
-        /* ---------- Sections ---------- */
-        .section{ padding:24px 0; }
-        .section-title{ font-family:'Almarai',sans-serif; font-weight:800; font-size:19px; margin-bottom:14px; }
+        /* ---------- Sections & Clear Dividers ---------- */
+        .section{ padding: 14px 0; }
+        .section-box{
+          background: var(--surface);
+          border: 1.5px solid var(--line);
+          border-radius: 22px;
+          padding: 22px 16px;
+          box-shadow: 0 4px 18px rgba(11, 32, 39, 0.035);
+          position: relative;
+        }
+        .section-head{
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 18px;
+          padding-bottom: 12px;
+          border-bottom: 1.5px solid var(--line);
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .section-title{
+          font-family: 'Almarai', sans-serif;
+          font-weight: 800;
+          font-size: 18px;
+          margin: 0;
+          color: var(--ink);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .section-badge{
+          font-size: 11px;
+          font-weight: 700;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: var(--teal-light);
+          color: var(--teal-dark);
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        /* ---------- Horizontal Featured Products Scroll ---------- */
+        .featured-scroll{
+          display: flex;
+          gap: 12px;
+          overflow-x: auto;
+          scroll-snap-type: x mandatory;
+          -webkit-overflow-scrolling: touch;
+          padding: 4px 2px 14px;
+          scrollbar-width: thin;
+        }
+        .featured-scroll::-webkit-scrollbar{
+          height: 5px;
+        }
+        .featured-scroll::-webkit-scrollbar-track{
+          background: var(--line);
+          border-radius: 999px;
+        }
+        .featured-scroll::-webkit-scrollbar-thumb{
+          background: var(--teal);
+          border-radius: 999px;
+        }
+        .featured-card{
+          flex: 0 0 200px;
+          max-width: 215px;
+          scroll-snap-align: start;
+        }
+        @media (min-width: 640px){
+          .featured-card{
+            flex: 0 0 230px;
+            max-width: 240px;
+          }
+        }
         .features-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
         .feature-card{ padding:16px; border-radius:18px; background:var(--surface); border:1px solid var(--line); }
         .feature-icon{ width:36px; height:36px; border-radius:12px; background:var(--teal-light); display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
@@ -1155,102 +1240,167 @@ export default function App() {
         </section>
       )}
 
-      {/* ===== Products ===== */}
-      <section id="products" className="section">
-        <div className="container">
-          <h2 className="section-title">منتجاتنا</h2>
-
-          {loading ? (
-            <div className="state-box">جاري تحميل المنتجات...</div>
-          ) : loadError ? (
-            <div className="state-box">تعذّر تحميل المنتجات: {loadError}</div>
-          ) : products.length === 0 ? (
-            <div className="state-box">لا توجد منتجات حالياً</div>
-          ) : (
-            <>
-              <div className="search-filter-wrapper">
-                <div className="search-box">
-                  <span className="search-icon-inside"><Search size={14} /></span>
-                  <input
-                    type="text"
-                    className="search-input"
-                    placeholder="بحث عن منتج..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                  {searchQuery && (
-                    <button className="search-clear" onClick={() => setSearchQuery("")}>×</button>
-                  )}
-                </div>
-                <div className="filters-row">
-                  <select className="sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                    <option value="default">الترتيب الافتراضي</option>
-                    <option value="price-asc">السعر: الأقل أولاً</option>
-                    <option value="price-desc">السعر: الأعلى أولاً</option>
-                  </select>
-                  <input type="number" className="price-input" placeholder="من (د.ل)" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
-                  <input type="number" className="price-input" placeholder="إلى (د.ل)" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
-                </div>
-                {(searchQuery || minPrice || maxPrice || sortBy !== "default") && (
-                  <button className="filter-reset-btn" onClick={() => { setSearchQuery(""); setMinPrice(""); setMaxPrice(""); setSortBy("default"); }}>
-                    <RotateCcw size={12} /> إعادة ضبط
-                  </button>
-                )}
+      {/* ===== Featured Products (قسم أفقي للمنتجات المميزة) ===== */}
+      {!loading && featuredProducts.length > 0 && (
+        <section id="featured" className="section">
+          <div className="container">
+            <div className="section-box">
+              <div className="section-head">
+                <h2 className="section-title">
+                  <Sparkles size={20} color="var(--teal)" /> منتجات مميزة
+                </h2>
+                <span className="section-badge">
+                  <Star size={12} fill="var(--teal)" color="var(--teal)" /> مختاراتنا الأكثر طلباً
+                </span>
               </div>
-
-              <div className="cat-tabs">
-                {CATEGORIES.map((cat) => (
-                  <button key={cat} onClick={() => setActiveCategory(cat)} className={`cat-tab ${activeCategory === cat ? "active" : ""}`}>
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              <div className="product-grid">
-                {filteredProducts.map((product) => {
+              <div className="featured-scroll">
+                {featuredProducts.map((product) => {
                   const variantOptions = getVariantsForProduct(product.id);
                   const selectedVariant = variantOptions.length > 0 ? getSelectedVariant(product.id) : null;
                   const key = cartKey(product.id, selectedVariant);
                   return (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      variantOptions={variantOptions}
-                      selectedVariant={selectedVariant}
-                      selectedVariants={selectedVariants}
-                      onSelectVariant={setSelectedVariant}
-                      effectivePrice={getEffectivePrice(product, selectedVariant)}
-                      effectiveStock={variantOptions.length > 0 ? (selectedVariant ? getEffectiveStock(product, selectedVariant) : 0) : product.stock}
-                      qty={cart[key]?.qty || 0}
-                      onAddToCart={addToCart}
-                      onInc={inc}
-                      onDec={dec}
-                      cartKeyStr={key}
-                      onOpenGallery={openGallery}
-                      onShare={handleShare}
-                      productImages={getProductImages(product)}
-                      categoryIcon={getCategoryIcon(product.category)}
-                    />
+                    <div key={`feat-${product.id}`} className="featured-card">
+                      <ProductCard
+                        product={product}
+                        variantOptions={variantOptions}
+                        selectedVariant={selectedVariant}
+                        selectedVariants={selectedVariants}
+                        onSelectVariant={setSelectedVariant}
+                        effectivePrice={getEffectivePrice(product, selectedVariant)}
+                        effectiveStock={variantOptions.length > 0 ? (selectedVariant ? getEffectiveStock(product, selectedVariant) : 0) : product.stock}
+                        qty={cart[key]?.qty || 0}
+                        onAddToCart={addToCart}
+                        onInc={inc}
+                        onDec={dec}
+                        cartKeyStr={key}
+                        onOpenGallery={openGallery}
+                        onShare={handleShare}
+                        productImages={getProductImages(product)}
+                        categoryIcon={getCategoryIcon(product.category)}
+                      />
+                    </div>
                   );
                 })}
               </div>
-            </>
-          )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ===== Products ===== */}
+      <section id="products" className="section">
+        <div className="container">
+          <div className="section-box">
+            <div className="section-head">
+              <h2 className="section-title">
+                <LayoutGrid size={20} color="var(--teal)" /> كل المنتجات
+              </h2>
+              <span className="section-badge">
+                {filteredProducts.length} منتج
+              </span>
+            </div>
+
+            {loading ? (
+              <div className="state-box">جاري تحميل المنتجات...</div>
+            ) : loadError ? (
+              <div className="state-box">تعذّر تحميل المنتجات: {loadError}</div>
+            ) : products.length === 0 ? (
+              <div className="state-box">لا توجد منتجات حالياً</div>
+            ) : (
+              <>
+                <div className="search-filter-wrapper">
+                  <div className="search-box">
+                    <span className="search-icon-inside"><Search size={14} /></span>
+                    <input
+                      type="text"
+                      className="search-input"
+                      placeholder="بحث عن منتج..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    {searchQuery && (
+                      <button className="search-clear" onClick={() => setSearchQuery("")}>×</button>
+                    )}
+                  </div>
+                  <div className="filters-row">
+                    <select className="sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                      <option value="default">الترتيب الافتراضي</option>
+                      <option value="price-asc">السعر: الأقل أولاً</option>
+                      <option value="price-desc">السعر: الأعلى أولاً</option>
+                    </select>
+                    <input type="number" className="price-input" placeholder="من (د.ل)" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
+                    <input type="number" className="price-input" placeholder="إلى (د.ل)" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+                  </div>
+                  {(searchQuery || minPrice || maxPrice || sortBy !== "default") && (
+                    <button className="filter-reset-btn" onClick={() => { setSearchQuery(""); setMinPrice(""); setMaxPrice(""); setSortBy("default"); }}>
+                      <RotateCcw size={12} /> إعادة ضبط
+                    </button>
+                  )}
+                </div>
+
+                <div className="cat-tabs">
+                  {CATEGORIES.map((cat) => (
+                    <button key={cat} onClick={() => setActiveCategory(cat)} className={`cat-tab ${activeCategory === cat ? "active" : ""}`}>
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="product-grid">
+                  {filteredProducts.map((product) => {
+                    const variantOptions = getVariantsForProduct(product.id);
+                    const selectedVariant = variantOptions.length > 0 ? getSelectedVariant(product.id) : null;
+                    const key = cartKey(product.id, selectedVariant);
+                    return (
+                      <ProductCard
+                        key={product.id}
+                        product={product}
+                        variantOptions={variantOptions}
+                        selectedVariant={selectedVariant}
+                        selectedVariants={selectedVariants}
+                        onSelectVariant={setSelectedVariant}
+                        effectivePrice={getEffectivePrice(product, selectedVariant)}
+                        effectiveStock={variantOptions.length > 0 ? (selectedVariant ? getEffectiveStock(product, selectedVariant) : 0) : product.stock}
+                        qty={cart[key]?.qty || 0}
+                        onAddToCart={addToCart}
+                        onInc={inc}
+                        onDec={dec}
+                        cartKeyStr={key}
+                        onOpenGallery={openGallery}
+                        onShare={handleShare}
+                        productImages={getProductImages(product)}
+                        categoryIcon={getCategoryIcon(product.category)}
+                      />
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </section>
 
       {/* ===== Why ===== */}
       <section id="why" className="section">
         <div className="container">
-          <h2 className="section-title">لماذا تتسوق من {settings?.store_name || "نوفا"}</h2>
-          <div className="features-grid">
-            {FEATURES.map(({ icon: Icon, title, body }) => (
-              <div key={title} className="feature-card">
-                <div className="feature-icon"><Icon /></div>
-                <p className="feature-title">{title}</p>
-                <p className="feature-body">{body}</p>
-              </div>
-            ))}
+          <div className="section-box">
+            <div className="section-head">
+              <h2 className="section-title">
+                <ShieldCheck size={20} color="var(--teal)" /> لماذا تتسوق من {settings?.store_name || "متجرنا"}
+              </h2>
+              <span className="section-badge">
+                تسوق آمن 🇱🇾
+              </span>
+            </div>
+            <div className="features-grid">
+              {FEATURES.map(({ icon: Icon, title, body }) => (
+                <div key={title} className="feature-card">
+                  <div className="feature-icon"><Icon /></div>
+                  <p className="feature-title">{title}</p>
+                  <p className="feature-body">{body}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -1258,17 +1408,26 @@ export default function App() {
       {/* ===== FAQ ===== */}
       <section id="faq" className="section">
         <div className="container">
-          <h2 className="section-title">الأسئلة الشائعة</h2>
-          <div className="faq-list">
-            {FAQ.map((item, i) => (
-              <div key={item.q} className="faq-item">
-                <button className="faq-question" onClick={() => setOpenFaq(openFaq === i ? -1 : i)}>
-                  <span>{item.q}</span>
-                  {openFaq === i ? <ChevronLeft /> : <ChevronRight style={{ transform:"rotate(180deg)" }} />}
-                </button>
-                {openFaq === i && <p className="faq-answer">{item.a}</p>}
-              </div>
-            ))}
+          <div className="section-box">
+            <div className="section-head">
+              <h2 className="section-title">
+                <MessageCircle size={20} color="var(--teal)" /> الأسئلة الشائعة
+              </h2>
+              <span className="section-badge">
+                إجابات سريعة
+              </span>
+            </div>
+            <div className="faq-list">
+              {FAQ.map((item, i) => (
+                <div key={item.q} className="faq-item">
+                  <button className="faq-question" onClick={() => setOpenFaq(openFaq === i ? -1 : i)}>
+                    <span>{item.q}</span>
+                    {openFaq === i ? <ChevronLeft /> : <ChevronRight style={{ transform:"rotate(180deg)" }} />}
+                  </button>
+                  {openFaq === i && <p className="faq-answer">{item.a}</p>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>

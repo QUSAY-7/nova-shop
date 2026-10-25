@@ -1988,6 +1988,7 @@ export default function Admin() {
   const [imageFiles, setImageFiles] = useState([]);
   const [existingImages, setExistingImages] = useState([]);
   const [editingId, setEditingId] = useState(null);
+  const [isNewCategory, setIsNewCategory] = useState(false);
   const [variants, setVariants] = useState([]);
 
   function addVariantRow() {
@@ -2454,6 +2455,16 @@ export default function Admin() {
     return map;
   }, [products]);
   const categoryList = useMemo(() => Object.keys(productsByCategory), [productsByCategory]);
+
+  // قائمة نظيفة بالتصنيفات الفريدة دون تكرار لاستخدامها في القائمة المنسدلة
+  const uniqueCategories = useMemo(() => {
+    const set = new Set();
+    products.forEach((p) => {
+      const c = (p.category || "").trim();
+      if (c && c !== "بدون تصنيف") set.add(c);
+    });
+    return Array.from(set).sort();
+  }, [products]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -3083,6 +3094,7 @@ const result = {
 
   async function startEdit(product) {
     setEditingId(product.id);
+    setIsNewCategory(false);
     const imgs = product.images && product.images.length ? product.images : (product.image ? [product.image] : []);
     setForm({
       name: product.title || "",
@@ -3123,6 +3135,7 @@ const result = {
     setForm(emptyForm);
     setImageFiles([]);
     setExistingImages([]);
+    setIsNewCategory(false);
   }
 
   async function handleDelete(id) {
@@ -5273,12 +5286,58 @@ const result = {
                 />
               </div>
               <div style={styles.row}>
-                <input
-                  style={styles.input}
-                  placeholder="التصنيف (مثال: إلكترونيات)"
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                />
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <select
+                    style={{
+                      ...styles.input,
+                      cursor: "pointer",
+                      background: "#fff",
+                      fontWeight: 600,
+                    }}
+                    value={
+                      isNewCategory
+                        ? "__custom__"
+                        : uniqueCategories.includes(form.category)
+                        ? form.category
+                        : form.category
+                        ? "__custom__"
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "__custom__") {
+                        setIsNewCategory(true);
+                        setForm({ ...form, category: "" });
+                      } else {
+                        setIsNewCategory(false);
+                        setForm({ ...form, category: val });
+                      }
+                    }}
+                  >
+                    <option value="">-- اختر التصنيف من القائمة --</option>
+                    {uniqueCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        📁 {cat}
+                      </option>
+                    ))}
+                    <option value="__custom__">➕ إضافة تصنيف جديد...</option>
+                  </select>
+
+                  {(isNewCategory || (form.category && !uniqueCategories.includes(form.category))) && (
+                    <input
+                      style={{
+                        ...styles.input,
+                        borderColor: "#0E7C86",
+                        background: "#F0FDF4",
+                        fontWeight: 600,
+                      }}
+                      placeholder="✍️ اكتب اسم التصنيف الجديد بدقة..."
+                      value={form.category}
+                      onChange={(e) => setForm({ ...form, category: e.target.value })}
+                      autoFocus
+                    />
+                  )}
+                </div>
                 <input
                   style={styles.input}
                   placeholder="كود المنتج (SKU)"
