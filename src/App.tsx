@@ -607,12 +607,22 @@ export default function App() {
           overflow: hidden;
         }
 
-        /* طبقة التعتيم الداكنة */
+        /* طبقة التعتيم — افتراضية داكنة */
         .hero-overlay {
           position: absolute;
           inset: 0;
           background: linear-gradient(135deg, rgba(6,14,35,0.88) 0%, rgba(10,22,55,0.72) 50%, rgba(6,14,35,0.90) 100%);
           z-index: 1;
+        }
+
+        /* طبقة تعتيم أخف عند وجود صورة مخصصة — تُظهر الصورة بوضوح */
+        .hero-overlay.hero-overlay--custom {
+          background: linear-gradient(
+            180deg,
+            rgba(6,14,35,0.55) 0%,
+            rgba(10,22,55,0.40) 40%,
+            rgba(6,14,35,0.65) 100%
+          );
         }
 
         .hero .container {
@@ -944,7 +954,7 @@ export default function App() {
         className="hero"
         style={{ backgroundImage: heroBackground }}
       >
-        <div className="hero-overlay" />
+        <div className={`hero-overlay${hasCustomHero ? ' hero-overlay--custom' : ''}`} />
 
         <div className="container">
           <div className="hero-top">
