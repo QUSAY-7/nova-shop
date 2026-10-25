@@ -2013,6 +2013,7 @@ export default function Admin() {
     facebook_url: "",
     instagram_url: "",
     logo_url: "",
+    hero_image: "",
     // موقع المتجر في ليبيا
     store_country: "ليبيا",
     store_city: "طرابلس",
@@ -2507,6 +2508,7 @@ export default function Admin() {
         facebook_url: data.facebook_url || "",
         instagram_url: data.instagram_url || "",
         logo_url: data.logo_url || "",
+        hero_image: data.hero_image || "",
         store_country: data.store_country || "ليبيا",
         store_city: data.store_city || localStorage.getItem("nova_store_city") || "طرابلس",
         store_area: data.store_area || localStorage.getItem("nova_store_area") || "سوق الجمعة",
@@ -2536,6 +2538,7 @@ export default function Admin() {
       facebook_url: settingsForm.facebook_url || "",
       instagram_url: settingsForm.instagram_url || "",
       logo_url: settingsForm.logo_url || "",
+      hero_image: settingsForm.hero_image || "",
       store_description: settingsForm.store_description || "",
       store_city: settingsForm.store_city || "طرابلس",
       store_area: settingsForm.store_area || "سوق الجمعة",
@@ -3644,6 +3647,88 @@ const result = {
                         }}
                       >
                         حذف الشعار
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── صورة خلفية الهيرو ── */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 700 }}>
+                    🖼️ صورة خلفية الواجهة الرئيسية (اختياري)
+                  </label>
+                  <span style={{ fontSize: 11, color: "#64748B", marginBottom: 4 }}>
+                    ارفع صورة تظهر كخلفية للجزء العلوي من المتجر. إذا تركتها فارغة سيظهر التصميم الافتراضي مع الأنيميشن.
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const fileExt = file.name.split(".").pop();
+                      const fileName = `hero-${Date.now()}.${fileExt}`;
+                      // رفع الصورة لـ Supabase Storage
+                      const { error: uploadError } = await supabase.storage
+                        .from("Product-images")
+                        .upload(fileName, file);
+                      if (uploadError) {
+                        alert("فشل رفع صورة الخلفية: " + uploadError.message);
+                        return;
+                      }
+                      // الحصول على الرابط العام
+                      const { data: urlData } = supabase.storage.from("Product-images").getPublicUrl(fileName);
+                      const publicUrl = urlData.publicUrl;
+                      // تحديث الـ state
+                      setSettingsForm((prev) => ({ ...prev, hero_image: publicUrl }));
+                      // حفظ فوري في قاعدة البيانات بدون انتظار الضغط على "حفظ"
+                      const { error: saveError } = await supabase
+                        .from("store_settings")
+                        .update({ hero_image: publicUrl })
+                        .eq("id", 1);
+                      if (saveError) {
+                        alert("تم رفع الصورة لكن فشل حفظها: " + saveError.message);
+                      } else {
+                        alert("✅ تم رفع صورة الخلفية وحفظها بنجاح! أعد تحميل المتجر لترى التغيير.");
+                      }
+                    }}
+                    style={styles.input}
+                  />
+                  {settingsForm.hero_image && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <img
+                        src={settingsForm.hero_image}
+                        alt="خلفية الهيرو"
+                        style={{ width: 160, height: 90, objectFit: "cover", borderRadius: 8, border: "1px solid #eee" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm("متأكد تبي تحذف صورة الخلفية؟")) return;
+                          try {
+                            const url = settingsForm.hero_image;
+                            const fileName = url.split("/").pop();
+                            await supabase.storage.from("Product-images").remove([fileName]);
+                          } catch (err) {
+                            console.error("تعذر حذف الملف من التخزين:", err);
+                          }
+                          setSettingsForm({ ...settingsForm, hero_image: "" });
+                          // حذف فوري من قاعدة البيانات
+                          await supabase.from("store_settings").update({ hero_image: "" }).eq("id", 1);
+                          alert("✅ تم حذف صورة الخلفية.");
+                        }}
+                        style={{
+                          background: "#fee2e2",
+                          color: "#b91c1c",
+                          border: "1px solid #fca5a5",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        حذف الخلفية
                       </button>
                     </div>
                   )}

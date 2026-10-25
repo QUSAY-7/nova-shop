@@ -513,10 +513,11 @@ export default function App() {
 
   /* ── صورة خلفية الهيرو:
      1. إذا أضاف التاجر hero_image في store_settings → تُستخدم
-     2. وإلا → صورة Unsplash الافتراضية
+     2. وإلا → صورة Unsplash الافتراضية + أنيميشن الطرد
      ملاحظة: logo_url هو شعار المتجر ولا يُستخدم كخلفية ──  */
-  const heroBackground = settings?.hero_image
-    ? `url('${settings.hero_image}')`
+  const hasCustomHero = Boolean(settings?.hero_image && settings.hero_image.trim() !== "");
+  const heroBackground = hasCustomHero
+    ? `url("${settings!.hero_image}")`
     : `url('${DEFAULT_HERO_IMAGE}')`;
 
   return (
@@ -602,6 +603,7 @@ export default function App() {
           background-size: cover;
           background-position: center center;
           background-repeat: no-repeat;
+          background-attachment: scroll;
           overflow: hidden;
         }
 
@@ -990,7 +992,7 @@ export default function App() {
           </div>
 
           {/* أنيميشن الطرد — يظهر فقط إذا لم تُضَف صورة هيرو مخصصة */}
-          {!settings?.hero_image && (
+          {!hasCustomHero && (
             <div className="parcel-wrap">
               <div className="parcel-glow" />
               <div className="parcel-float">
