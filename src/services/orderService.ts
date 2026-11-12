@@ -1,5 +1,5 @@
 // src/services/orderService.ts
-import { supabase } from "../supabaseClient";
+import { supabase, CURRENT_STORE_ID } from "../supabaseClient";
 import type { EzonePayload } from "../types";
 
 // ─── أنواع المدخلات ───
@@ -60,6 +60,7 @@ export async function submitOrder({
   shippingCost,
 }: SubmitOrderParams): Promise<SubmitOrderResult> {
   const requestBody = {
+    store_id: CURRENT_STORE_ID,
     items,
     customer_name: customerName.trim(),
     customer_phone: customerPhone.trim(),

@@ -31,6 +31,7 @@ export default async function handler(req, res) {
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
     const {
+      store_id,
       items,
       customer_name,
       customer_phone,
@@ -111,6 +112,7 @@ export default async function handler(req, res) {
     const total = subtotal + deliveryFee;
 
     const baseOrderRecord = {
+      store_id: store_id || "e91260ef-6766-4ba7-bc60-365195ba3bbd",
       items: verifiedItems,
       total_price: total,
       payment_method:
