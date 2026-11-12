@@ -33,7 +33,7 @@ import {
   Star,
   Flame,
 } from "lucide-react";
-import { supabase } from "./supabaseClient";
+import { supabase, CURRENT_STORE_ID } from "./supabaseClient";
 import {
   LIBYA_CITIES,
   getAreasForCity,
@@ -167,10 +167,16 @@ export default function App() {
     let isMounted = true;
     const fetchProducts = async () => {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from("products")
         .select("*")
         .order("created_at", { ascending: false });
+
+      if (CURRENT_STORE_ID) {
+        query = query.eq("store_id", CURRENT_STORE_ID);
+      }
+
+      const { data, error } = await query;
       if (!isMounted) return;
       if (error) {
         setLoadError(error.message);
@@ -210,11 +216,13 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
     const fetchSettings = async () => {
-      const { data, error } = await supabase
-        .from("store_settings")
-        .select("*")
-        .eq("id", 1)
-        .single();
+      let query = supabase.from("store_settings").select("*");
+      if (CURRENT_STORE_ID) {
+        query = query.eq("store_id", CURRENT_STORE_ID);
+      } else {
+        query = query.eq("id", 1);
+      }
+      const { data, error } = await query.maybeSingle();
       if (!isMounted) return;
       if (!error && data) {
         setSettings({
