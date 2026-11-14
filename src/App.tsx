@@ -173,7 +173,7 @@ export default function App() {
         .order("created_at", { ascending: false });
 
       if (CURRENT_STORE_ID) {
-        query = query.eq("store_id", CURRENT_STORE_ID);
+        query = query.or(`store_id.eq.${CURRENT_STORE_ID},store_id.is.null`);
       }
 
       const { data, error } = await query;
