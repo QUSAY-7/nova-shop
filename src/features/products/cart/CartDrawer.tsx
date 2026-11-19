@@ -1,7 +1,8 @@
 // src/features/products/cart/CartDrawer.tsx
-import React from "react";
+import React, { useState } from "react";
 import {
   ShoppingCart,
+  Tag,
   X,
   Plus,
   Minus,
@@ -76,6 +77,10 @@ interface CartDrawerProps {
   onDec: (key: string) => void;
   onRemoveItem: (key: string) => void;
   getEffectivePrice: (product: ProductData, variant?: VariantData | null) => number;
+  appliedCoupon?: { code: string; percent: number } | null;
+  discountAmount?: number;
+  onApplyCoupon?: (code: string) => { success: boolean; message?: string };
+  onRemoveCoupon?: () => void;
   onCheckout: () => void;
   cartThumb?: React.ComponentType<{ product: ProductData }>;
 }
@@ -109,6 +114,10 @@ export default function CartDrawer({
   onDec,
   onRemoveItem,
   getEffectivePrice,
+  appliedCoupon = null,
+  discountAmount = 0,
+  onApplyCoupon,
+  onRemoveCoupon,
   onCheckout,
   cartThumb: CartThumb,
 }: CartDrawerProps) {
@@ -283,16 +292,69 @@ export default function CartDrawer({
               </div>
             </div>
 
+                        {/* حقل كود الخصم */}
+            <div style={{ marginBottom: "12px", padding: "10px 12px", background: "#F8FAFC", borderRadius: "12px", border: "1px dashed #CBD5E1" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", fontSize: "12px", fontWeight: 700, color: "var(--teal-dark)" }}>
+                <Tag size={14} />
+                <span>لديك كود خصم أو قسيمة شراء؟</span>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  type="text"
+                  placeholder="أدخل الكود (مثل VIP15 أو COMEBACK)"
+                  value={couponInput}
+                  onChange={(e) => {
+                    setCouponInput(e.target.value);
+                    setCouponError("");
+                  }}
+                  disabled={Boolean(appliedCoupon)}
+                  style={{ flex: 1, height: "38px", padding: "0 10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", fontWeight: 800, textTransform: "uppercase" }}
+                />
+                {appliedCoupon ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onRemoveCoupon) onRemoveCoupon();
+                      setCouponInput("");
+                    }}
+                    style={{ padding: "0 14px", height: "38px", borderRadius: "8px", background: "#FEE2E2", color: "#DC2626", border: "none", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                  >
+                    إلغاء
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleApply}
+                    style={{ padding: "0 16px", height: "38px", borderRadius: "8px", background: "#0E7C86", color: "#fff", border: "none", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                  >
+                    تطبيق
+                  </button>
+                )}
+              </div>
+              {couponError && <div style={{ fontSize: "11px", color: "#DC2626", marginTop: "4px", fontWeight: 600 }}>{couponError}</div>}
+              {appliedCoupon && (
+                <div style={{ fontSize: "11.5px", color: "#15803D", marginTop: "6px", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
+                  <Check size={14} /> تم تطبيق كود ({appliedCoupon.code}) بنجاح! خصم {appliedCoupon.percent}% (-{discountAmount} د.ل)
+                </div>
+              )}
+            </div>
+
             <div className="cart-total-row">
               <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "12px", fontSize: "13px", color: "var(--muted)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>سعر المنتجات:</span>
                   <span>{itemsSubtotal} د.ل</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>رسوم التوصيل ({deliveryCity}):</span>
                   <span>{deliveryCost} د.ل</span>
                 </div>
+                {discountAmount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#15803D", fontWeight: 700 }}>
+                    <span>خصم الكوبون ({appliedCoupon?.code}):</span>
+                    <span>-{discountAmount} د.ل</span>
+                  </div>
+                )}
                 <div style={{ borderTop: "1px dashed var(--line)", marginTop: "4px", paddingTop: "6px", display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "16px", color: "var(--teal-dark)" }}>
                   <span>الإجمالي النهائي:</span>
                   <span className="total-amount">{totalPrice} د.ل</span>

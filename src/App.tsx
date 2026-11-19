@@ -333,13 +333,47 @@ export default function App() {
     (sum, l) => sum + l.qty * getEffectivePrice(l.product, l.variant), 0
   );
 
+  // ─── نظام الكوبونات وأكواد الخصم الترويجية ───
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; percent: number } | null>(null);
+
+  const discountAmount = useMemo(() => {
+    if (!appliedCoupon) return 0;
+    return Math.round((itemsSubtotal * appliedCoupon.percent) / 100);
+  }, [itemsSubtotal, appliedCoupon]);
+
+  const handleApplyCoupon = (inputCode: string) => {
+    const code = (inputCode || "").trim().toUpperCase();
+    if (code === "VIP15") {
+      setAppliedCoupon({ code: "VIP15", percent: 15 });
+      return { success: true };
+    }
+    if (code === "COMEBACK") {
+      setAppliedCoupon({ code: "COMEBACK", percent: 10 });
+      return { success: true };
+    }
+    if (code === "VELTRIX") {
+      setAppliedCoupon({ code: "VELTRIX", percent: 10 });
+      return { success: true };
+    }
+    if (code.startsWith("VIP") && !isNaN(Number(code.replace("VIP", "")))) {
+      const pct = Math.min(50, Math.max(5, Number(code.replace("VIP", ""))));
+      setAppliedCoupon({ code, percent: pct });
+      return { success: true };
+    }
+    return { success: false, message: "عذراً، كود الخصم غير صالح أو انتهت صلاحيته" };
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+  };
+
   const deliveryInfo = useMemo(
     () => getDeliveryInfoForCity(deliveryCity, settings?.city_rates),
     [deliveryCity, settings?.city_rates]
   );
 
   const deliveryCost = itemsSubtotal > 0 ? deliveryInfo.rate : 0;
-  const totalPrice = itemsSubtotal + deliveryCost;
+  const totalPrice = Math.max(0, itemsSubtotal - discountAmount) + deliveryCost;
 
   const setQty = (key, qty, meta) => {
     setCart((c) => {
@@ -402,7 +436,7 @@ export default function App() {
     try {
       const result = await submitOrder({
         customerName, customerPhone, customerAddress, deliveryCity, deliveryArea,
-        formattedFullAddress, items, paymentMethod: payment, shippingCost: deliveryCost,
+        formattedFullAddress, items, paymentMethod: payment, shippingCost: deliveryCost, couponCode: appliedCoupon?.code, discountAmount,
       });
       insertedOrder = result.order;
       verifiedTotal = result.verifiedTotal;
@@ -424,6 +458,7 @@ export default function App() {
     }
     setLastOrder(insertedOrder);
     setShowInvoicePrompt(true);
+    setAppliedCoupon(null);
     setCart({});
     setSelectedVariants({});
     setCustomerName("");
@@ -475,6 +510,9 @@ export default function App() {
     });
     lines.push("", `مجموع المنتجات: ${itemsSubtotal} د.ل`);
     lines.push(`التوصيل لـ (${deliveryCity} - ${deliveryArea}): ${deliveryCost} د.ل`);
+        if (appliedCoupon && discountAmount > 0) {
+      lines.push(`🎁 كود الخصم المطبق: ${appliedCoupon.code} (خصم ${appliedCoupon.percent}% = -${discountAmount} د.ل)`);
+    }
     lines.push(`الإجمالي النهائي: ${totalPrice} د.ل`);
     lines.push(`طريقة الدفع: ${payment === "cash" ? "كاش عند الاستلام" : payment === "bank" ? "تحويل بنكي" : "دفع إلكتروني Ezone"}`);
     if (customerAddress.trim()) lines.push(`العنوان بالتفصيل: ${customerAddress.trim()}`);
@@ -1307,6 +1345,10 @@ export default function App() {
         onDec={dec}
         onRemoveItem={(key) => setQty(key, 0)}
         getEffectivePrice={getEffectivePrice}
+        appliedCoupon={appliedCoupon}
+        discountAmount={discountAmount}
+        onApplyCoupon={handleApplyCoupon}
+        onRemoveCoupon={handleRemoveCoupon}
         onCheckout={async () => {
           const ok = await saveOrder();
           if (ok && payment !== "ezone") window.open(waLink, "_blank", "noopener,noreferrer");

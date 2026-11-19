@@ -40,6 +40,8 @@ export default async function handler(req, res) {
       delivery_city,
       delivery_area,
       shipping_cost,
+      coupon_code,
+      discount_amount,
     } = body;
 
     // Validation
@@ -109,7 +111,8 @@ export default async function handler(req, res) {
     }
 
     const deliveryFee = Number(shipping_cost ?? 10);
-    const total = subtotal + deliveryFee;
+    const discount = Number(discount_amount || 0);
+    const total = Math.max(0, subtotal - discount) + deliveryFee;
 
     const baseOrderRecord = {
       store_id: store_id || "e91260ef-6766-4ba7-bc60-365195ba3bbd",
@@ -132,6 +135,8 @@ export default async function handler(req, res) {
       ...baseOrderRecord,
       subtotal,
       shipping_cost: deliveryFee,
+      discount_amount: discount,
+      coupon_code: coupon_code || null,
       delivery_city,
       delivery_area: delivery_area || delivery_city,
     };

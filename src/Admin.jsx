@@ -1822,6 +1822,13 @@ export default function Admin() {
   const [bundleDeadProduct, setBundleDeadProduct] = useState(null);
   const [bundleDiscount, setBundleDiscount] = useState("15");
 
+  // ---- مركز الحملات والإرسال الجماعي لزبائن المتجر ----
+  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
+  const [broadcastAudience, setBroadcastAudience] = useState("all"); // "all" | "vip" | "churned"
+  const [broadcastCustomMessage, setBroadcastCustomMessage] = useState("");
+  const [broadcastCurrentIndex, setBroadcastCurrentIndex] = useState(0);
+  const [broadcastSentSet, setBroadcastSentSet] = useState(() => new Set());
+
   // ---- تبويب الدفع والتوصيل (Integration Layer State) ----
   const [integrationSubTab, setIntegrationSubTab] = useState("payments"); // "payments" | "delivery" | "logs"
   const [registryVersion, setRegistryVersion] = useState(0);
@@ -2838,6 +2845,14 @@ export default function Admin() {
       netMarginPercent,
     };
   }, [products, orders, adSpendInput, miscExpenseInput]);
+
+  // قائمة الزبائن الفريدين لمتجر العميل الحالي (متوافق مع التعدد والاستنساخ Multi-Tenant)
+  const uniqueStoreCustomers = useMemo(() => {
+    return Object.values(growthMetrics.customerOrderHistory || {}).filter((c) => {
+      const clean = (c.phone || "").replace(/[^0-9]/g, "");
+      return clean.length >= 9;
+    });
+  }, [growthMetrics.customerOrderHistory]);
 
   async function handleApplyLiquidation(e) {
     if (e) e.preventDefault();
@@ -4101,6 +4116,45 @@ const result = {
                   </div>
                 </div>
 
+                {/* بانر إطلاق الحملة الجماعية */}
+                <div style={{ background: "linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)", borderRadius: 16, padding: "18px 22px", color: "#fff", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "15px", fontWeight: 800 }}>
+                      <Zap size={18} color="#A5B4FC" />
+                      <span>مركز الحملات والرسائل الجماعية المباشرة (Direct Broadcast Engine) 🚀</span>
+                    </div>
+                    <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#C7D2FE" }}>
+                      أرسل عروض البكجات وأكواد الخصم الترويجية (مثل VIP15 أو COMEBACK) لجميع أرقام زبائن هذا المتجر بنقرة واحدة لرفع المبيعات فورياً.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const vipMsg = `أهلاً وسهلاً بكم في متجر ${settingsForm.store_name || "VELTRIX"} 🌟\n\nيسعدنا إخبارك بتوفر تشكيلة جديدة ومميزة، وتقديراً لثقتك السابقة يسعدنا تقديم خصم خاص بقيمة 15% على طلبك القادم بكود الخصم: (VIP15) ✨\n\nتفضل بمشاهدة أحدث المنتجات من متجرنا!`;
+                      setBroadcastCustomMessage(vipMsg);
+                      setBroadcastAudience("vip");
+                      setBroadcastCurrentIndex(0);
+                      setBroadcastModalOpen(true);
+                    }}
+                    style={{
+                      padding: "10px 18px",
+                      borderRadius: 10,
+                      background: "#25D366",
+                      color: "#fff",
+                      border: "none",
+                      fontWeight: 800,
+                      fontSize: 13,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      boxShadow: "0 4px 14px rgba(37,211,102,0.4)",
+                    }}
+                  >
+                    <MessageCircle size={16} /> إطلاق حملة رسائل للزبائن 💬
+                  </button>
+                </div>
+
                 {/* جدول استعادة الزبائن */}
                 <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #CBD5E1", padding: 20 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -4487,6 +4541,32 @@ const result = {
                           <button
                             type="button"
                             onClick={() => {
+                              setBroadcastCustomMessage(promoText);
+                              setBroadcastAudience("all");
+                              setBroadcastCurrentIndex(0);
+                              setBroadcastModalOpen(true);
+                            }}
+                            style={{
+                              padding: "12px 16px",
+                              borderRadius: 10,
+                              background: "#25D366",
+                              color: "#fff",
+                              border: "none",
+                              fontWeight: 800,
+                              fontSize: 13,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6,
+                              boxShadow: "0 4px 12px rgba(37,211,102,0.3)",
+                            }}
+                          >
+                            <MessageCircle size={16} /> إرسال لجميع زبائن المتجر ({uniqueStoreCustomers.length}) 🚀
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
                               navigator.clipboard.writeText(promoText);
                               alert("✅ تم نسخ النص الإعلاني التسويقي للبكج بنجاح إلى الحافظة! يمكنك نشره الآن على فيسبوك أو إرساله للزبائن.");
                             }}
@@ -4531,6 +4611,280 @@ const result = {
                 </div>
               </div>
             )}
+
+            
+            {/* نافذة الحملات والإرسال الجماعي لزبائن المتجر (Broadcast Campaign Modal) */}
+            {broadcastModalOpen && (() => {
+              const targetAudienceList =
+                broadcastAudience === "vip"
+                  ? uniqueStoreCustomers.filter((c) => c.delivered >= 2 || (c.totalSpent && c.totalSpent >= 500))
+                  : broadcastAudience === "churned"
+                  ? growthMetrics.lostCustomers
+                  : uniqueStoreCustomers;
+
+              const activeCustomer = targetAudienceList[broadcastCurrentIndex] || targetAudienceList[0];
+              const cleanPhone = (activeCustomer?.phone || "").replace(/[^0-9]/g, "");
+              const fullPhone = cleanPhone.startsWith("218") ? cleanPhone : cleanPhone.startsWith("0") ? "218" + cleanPhone.slice(1) : "218" + cleanPhone;
+              const waUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(broadcastCustomMessage)}`;
+              const progressPct = targetAudienceList.length > 0 ? Math.round(((broadcastCurrentIndex + 1) / targetAudienceList.length) * 100) : 0;
+
+              const copyAllNumbers = () => {
+                const numbers = targetAudienceList.map((c) => {
+                  const cp = (c.phone || "").replace(/[^0-9]/g, "");
+                  return cp.startsWith("218") ? "+" + cp : cp.startsWith("0") ? "+218" + cp.slice(1) : "+218" + cp;
+                }).join(", ");
+                navigator.clipboard.writeText(numbers);
+                alert(`✅ تم نسخ ${targetAudienceList.length} رقم هاتف بنجاح! يمكنك الآن لصقها مباشرة في قائمة الرسائل الجماعية (Broadcast List) في واتساب بزنس.`);
+              };
+
+              return (
+                <div
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    background: "rgba(0,0,0,0.65)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 10000,
+                    padding: 16,
+                  }}
+                >
+                  <div style={{ background: "#fff", borderRadius: 22, maxWidth: 580, width: "100%", padding: 24, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
+                          <MessageCircle size={20} color="#25D366" />
+                          <span>مركز الحملات والإرسال المباشر لزبائن المتجر</span>
+                        </h3>
+                        <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "#64748B" }}>
+                          يعمل تلقائياً مع هذا المتجر وأي نسخة مستنسخة مستقبلاً عبر عزل بيانات الزبائن
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => setBroadcastModalOpen(false)} style={{ border: "none", background: "none", fontSize: 24, cursor: "pointer", color: "#64748B" }}>×</button>
+                    </div>
+
+                    {/* اختيار الجمهور المستهدف */}
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ display: "block", fontSize: 12.5, fontWeight: 800, marginBottom: 6, color: "#334155" }}>
+                        👥 اختر فئة الزبائن المستهدفة في الحملة:
+                      </label>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => { setBroadcastAudience("all"); setBroadcastCurrentIndex(0); }}
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: broadcastAudience === "all" ? "2px solid #0E7C86" : "1px solid #CBD5E1",
+                            background: broadcastAudience === "all" ? "#EFF6FF" : "#fff",
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            color: broadcastAudience === "all" ? "#0E7C86" : "#475569",
+                          }}
+                        >
+                          جميع الزبائن ({uniqueStoreCustomers.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setBroadcastAudience("vip"); setBroadcastCurrentIndex(0); }}
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: broadcastAudience === "vip" ? "2px solid #B45309" : "1px solid #CBD5E1",
+                            background: broadcastAudience === "vip" ? "#FEF3C7" : "#fff",
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            color: broadcastAudience === "vip" ? "#B45309" : "#475569",
+                          }}
+                        >
+                          👑 عملاء VIP ({uniqueStoreCustomers.filter((c) => c.delivered >= 2 || (c.totalSpent && c.totalSpent >= 500)).length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setBroadcastAudience("churned"); setBroadcastCurrentIndex(0); }}
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: broadcastAudience === "churned" ? "2px solid #6366F1" : "1px solid #CBD5E1",
+                            background: broadcastAudience === "churned" ? "#EEF2FF" : "#fff",
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            color: broadcastAudience === "churned" ? "#4F46E5" : "#475569",
+                          }}
+                        >
+                          ⏳ غير نشطين ({growthMetrics.lostCustomers.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* قوالب سريعة لنص الرسالة */}
+                    <div style={{ marginBottom: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#64748B" }}>قوالب جاهزة:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBroadcastCustomMessage(`أهلاً وسهلاً أخي العزيز 🌟\nتقديراً لتعاملك مع متجر ${settingsForm.store_name || "VELTRIX"} يسعدنا تقديم كود خصم خاص 15% على طلبك القادم: (VIP15) ✨\nتفضل بتسوق أحدث المنتجات من متجرنا!`);
+                        }}
+                        style={{ padding: "3px 8px", borderRadius: 6, background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                      >
+                        🌟 كود VIP15
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBroadcastCustomMessage(`السلام عليكم، اشتقنا لك في متجر ${settingsForm.store_name || "VELTRIX"}! 🎁\nكود خصم حصري 10% لعودتك: (COMEBACK)\nلا تفوّت التشكيلة الجديدة!`);
+                        }}
+                        style={{ padding: "3px 8px", borderRadius: 6, background: "#EFF6FF", color: "#1E40AF", border: "1px solid #BFDBFE", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                      >
+                        🔄 كود COMEBACK
+                      </button>
+                    </div>
+
+                    {/* نص الرسالة */}
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 4 }}>
+                        نص الرسالة المرسلة (يمكنك تعديلها بحرية):
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={broadcastCustomMessage}
+                        onChange={(e) => setBroadcastCustomMessage(e.target.value)}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 13, lineHeight: 1.5, boxSizing: "border-box" }}
+                      />
+                    </div>
+
+                    {/* نافذة الإرسال المتتابع الفوري */}
+                    {targetAudienceList.length === 0 ? (
+                      <div style={{ padding: 20, textAlign: "center", color: "#64748B", background: "#F8FAFC", borderRadius: 12 }}>
+                        لا يوجد زبائن ضمن هذه الفئة حالياً في المتجر.
+                      </div>
+                    ) : (
+                      <div>
+                        {/* بطاقة الزبون الحالي */}
+                        <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 14, padding: "14px 18px", marginBottom: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: "#166534" }}>
+                              الزبون الحالي ({broadcastCurrentIndex + 1} من {targetAudienceList.length}):
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "#15803D" }}>
+                              {progressPct}% إنجاز
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>
+                                {activeCustomer?.name || "زبون المتجر"}
+                              </div>
+                              <div style={{ fontSize: 12, color: "#64748B", direction: "ltr", textAlign: "right" }}>
+                                {activeCustomer?.phone} | {activeCustomer?.city || "ليبيا"}
+                              </div>
+                            </div>
+                            {broadcastSentSet.has(activeCustomer?.phone) && (
+                              <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#DCFCE7", color: "#15803D" }}>
+                                ✅ تم الإرسال سابقاً
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* أزرار الإجراءات الفورية */}
+                        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={() => {
+                              if (activeCustomer?.phone) {
+                                setBroadcastSentSet((prev) => new Set(prev).add(activeCustomer.phone));
+                              }
+                              if (broadcastCurrentIndex < targetAudienceList.length - 1) {
+                                setBroadcastCurrentIndex((prev) => prev + 1);
+                              }
+                            }}
+                            style={{
+                              flex: 2,
+                              padding: "12px",
+                              borderRadius: 10,
+                              background: "#25D366",
+                              color: "#fff",
+                              fontWeight: 800,
+                              fontSize: 13,
+                              textAlign: "center",
+                              textDecoration: "none",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6,
+                              boxShadow: "0 4px 12px rgba(37,211,102,0.3)",
+                            }}
+                          >
+                            <MessageCircle size={16} /> فتح وإرسال عبر واتساب ➡️
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (broadcastCurrentIndex < targetAudienceList.length - 1) {
+                                setBroadcastCurrentIndex((prev) => prev + 1);
+                              } else {
+                                setBroadcastCurrentIndex(0);
+                              }
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: "12px",
+                              borderRadius: 10,
+                              background: "#F1F5F9",
+                              color: "#334155",
+                              border: "1px solid #CBD5E1",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                            }}
+                          >
+                            تخطي ⏭️
+                          </button>
+                        </div>
+
+                        {/* خيار النسخ الجماعي لقوائم البث (Broadcast List) */}
+                        <div style={{ borderTop: "1px dashed #E2E8F0", paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <button
+                            type="button"
+                            onClick={copyAllNumbers}
+                            style={{
+                              padding: "8px 14px",
+                              borderRadius: 8,
+                              background: "#EFF6FF",
+                              color: "#1E40AF",
+                              border: "1px solid #BFDBFE",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <Copy size={14} /> نسخ جميع الأرقام ({targetAudienceList.length}) لقائمة واتساب الجماعية
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBroadcastModalOpen(false)}
+                            style={{ padding: "8px 14px", borderRadius: 8, background: "#F1F5F9", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer", color: "#64748B" }}
+                          >
+                            إغلاق
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* نافذة عرض التصفية السريعة مع حماية هامش الربح */}
             {liquidationModalProduct && (
