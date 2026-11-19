@@ -1809,10 +1809,18 @@ export default function Admin() {
       ];
 
   // ---- محرك النمو والسيولة (Growth Engine State) ----
-  const [growthSubTab, setGrowthSubTab] = useState("inventory"); // "inventory" | "delivery"
+  const [growthSubTab, setGrowthSubTab] = useState("inventory"); // "inventory" | "delivery" | "recovery" | "profit"
   const [liquidationModalProduct, setLiquidationModalProduct] = useState(null);
   const [liquidationNewPrice, setLiquidationNewPrice] = useState("");
   const [liquidationSaving, setLiquidationSaving] = useState(false);
+  // مدخلات حاسبة صافي الأرباح
+  const [adSpendInput, setAdSpendInput] = useState(() => localStorage.getItem("nova_growth_ad_spend") || "0");
+  const [miscExpenseInput, setMiscExpenseInput] = useState(() => localStorage.getItem("nova_growth_misc_expense") || "0");
+  // نافذة حزمة العروض الذكية (Smart Bundle)
+  const [bundleModalOpen, setBundleModalOpen] = useState(false);
+  const [bundleHeroProduct, setBundleHeroProduct] = useState(null);
+  const [bundleDeadProduct, setBundleDeadProduct] = useState(null);
+  const [bundleDiscount, setBundleDiscount] = useState("15");
 
   // ---- تبويب الدفع والتوصيل (Integration Layer State) ----
   const [integrationSubTab, setIntegrationSubTab] = useState("payments"); // "payments" | "delivery" | "logs"
@@ -2650,13 +2658,13 @@ export default function Admin() {
     setRoleLoading(false);
   }
 
-  // ─── محرك النمو والسيولة (Growth Engine Calculations) ───
+  // ─── محرك النمو والسيولة الشامل (Growth Engine Calculations) ───
   const growthMetrics = useMemo(() => {
     const deliveredOrders = orders.filter((o) => o.status === "تم التسليم");
     const cancelledOrders = orders.filter((o) => o.status === "ملغي");
     const pendingOrders = orders.filter((o) => o.status === "جديد");
 
-    // احتساب المبيعات الفعلية المسلّمة لكل منتج
+    // 1. احتساب المبيعات الفعلية المسلّمة لكل منتج
     const deliveredSalesByProduct = {};
     deliveredOrders.forEach((o) => {
       (o.items || []).forEach((it) => {
@@ -2681,6 +2689,10 @@ export default function Admin() {
       const ageDays = p.created_at
         ? Math.max(1, Math.floor((Date.now() - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24)))
         : 30;
+
+      // سرعة البيع وأيام المخزون المتبقية
+      const dailyVelocity = soldQty > 0 ? soldQty / Math.max(1, ageDays) : 0;
+      const daysOfInventory = dailyVelocity > 0 ? Math.round(stock / dailyVelocity) : null;
 
       let statusLabel = "نشط وطبيعي";
       let statusColor = "#15803D";
@@ -2707,6 +2719,8 @@ export default function Admin() {
         hasRealCost,
         trappedCapital,
         ageDays,
+        dailyVelocity,
+        daysOfInventory,
         statusLabel,
         statusColor,
         statusBg,
@@ -2716,6 +2730,12 @@ export default function Admin() {
 
     inventoryAnalysis.sort((a, b) => b.trappedCapital - a.trappedCapital);
 
+    // 2. رادار إعادة الطلب الذكي (Smart Reorder Alerts)
+    const reorderAlerts = inventoryAnalysis.filter((p) => {
+      return (p.stock <= 3 && p.soldQty > 0) || (p.daysOfInventory !== null && p.daysOfInventory <= 10 && p.stock > 0);
+    });
+
+    // 3. تحليل التوصيل ومكافحة الخسائر
     const totalOrdersCount = orders.length;
     const closedOrdersCount = deliveredOrders.length + cancelledOrders.length;
     const deliverySuccessRate =
@@ -2724,11 +2744,79 @@ export default function Admin() {
       totalOrdersCount > 0 ? Math.round((pendingOrders.length / totalOrdersCount) * 100) : 0;
     const estimatedLossShipping = cancelledOrders.length * 15;
 
+    // 4. رادار كشف الزبائن الوهميين والقائمة السوداء (Fraud Shield)
+    const customerOrderHistory = {};
+    orders.forEach((o) => {
+      const phone = (o.customer_phone || "").trim();
+      if (!phone) return;
+      if (!customerOrderHistory[phone]) {
+        customerOrderHistory[phone] = {
+          name: o.customer_name || "زبون",
+          phone,
+          city: o.delivery_city,
+          totalOrders: 0,
+          delivered: 0,
+          cancelled: 0,
+          pending: 0,
+          totalSpent: 0,
+          lastOrderDate: o.created_at,
+        };
+      }
+      customerOrderHistory[phone].totalOrders++;
+      if (o.status === "تم التسليم") {
+        customerOrderHistory[phone].delivered++;
+        customerOrderHistory[phone].totalSpent += Number(o.total_price || 0);
+      } else if (o.status === "ملغي") {
+        customerOrderHistory[phone].cancelled++;
+      } else if (o.status === "جديد") {
+        customerOrderHistory[phone].pending++;
+      }
+      if (new Date(o.created_at) > new Date(customerOrderHistory[phone].lastOrderDate)) {
+        customerOrderHistory[phone].lastOrderDate = o.created_at;
+      }
+    });
+
+    // تصنيف الزبائن الخطرين والموثوقين
+    const customerList = Object.values(customerOrderHistory);
+    const riskyCustomers = customerList.filter((c) => c.cancelled >= 1 || (c.totalOrders >= 3 && c.delivered === 0));
+
+    // 5. استعادة الزبائن المفقودين (Customer Recovery)
+    const now = Date.now();
+    const lostCustomers = customerList
+      .filter((c) => c.delivered >= 1)
+      .map((c) => {
+        const daysSinceLast = Math.floor((now - new Date(c.lastOrderDate).getTime()) / (1000 * 60 * 60 * 24));
+        const isVip = c.delivered >= 2 || c.totalSpent >= 500;
+        return { ...c, daysSinceLast, isVip };
+      })
+      .filter((c) => c.daysSinceLast >= 20 || c.isVip)
+      .sort((a, b) => b.totalSpent - a.totalSpent);
+
+    // 6. حاسبة الأرباح الصافية الحقيقية (True Net Profit Ledger)
+    const deliveredRevenue = deliveredOrders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
+    // احتساب تكلفة المنتجات المسلّمة
+    let deliveredCostsTotal = 0;
+    deliveredOrders.forEach((o) => {
+      (o.items || []).forEach((it) => {
+        const prod = products.find((p) => String(p.id) === String(it.product_id));
+        const unitCost = prod?.cost_price ? Number(prod.cost_price) : Number(it.price || 0) * 0.7;
+        deliveredCostsTotal += unitCost * Number(it.qty || 1);
+      });
+    });
+
+    const grossDeliveredProfit = deliveredRevenue - deliveredCostsTotal;
+    const adSpend = Number(adSpendInput) || 0;
+    const miscExpense = Number(miscExpenseInput) || 0;
+    const totalExpenses = adSpend + miscExpense + estimatedLossShipping;
+    const trueNetCash = grossDeliveredProfit - totalExpenses;
+    const netMarginPercent = deliveredRevenue > 0 ? Math.round((trueNetCash / deliveredRevenue) * 100) : 0;
+
     return {
       totalTrappedCapital,
       totalStockUnits,
       deadStockCount,
       inventoryAnalysis,
+      reorderAlerts,
       deliveredOrdersCount: deliveredOrders.length,
       cancelledOrdersCount: cancelledOrders.length,
       pendingOrdersCount: pendingOrders.length,
@@ -2736,9 +2824,20 @@ export default function Admin() {
       deliverySuccessRate,
       pendingLeakageRate,
       estimatedLossShipping,
-      pendingOrdersList: pendingOrders.slice(0, 20),
+      pendingOrdersList: pendingOrders.slice(0, 25),
+      customerOrderHistory,
+      riskyCustomers,
+      lostCustomers,
+      deliveredRevenue,
+      deliveredCostsTotal,
+      grossDeliveredProfit,
+      adSpend,
+      miscExpense,
+      totalExpenses,
+      trueNetCash,
+      netMarginPercent,
     };
-  }, [products, orders]);
+  }, [products, orders, adSpendInput, miscExpenseInput]);
 
   async function handleApplyLiquidation(e) {
     if (e) e.preventDefault();
@@ -3425,41 +3524,75 @@ const result = {
                 </p>
               </div>
 
-              {/* أزرار التبديل بين المحركين */}
-              <div style={{ display: "flex", gap: 8, background: "rgba(255,255,255,0.1)", padding: 4, borderRadius: 12 }}>
+              {/* أزرار التبديل بين محركات النمو الـ 4 */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, background: "rgba(255,255,255,0.1)", padding: 4, borderRadius: 12 }}>
                 <button
                   type="button"
                   onClick={() => setGrowthSubTab("inventory")}
                   style={{
-                    padding: "8px 16px",
+                    padding: "8px 14px",
                     borderRadius: 10,
                     border: "none",
                     fontWeight: 800,
-                    fontSize: 13,
+                    fontSize: 12.5,
                     cursor: "pointer",
                     background: growthSubTab === "inventory" ? "#0E7C86" : "transparent",
                     color: "#fff",
                     transition: "all .15s ease",
                   }}
                 >
-                  📦 من المخزون إلى النقد (Inventory-to-Cash)
+                  📦 المخزون وتصفية الراكد
                 </button>
                 <button
                   type="button"
                   onClick={() => setGrowthSubTab("delivery")}
                   style={{
-                    padding: "8px 16px",
+                    padding: "8px 14px",
                     borderRadius: 10,
                     border: "none",
                     fontWeight: 800,
-                    fontSize: 13,
+                    fontSize: 12.5,
                     cursor: "pointer",
                     background: growthSubTab === "delivery" ? "#0E7C86" : "transparent",
                     color: "#fff",
                     transition: "all .15s ease",
                   }}
                 >
-                  🚚 مكافحة خسائر التوصيل (Loss Prevention)
+                  🛡️ رادار الخسائر والزبائن الوهميين
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGrowthSubTab("recovery")}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "none",
+                    fontWeight: 800,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    background: growthSubTab === "recovery" ? "#0E7C86" : "transparent",
+                    color: "#fff",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  🔁 استعادة الزبائن المفقودين
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGrowthSubTab("profit")}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "none",
+                    fontWeight: 800,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    background: growthSubTab === "profit" ? "#0E7C86" : "transparent",
+                    color: "#fff",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  💰 الأرباح الصافية الحقيقية
                 </button>
               </div>
             </div>
@@ -3467,6 +3600,80 @@ const result = {
             {/* ─── القسم 1: Inventory-to-Cash Engine ─── */}
             {growthSubTab === "inventory" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* رادار إعادة الطلب الذكي (Smart Reorder Alerts) */}
+                {growthMetrics.reorderAlerts.length > 0 && (
+                  <div style={{ background: "#FFFBEB", border: "1.5px solid #F59E0B", borderRadius: 16, padding: "16px 20px" }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#B45309", fontWeight: 800, fontSize: 15 }}>
+                        <AlertTriangle size={20} />
+                        <span>🚨 رادار إعادة الطلب الذكي: {growthMetrics.reorderAlerts.length} منتجات تقترب من النفاد!</span>
+                      </div>
+                      <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400E", padding: "4px 10px", borderRadius: 999, fontWeight: 700 }}>
+                        تنبيه استباقي لتفادي توقف مبيعات المنتجات الرابحة
+                      </span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
+                      {growthMetrics.reorderAlerts.map((p) => (
+                        <div key={p.id} style={{ background: "#fff", border: "1px solid #FDE68A", borderRadius: 12, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 800, color: "#1E293B", fontSize: 13 }}>{p.title}</div>
+                            <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                              المخزون: <strong style={{ color: "#DC2626" }}>{p.stock} قطعة</strong> | معدل الطلب: {p.dailyVelocity.toFixed(1)}/يوم
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "left" }}>
+                            <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 800, background: p.stock <= 2 ? "#FEE2E2" : "#FEF3C7", color: p.stock <= 2 ? "#DC2626" : "#D97706" }}>
+                              {p.daysOfInventory !== null ? `يكفي لـ ${p.daysOfInventory} يوم` : "مخزون حرج"}
+                            </span>
+                            <div style={{ fontSize: 10, color: "#0E7C86", fontWeight: 700, marginTop: 3 }}>
+                              طلب توريد مقترح: {Math.max(10, Math.round((p.dailyVelocity || 0.5) * 30))} قطعة
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* صانع حزم العروض الذكية (Hero + Dead Stock Bundle) */}
+                <div style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", borderRadius: 16, padding: "18px 22px", color: "#fff", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800 }}>
+                      <Zap size={18} color="#FBBF24" />
+                      <span>صانع حزم العروض الذكية (Hero + Dead Stock Bundle Engine) 🎁</span>
+                    </div>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "#94A3B8" }}>
+                      اربط المنتج الأكثر طلباً بمنتج بطيء الحركة بتخفيض مجمّع لتحرير السيولة المحبوسة فوراً مع حماية صافي أرباحك.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const hero = growthMetrics.inventoryAnalysis.find((p) => p.soldQty > 0) || products[0];
+                      const dead = growthMetrics.inventoryAnalysis.find((p) => p.trappedCapital > 0 && p.id !== hero?.id) || products[1] || products[0];
+                      setBundleHeroProduct(hero);
+                      setBundleDeadProduct(dead);
+                      setBundleModalOpen(true);
+                    }}
+                    style={{
+                      padding: "10px 18px",
+                      borderRadius: 10,
+                      background: "#0E7C86",
+                      color: "#fff",
+                      border: "none",
+                      fontWeight: 800,
+                      fontSize: 13,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      boxShadow: "0 4px 12px rgba(14,124,134,0.3)",
+                    }}
+                  >
+                    <span>تجهيز حزمة ذكية الآن</span> ⚡
+                  </button>
+                </div>
+
                 {/* بطاقات المؤشرات النقدية */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
                   <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #FEE2E2", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
@@ -3689,13 +3896,21 @@ const result = {
                             const cleanPhone = (ord.customer_phone || "").replace(/[^0-9]/g, "");
                             const fullPhone = cleanPhone.startsWith("218") ? cleanPhone : cleanPhone.startsWith("0") ? "218" + cleanPhone.slice(1) : "218" + cleanPhone;
                             const waUrl = `https://wa.me/${fullPhone}?text=${waText}`;
+                            const historyInfo = growthMetrics.customerOrderHistory[cleanPhone];
 
                             return (
                               <tr key={ord.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                                 <td style={{ padding: "12px", fontWeight: 800 }}>#{ord.id}</td>
                                 <td style={{ padding: "12px" }}>
                                   <div style={{ fontWeight: 700 }}>{ord.customer_name || "بدون اسم"}</div>
-                                  <div style={{ fontSize: 11, color: "#64748B" }}>{ord.customer_phone}</div>
+                                  <div style={{ fontSize: 11, color: "#64748B", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                                    <span>{ord.customer_phone}</span>
+                                    {historyInfo?.cancelled > 0 && (
+                                      <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "#FEE2E2", color: "#DC2626" }}>
+                                        ⚠️ سوابق إلغاء ({historyInfo.cancelled})
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td style={{ padding: "12px" }}>{ord.delivery_city || "غير محدد"}</td>
                                 <td style={{ padding: "12px", fontWeight: 800, color: "#0E7C86" }}>
@@ -3747,6 +3962,572 @@ const result = {
                       </table>
                     </div>
                   )}
+                </div>
+
+                {/* 🛡️ رادار فحص الزبائن عالي الخطورة وسوابق الإلغاء (Fraud Shield) */}
+                <div style={{ background: "#fff", borderRadius: 18, border: "1.5px solid #CBD5E1", padding: 20 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Shield size={20} color="#DC2626" />
+                        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>رادار مكافحة الخسائر والزبائن الوهميين (Fraud & Rejection Shield)</h3>
+                      </div>
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748B" }}>
+                        زبائن لديهم سوابق إلغاء أو عدم استلام — يُنصح باشتراط تحويل بنكي/عربون مسبق لتجنب خسارة 15 د.ل شحن راجع
+                      </p>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 800, background: "#FEE2E2", color: "#DC2626", padding: "4px 12px", borderRadius: 999 }}>
+                      {growthMetrics.riskyCustomers.length} زبائن بحاجة للحذر
+                    </span>
+                  </div>
+
+                  {growthMetrics.riskyCustomers.length === 0 ? (
+                    <div style={{ padding: 20, textAlign: "center", color: "#15803D", fontWeight: 700 }}>
+                      🛡️ لا توجد أرقام هواتف مسجلة بسوابق إلغاء متكررة حالياً.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", textAlign: "right" }}>
+                            <th style={{ padding: "10px 12px" }}>الزبون</th>
+                            <th style={{ padding: "10px 12px" }}>رقم الهاتف</th>
+                            <th style={{ padding: "10px 12px" }}>المدينة</th>
+                            <th style={{ padding: "10px 12px" }}>سجل الطلبات</th>
+                            <th style={{ padding: "10px 12px" }}>مستوى الخطورة</th>
+                            <th style={{ padding: "10px 12px" }}>الإجراء الوقائي المقترح</th>
+                            <th style={{ padding: "10px 12px", textAlign: "center" }}>تواصل احترازي</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {growthMetrics.riskyCustomers.map((c) => {
+                            const cleanPhone = (c.phone || "").replace(/[^0-9]/g, "");
+                            const fullPhone = cleanPhone.startsWith("218") ? cleanPhone : cleanPhone.startsWith("0") ? "218" + cleanPhone.slice(1) : "218" + cleanPhone;
+                            const waWarnText = encodeURIComponent(
+                              `السلام عليكم أخي الكريم، معك إدارة متجر ${settingsForm.store_name || "VELTRIX"}.\nبخصوص اعتماد طلبيتك للشحن، وحرصاً على سرعة التسليم، يرجى تأكيد الطلب بتحويل العربون أو الدفع البنكي لتجهيز الطرد فوراً.\nشاكرين تفهمك!`
+                            );
+                            return (
+                              <tr key={c.phone} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                                <td style={{ padding: "12px", fontWeight: 700 }}>{c.name}</td>
+                                <td style={{ padding: "12px", direction: "ltr", textAlign: "right", fontFamily: "monospace", fontWeight: 700 }}>{c.phone}</td>
+                                <td style={{ padding: "12px" }}>{c.city || "غير محدد"}</td>
+                                <td style={{ padding: "12px" }}>
+                                  <span style={{ fontSize: 12 }}>إجمالي: {c.totalOrders} | </span>
+                                  <span style={{ fontSize: 12, color: "#15803D", fontWeight: 700 }}>مسلّم: {c.delivered} | </span>
+                                  <strong style={{ color: "#DC2626" }}>ملغي: {c.cancelled}</strong>
+                                </td>
+                                <td style={{ padding: "12px" }}>
+                                  <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#FEE2E2", color: "#DC2626" }}>
+                                    ⚠️ عالي الخطورة ({c.cancelled} إلغاء)
+                                  </span>
+                                </td>
+                                <td style={{ padding: "12px", fontSize: 12, color: "#92400E", fontWeight: 700 }}>
+                                  اشتراط دفع مسبق أو تأكيد هاتفي صارم
+                                </td>
+                                <td style={{ padding: "12px", textAlign: "center" }}>
+                                  <a
+                                    href={`https://wa.me/${fullPhone}?text=${waWarnText}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 4,
+                                      padding: "6px 12px",
+                                      borderRadius: 8,
+                                      background: "#F59E0B",
+                                      color: "#fff",
+                                      fontSize: 12,
+                                      fontWeight: 700,
+                                      textDecoration: "none",
+                                    }}
+                                  >
+                                    <MessageCircle size={14} /> طلب تحويل مسبق
+                                  </a>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ─── القسم 3: Customer Recovery & VIP Retention ─── */}
+            {growthSubTab === "recovery" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* بطاقات الإحصائيات */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #FEF3C7", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#B45309", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>عملاء VIP (الأكثر إنفاقاً)</span>
+                      <Users size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#92400E" }}>
+                      {growthMetrics.lostCustomers.filter((c) => c.isVip).length} <span style={{ fontSize: 14 }}>عميل مميز</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      أصحاب طلبات متكررة أو إنفاق يتجاوز 500 د.ل
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #E2E8F0", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#0E7C86", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>زبائن بحاجة لإعادة تنشيط</span>
+                      <Clock size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#0A5A61" }}>
+                      {growthMetrics.lostCustomers.length} <span style={{ fontSize: 14 }}>زبون</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      مر على آخر طلب مسلّم لهم أكثر من 20 يوماً
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #DCFCE7", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#15803D", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>إجمالي مشترياتهم السابقة</span>
+                      <DollarSign size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#15803D" }}>
+                      {growthMetrics.lostCustomers.reduce((sum, c) => sum + (c.totalSpent || 0), 0).toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      قيمة نقدية مؤكدة سبق وأن دفعوها في متجرك
+                    </div>
+                  </div>
+                </div>
+
+                {/* جدول استعادة الزبائن */}
+                <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #CBD5E1", padding: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>قائمة استعادة وتنشيط الزبائن المفقودين</h3>
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748B" }}>
+                        تكلفة إعادة بيع لزبون سابق أقل 5 مرات من جلب زبون جديد عبر الإعلانات — نقرة واحدة ترسل له كود ترحيب خاص
+                      </p>
+                    </div>
+                  </div>
+
+                  {growthMetrics.lostCustomers.length === 0 ? (
+                    <div style={{ padding: 30, textAlign: "center", color: "#64748B", fontWeight: 700 }}>
+                      لا توجد بيانات زبائن سابقة مكتملة حالياً للتنشيط.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", textAlign: "right" }}>
+                            <th style={{ padding: "10px 12px" }}>الزبون</th>
+                            <th style={{ padding: "10px 12px" }}>المدينة</th>
+                            <th style={{ padding: "10px 12px" }}>التصنيف</th>
+                            <th style={{ padding: "10px 12px" }}>إجمالي إنفاقه</th>
+                            <th style={{ padding: "10px 12px" }}>الغياب</th>
+                            <th style={{ padding: "10px 12px", textAlign: "center" }}>إجراء الاستعادة المباشر</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {growthMetrics.lostCustomers.map((c) => {
+                            const cleanPhone = (c.phone || "").replace(/[^0-9]/g, "");
+                            const fullPhone = cleanPhone.startsWith("218") ? cleanPhone : cleanPhone.startsWith("0") ? "218" + cleanPhone.slice(1) : "218" + cleanPhone;
+                            const couponCode = c.isVip ? "VIP15" : "COMEBACK";
+                            const discountText = c.isVip ? "15%" : "10%";
+                            const recText = encodeURIComponent(
+                              `أهلاً وسهلاً أخي العزيز ${c.name || ""} 🌟،\nمعك متجر ${settingsForm.store_name || "VELTRIX"}.\n\nيسعدنا إخبارك بتوفر تشكيلة جديدة ومميزة، وتقديراً لثقتك السابقة يسعدنا تقديم خصم خاص بقيمة ${discountText} على طلبك القادم بكود الخصم: (${couponCode}) ✨\n\nتفضل بمشاهدة أحدث المنتجات من متجرنا!`
+                            );
+                            return (
+                              <tr key={c.phone} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                                <td style={{ padding: "12px" }}>
+                                  <div style={{ fontWeight: 800, color: "#0F172A" }}>{c.name}</div>
+                                  <div style={{ fontSize: 11, color: "#64748B", direction: "ltr", textAlign: "right" }}>{c.phone}</div>
+                                </td>
+                                <td style={{ padding: "12px" }}>{c.city || "غير محدد"}</td>
+                                <td style={{ padding: "12px" }}>
+                                  {c.isVip ? (
+                                    <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#FEF3C7", color: "#B45309" }}>
+                                      👑 VIP ذهبي
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#F1F5F9", color: "#64748B" }}>
+                                      ⏳ زبون غير نشط
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: "12px", fontWeight: 800, color: "#0E7C86" }}>
+                                  {c.totalSpent.toLocaleString()} د.ل
+                                </td>
+                                <td style={{ padding: "12px", color: "#64748B" }}>
+                                  منذ {c.daysSinceLast} يوماً
+                                </td>
+                                <td style={{ padding: "12px", textAlign: "center" }}>
+                                  <a
+                                    href={`https://wa.me/${fullPhone}?text=${recText}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 6,
+                                      padding: "6px 14px",
+                                      borderRadius: 8,
+                                      background: "#25D366",
+                                      color: "#fff",
+                                      fontWeight: 700,
+                                      fontSize: 12,
+                                      textDecoration: "none",
+                                    }}
+                                  >
+                                    <MessageCircle size={14} /> إرسال كود {couponCode} واتساب
+                                  </a>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ─── القسم 4: True Net Profit Ledger ─── */}
+            {growthSubTab === "profit" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* بطاقة صافي الكاش الكبرى (Hero Card) */}
+                <div
+                  style={{
+                    background: growthMetrics.trueNetCash >= 0 ? "linear-gradient(135deg, #064E3B 0%, #065F46 100%)" : "linear-gradient(135deg, #7F1D1D 0%, #991B1B 100%)",
+                    borderRadius: 18,
+                    padding: "24px 28px",
+                    color: "#fff",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 20,
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, opacity: 0.85, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                      <DollarSign size={18} />
+                      <span>صافي الكاش الحقيقي في جيبك (True Net Cash in Pocket)</span>
+                    </div>
+                    <div style={{ fontSize: 36, fontWeight: 900, marginTop: 4, letterSpacing: "-0.5px" }}>
+                      {growthMetrics.trueNetCash.toLocaleString()} <span style={{ fontSize: 18 }}>د.ل</span>
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
+                      هامش الربح الصافي الفعلي: <strong>{growthMetrics.netMarginPercent}%</strong> من إجمالي مبيعات التسليم ({growthMetrics.deliveredRevenue.toLocaleString()} د.ل)
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "left", background: "rgba(255,255,255,0.12)", padding: "12px 18px", borderRadius: 12 }}>
+                    <div style={{ fontSize: 11, opacity: 0.8 }}>حالة الاستدامة والنمو</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, marginTop: 2 }}>
+                      {growthMetrics.trueNetCash > 0 ? "✅ متجر رابح وذو سيولة صحية" : "⚠️ بحاجة لتقليل تكاليف الإعلانات أو الشحن الراجع"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* مدخلات التكاليف التشغيلية والإعلانات */}
+                <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #CBD5E1", padding: 20 }}>
+                  <h3 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800 }}>تخصيص المصاريف الشهرية / الدورية لمتجرك</h3>
+                  <p style={{ margin: "0 0 16px", fontSize: 12, color: "#64748B" }}>
+                    يتم حفظ هذه القيم تلقائياً وتحديث صافي الأرباح فورياً مع كل طلب جديد
+                  </p>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#1E293B" }}>
+                        📢 مصاريف الإعلانات الممولة (فيسبوك، تيك توك، انستغرام):
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          type="number"
+                          min="0"
+                          value={adSpendInput}
+                          onChange={(e) => {
+                            setAdSpendInput(e.target.value);
+                            localStorage.setItem("nova_growth_ad_spend", e.target.value);
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "10px 14px",
+                            borderRadius: 10,
+                            border: "1.5px solid #CBD5E1",
+                            fontSize: 15,
+                            fontWeight: 800,
+                            boxSizing: "border-box",
+                          }}
+                          placeholder="0"
+                        />
+                        <span style={{ position: "absolute", left: 14, top: 12, fontSize: 12, color: "#64748B", fontWeight: 700 }}>د.ل</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#1E293B" }}>
+                        📦 مصاريف تشغيلية ونثرية (تغليف، هاتف، إيجار، عمالة):
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          type="number"
+                          min="0"
+                          value={miscExpenseInput}
+                          onChange={(e) => {
+                            setMiscExpenseInput(e.target.value);
+                            localStorage.setItem("nova_growth_misc_expense", e.target.value);
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "10px 14px",
+                            borderRadius: 10,
+                            border: "1.5px solid #CBD5E1",
+                            fontSize: 15,
+                            fontWeight: 800,
+                            boxSizing: "border-box",
+                          }}
+                          placeholder="0"
+                        />
+                        <span style={{ position: "absolute", left: 14, top: 12, fontSize: 12, color: "#64748B", fontWeight: 700 }}>د.ل</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* شلال تفكيك الأرباح والتكاليف (Financial Waterfall Breakdown) */}
+                <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #CBD5E1", padding: 20 }}>
+                  <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 800 }}>تفكيك شلال الأرباح (Waterfall Breakdown)</h3>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {/* 1. الإيراد المحصل */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#F8FAFC", borderRadius: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#0E7C86" }}></span>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>إجمالي المقبوضات المسلّمة نقدياً ({growthMetrics.deliveredOrdersCount} طلب)</span>
+                      </div>
+                      <span style={{ fontWeight: 900, color: "#0E7C86", fontSize: 15 }}>+{growthMetrics.deliveredRevenue.toLocaleString()} د.ل</span>
+                    </div>
+
+                    {/* 2. تكلفة المنتجات */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#F8FAFC", borderRadius: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#DC2626" }}></span>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>(-) تكلفة شراء البضاعة المسلّمة (COGS)</span>
+                      </div>
+                      <span style={{ fontWeight: 900, color: "#DC2626", fontSize: 15 }}>-{growthMetrics.deliveredCostsTotal.toLocaleString()} د.ل</span>
+                    </div>
+
+                    {/* 3. مجمل الربح */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#EFF6FF", borderRadius: 10, border: "1px dashed #BFDBFE" }}>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: "#1E40AF" }}>(=) مجمل الربح التجاري الخام</span>
+                      <span style={{ fontWeight: 900, color: "#1E40AF", fontSize: 15 }}>{growthMetrics.grossDeliveredProfit.toLocaleString()} د.ل</span>
+                    </div>
+
+                    {/* 4. خسائر الشحن الراجع */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#F8FAFC", borderRadius: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#F59E0B" }}></span>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>(-) خسائر شحن الطرود الملغية والمرفوضة (15 د.ل × {growthMetrics.cancelledOrdersCount})</span>
+                      </div>
+                      <span style={{ fontWeight: 900, color: "#D97706", fontSize: 15 }}>-{growthMetrics.estimatedLossShipping.toLocaleString()} د.ل</span>
+                    </div>
+
+                    {/* 5. مصاريف الإعلانات */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#F8FAFC", borderRadius: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748B" }}></span>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>(-) مصاريف الحملات الإعلانية المدخلة</span>
+                      </div>
+                      <span style={{ fontWeight: 900, color: "#64748B", fontSize: 15 }}>-{growthMetrics.adSpend.toLocaleString()} د.ل</span>
+                    </div>
+
+                    {/* 6. المصاريف التشغيلية */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#F8FAFC", borderRadius: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748B" }}></span>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>(-) المصاريف التشغيلية والنثرية</span>
+                      </div>
+                      <span style={{ fontWeight: 900, color: "#64748B", fontSize: 15 }}>-{growthMetrics.miscExpense.toLocaleString()} د.ل</span>
+                    </div>
+
+                    {/* 7. الصافي الحقيقي */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: growthMetrics.trueNetCash >= 0 ? "#DCFCE7" : "#FEE2E2", borderRadius: 12, border: `1.5px solid ${growthMetrics.trueNetCash >= 0 ? "#86EFAC" : "#FCA5A5"}` }}>
+                      <span style={{ fontWeight: 900, fontSize: 14, color: growthMetrics.trueNetCash >= 0 ? "#14532D" : "#7F1D1D" }}>
+                        🏆 (=) صافي الربح الحقيقي المتبقي في الخزينة
+                      </span>
+                      <span style={{ fontWeight: 900, color: growthMetrics.trueNetCash >= 0 ? "#14532D" : "#7F1D1D", fontSize: 18 }}>
+                        {growthMetrics.trueNetCash.toLocaleString()} د.ل ({growthMetrics.netMarginPercent}%)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* نافذة إنشاء حزمة العروض الذكية (Hero + Dead Stock Bundle) */}
+            {bundleModalOpen && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(0,0,0,0.55)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 9999,
+                  padding: 16,
+                }}
+              >
+                <div style={{ background: "#fff", borderRadius: 20, maxWidth: 520, width: "100%", padding: 24, boxShadow: "0 25px 50px rgba(0,0,0,0.25)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+                      <span>🎁 صانع الحزم الذكية (Hero + Dead Stock)</span>
+                    </h3>
+                    <button type="button" onClick={() => setBundleModalOpen(false)} style={{ border: "none", background: "none", fontSize: 22, cursor: "pointer" }}>×</button>
+                  </div>
+
+                  <p style={{ fontSize: 12.5, color: "#64748B", margin: "0 0 16px" }}>
+                    اختر منتجك الأكثر طلباً لدمجه مع منتج بطيء الحركة وتحديد نسبة الخصم مع ضمان عدم الخسارة في التكلفة الإجمالية.
+                  </p>
+
+                  {/* اختيار المنتج الرائد والمنتج الراكد */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                        ⭐ المنتج الرائد الأكثر طلباً (Hero Product):
+                      </label>
+                      <select
+                        value={bundleHeroProduct?.id || ""}
+                        onChange={(e) => {
+                          const p = products.find((x) => String(x.id) === e.target.value);
+                          setBundleHeroProduct(p);
+                        }}
+                        style={{ width: "100%", padding: "10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, fontWeight: 700 }}
+                      >
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title} ({p.price} د.ل)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                        📦 المنتج الراكد المراد تصريفه (Dead Stock):
+                      </label>
+                      <select
+                        value={bundleDeadProduct?.id || ""}
+                        onChange={(e) => {
+                          const p = products.find((x) => String(x.id) === e.target.value);
+                          setBundleDeadProduct(p);
+                        }}
+                        style={{ width: "100%", padding: "10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, fontWeight: 700 }}
+                      >
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title} ({p.price} د.ل)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                        خصم الحزمة المشتركة (%):
+                      </label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="50"
+                        value={bundleDiscount}
+                        onChange={(e) => setBundleDiscount(e.target.value)}
+                        style={{ width: "100%", padding: "10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, fontWeight: 800, boxSizing: "border-box" }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* الحسابات المالية التلقائية */}
+                  {(() => {
+                    const heroPrice = Number(bundleHeroProduct?.price || 0);
+                    const deadPrice = Number(bundleDeadProduct?.price || 0);
+                    const sumRegular = heroPrice + deadPrice;
+                    const discPercent = Number(bundleDiscount) || 15;
+                    const bundlePrice = Math.round(sumRegular * (1 - discPercent / 100));
+
+                    const heroCost = bundleHeroProduct?.cost_price ? Number(bundleHeroProduct.cost_price) : heroPrice * 0.7;
+                    const deadCost = bundleDeadProduct?.cost_price ? Number(bundleDeadProduct.cost_price) : deadPrice * 0.7;
+                    const totalBundleCost = Math.round(heroCost + deadCost);
+                    const profit = bundlePrice - totalBundleCost;
+
+                    const promoText = `🔥 عرض خاص لفترة محدودة من متجر ${settingsForm.store_name || "VELTRIX"}!\nاحصل على [${bundleHeroProduct?.title}] + [${bundleDeadProduct?.title}] معاً في بكج واحد بسعر ${bundlePrice} د.ل فقط بدلاً من ${sumRegular} د.ل (وفرت ${sumRegular - bundlePrice} د.ل)! 🎁\n\nللطلب المباشر أو الحجز تواصل معنا الآن عبر واتساب!`;
+
+                    return (
+                      <div>
+                        <div style={{ background: profit > 0 ? "#F0FDF4" : "#FEF2F2", border: `1px solid ${profit > 0 ? "#BBF7D0" : "#FECACA"}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                            <span>السعر الأصلي معاً:</span>
+                            <span style={{ textDecoration: "line-through", color: "#64748B" }}>{sumRegular} د.ل</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 800, color: "#0F172A", marginBottom: 6 }}>
+                            <span>سعر العرض المجمّع ({discPercent}% خصم):</span>
+                            <span style={{ color: "#0E7C86" }}>{bundlePrice} د.ل</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: profit > 0 ? "#15803D" : "#DC2626", fontWeight: 700 }}>
+                            <span>التكلفة المشتركة والربح الصافي:</span>
+                            <span>تكلفة: {totalBundleCost} د.ل | صافي ربحك: {profit} د.ل</span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 10 }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(promoText);
+                              alert("✅ تم نسخ النص الإعلاني التسويقي للبكج بنجاح إلى الحافظة! يمكنك نشره الآن على فيسبوك أو إرساله للزبائن.");
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: "12px",
+                              borderRadius: 10,
+                              background: "#0E7C86",
+                              color: "#fff",
+                              border: "none",
+                              fontWeight: 800,
+                              fontSize: 13,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <Copy size={16} /> نسخ نص الإعلان الجاهز للبكج
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBundleModalOpen(false)}
+                            style={{
+                              padding: "12px 18px",
+                              borderRadius: 10,
+                              background: "#F1F5F9",
+                              color: "#475569",
+                              border: "none",
+                              fontWeight: 700,
+                              fontSize: 13,
+                              cursor: "pointer",
+                            }}
+                          >
+                            إغلاق
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
