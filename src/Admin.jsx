@@ -1791,7 +1791,7 @@ export default function Admin() {
   const TABS = isModerator
     ? [{ id: "products", label: "المنتجات" }]
     : [
-        { id: "growth", label: "محرك النمو والسيولة ⚡ Growth" },
+        { id: "growth", label: "محرك النمو والأرباح 📊" },
         { id: "settings", label: "إعدادات المتجر ⚙️" },
         { id: "dashboard", label: "لوحة الإحصائيات" },
         { id: "finance", label: "الإدارة المالية 💰" },
@@ -2160,6 +2160,7 @@ export default function Admin() {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [orderSearch, setOrderSearch] = useState("");
   const [bankReceiptInputs, setBankReceiptInputs] = useState({});
   const ORDER_STATUSES = ["جديد", "قيد التحقق من الحوالة", "قيد التجهيز", "تم الشحن", "تم التسليم", "ملغي"];
   const STATUS_LABELS = {
@@ -2442,14 +2443,32 @@ export default function Admin() {
     };
   }, [financialTransactions, orders, products]);
 
+    // تصفية الطلبات في لوحة الكانبان
+  const filteredOrders = useMemo(() => {
+    if (!orderSearch.trim()) return orders;
+    const q = orderSearch.trim().toLowerCase();
+    return orders.filter((o) => {
+      const idMatch = String(o.id || "").toLowerCase().includes(q) || ("inv-" + o.id).includes(q);
+      const nameMatch = (o.customer_name || "").toLowerCase().includes(q);
+      const phoneMatch = (o.customer_phone || "").includes(q);
+      const cityMatch = (o.delivery_city || "").toLowerCase().includes(q);
+      const trackMatch = (o.tracking_number || "").toLowerCase().includes(q);
+      const itemMatch = (o.items || []).some((it) => (it.title || "").toLowerCase().includes(q));
+      return idMatch || nameMatch || phoneMatch || cityMatch || trackMatch || itemMatch;
+    });
+  }, [orders, orderSearch]);
+
   const filteredInvoices = useMemo(() => {
     if (!invoiceSearch.trim()) return orders;
     const q = invoiceSearch.trim().toLowerCase();
     return orders.filter(
       (o) =>
         String(o.id).includes(q) ||
+        ("inv-" + o.id).toLowerCase().includes(q) ||
         (o.customer_name || "").toLowerCase().includes(q) ||
-        (o.customer_phone || "").includes(q)
+        (o.customer_phone || "").includes(q) ||
+        (o.delivery_city || "").toLowerCase().includes(q) ||
+        (o.items || []).some((it) => (it.title || "").toLowerCase().includes(q))
     );
   }, [orders, invoiceSearch]);
 
@@ -3531,11 +3550,11 @@ const result = {
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <Zap size={24} color="#FBBF24" />
                   <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "#fff" }}>
-                    محرك النمو والأرباح الذكي (Commerce Growth Engine)
+                    محرك النمو وإدارة الأرباح (Commerce Growth Engine)
                   </h2>
                 </div>
                 <p style={{ margin: "6px 0 0", fontSize: 13, color: "#94A3B8" }}>
-                  تحويل المخزون الراكد إلى سيولة نقدية، حماية هامش الربح، ومكافحة خسائر التوصيل والإلغاء
+                  مراقبة السيولة النقدية، إدارة وتصريف المخزون، وتحليل الأرباح الصافية وكفاءة التوصيل
                 </p>
               </div>
 
@@ -3573,7 +3592,7 @@ const result = {
                     transition: "all .15s ease",
                   }}
                 >
-                  🛡️ رادار الخسائر والزبائن الوهميين
+                  🛡️ إدارة التوصيل والتدقيق الوقائي
                 </button>
                 <button
                   type="button"
@@ -3617,11 +3636,11 @@ const result = {
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {/* رادار إعادة الطلب الذكي (Smart Reorder Alerts) */}
                 {growthMetrics.reorderAlerts.length > 0 && (
-                  <div style={{ background: "#FFFBEB", border: "1.5px solid #F59E0B", borderRadius: 16, padding: "16px 20px" }}>
+                  <div style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "18px 20px", boxShadow: "0 2px 8px rgba(0,0,0,0.02)" }}>
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#B45309", fontWeight: 800, fontSize: 15 }}>
                         <AlertTriangle size={20} />
-                        <span>🚨 رادار إعادة الطلب الذكي: {growthMetrics.reorderAlerts.length} منتجات تقترب من النفاد!</span>
+                        <span>📦 تنبيهات المخزون العاجلة: {growthMetrics.reorderAlerts.length} منتجات تقترب من النفاد!</span>
                       </div>
                       <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400E", padding: "4px 10px", borderRadius: 999, fontWeight: 700 }}>
                         تنبيه استباقي لتفادي توقف مبيعات المنتجات الرابحة
@@ -3651,13 +3670,13 @@ const result = {
                 )}
 
                 {/* صانع حزم العروض الذكية (Hero + Dead Stock Bundle) */}
-                <div style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", borderRadius: 16, padding: "18px 22px", color: "#fff", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
+                <div style={{ background: "#FFFFFF", border: "1.5px solid #0E7C86", borderRadius: 16, padding: "18px 22px", color: "#0F172A", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14, boxShadow: "0 2px 10px rgba(14,124,134,0.06)" }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800 }}>
                       <Zap size={18} color="#FBBF24" />
-                      <span>صانع حزم العروض الذكية (Hero + Dead Stock Bundle Engine) 🎁</span>
+                      <span style={{ color: "#0E7C86" }}>إدارة حزم العروض المجمّعة (Hero + Clearance Bundles) 🎁</span>
                     </div>
-                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "#94A3B8" }}>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748B" }}>
                       اربط المنتج الأكثر طلباً بمنتج بطيء الحركة بتخفيض مجمّع لتحرير السيولة المحبوسة فوراً مع حماية صافي أرباحك.
                     </p>
                   </div>
@@ -3985,7 +4004,7 @@ const result = {
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <Shield size={20} color="#DC2626" />
-                        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>رادار مكافحة الخسائر والزبائن الوهميين (Fraud & Rejection Shield)</h3>
+                        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>سجل التدقيق الوقائي للزبائن (مكافحة الشحن الراجع)</h3>
                       </div>
                       <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748B" }}>
                         زبائن لديهم سوابق إلغاء أو عدم استلام — يُنصح باشتراط تحويل بنكي/عربون مسبق لتجنب خسارة 15 د.ل شحن راجع
@@ -4117,13 +4136,13 @@ const result = {
                 </div>
 
                 {/* بانر إطلاق الحملة الجماعية */}
-                <div style={{ background: "linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)", borderRadius: 16, padding: "18px 22px", color: "#fff", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
+                <div style={{ background: "linear-gradient(135deg, #0B2027 0%, #164E63 100%)", borderRadius: 16, padding: "18px 22px", color: "#fff", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "15px", fontWeight: 800 }}>
-                      <Zap size={18} color="#A5B4FC" />
+                      <Zap size={18} color="#5EEAD4" />
                       <span>مركز الحملات والرسائل الجماعية المباشرة (Direct Broadcast Engine) 🚀</span>
                     </div>
-                    <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#C7D2FE" }}>
+                    <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#CCFBF1" }}>
                       أرسل عروض البكجات وأكواد الخصم الترويجية (مثل VIP15 أو COMEBACK) لجميع أرقام زبائن هذا المتجر بنقرة واحدة لرفع المبيعات فورياً.
                     </p>
                   </div>
@@ -4518,7 +4537,8 @@ const result = {
                     const totalBundleCost = Math.round(heroCost + deadCost);
                     const profit = bundlePrice - totalBundleCost;
 
-                    const promoText = `🔥 عرض خاص لفترة محدودة من متجر ${settingsForm.store_name || "VELTRIX"}!\nاحصل على [${bundleHeroProduct?.title}] + [${bundleDeadProduct?.title}] معاً في بكج واحد بسعر ${bundlePrice} د.ل فقط بدلاً من ${sumRegular} د.ل (وفرت ${sumRegular - bundlePrice} د.ل)! 🎁\n\nللطلب المباشر أو الحجز تواصل معنا الآن عبر واتساب!`;
+                    const storeUrl = window.location.origin;
+                    const promoText = `🔥 عرض خاص لفترة محدودة من متجر ${settingsForm.store_name || "VELTRIX"}!\nاحصل على [${bundleHeroProduct?.title}] + [${bundleDeadProduct?.title}] معاً في باقة واحدة بسعر ${bundlePrice} د.ل فقط بدلاً من ${sumRegular} د.ل (وفرت ${sumRegular - bundlePrice} د.ل)! 🎁\n\nتفضل بالطلب المباشر من متجرنا عبر الرابط التالي:\n${storeUrl}`;
 
                     return (
                       <div>
@@ -6708,8 +6728,52 @@ const result = {
         {/* ---- تبويب: الطلبات ---- */}
         {activeTab === "orders" && (
           <>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>الطلبات ({orders.length})</h3>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>الطلبات ({filteredOrders.length} من {orders.length})</h3>
+                {orderSearch && (
+                  <span style={{ fontSize: 11, background: "#EFF6FF", color: "#1E40AF", padding: "3px 8px", borderRadius: 999, fontWeight: 700 }}>
+                    تصفية مطبقة
+                  </span>
+                )}
+              </div>
+              <div style={{ position: "relative", minWidth: 260, maxWidth: 380, flex: 1 }}>
+                <input
+                  type="text"
+                  placeholder="🔍 ابحث برقم الطلب، اسم الزبون، الهاتف، أو المدينة..."
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 36px 9px 12px",
+                    borderRadius: 10,
+                    border: "1.5px solid #CBD5E1",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    boxSizing: "border-box",
+                    background: "#fff",
+                  }}
+                />
+                {orderSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setOrderSearch("")}
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      border: "none",
+                      background: "none",
+                      fontSize: 16,
+                      color: "#94A3B8",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             </div>
             {ordersLoading ? (
               <p>جارٍ تحميل الطلبات...</p>
@@ -6718,7 +6782,7 @@ const result = {
             ) : (
               <div dir="rtl" style={styles.kanbanBoard}>
                 {ORDER_STATUSES.map((status) => {
-                  const statusOrders = orders.filter((o) => o.status === status);
+                  const statusOrders = filteredOrders.filter((o) => o.status === status);
                   return (
                     <div key={status} style={styles.kanbanColumn}>
                       <div style={styles.kanbanHeader}>
