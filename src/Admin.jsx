@@ -1791,6 +1791,7 @@ export default function Admin() {
   const TABS = isModerator
     ? [{ id: "products", label: "المنتجات" }]
     : [
+        { id: "growth", label: "محرك النمو والسيولة ⚡ Growth" },
         { id: "settings", label: "إعدادات المتجر ⚙️" },
         { id: "dashboard", label: "لوحة الإحصائيات" },
         { id: "finance", label: "الإدارة المالية 💰" },
@@ -1806,6 +1807,12 @@ export default function Admin() {
             ]
           : []),
       ];
+
+  // ---- محرك النمو والسيولة (Growth Engine State) ----
+  const [growthSubTab, setGrowthSubTab] = useState("inventory"); // "inventory" | "delivery"
+  const [liquidationModalProduct, setLiquidationModalProduct] = useState(null);
+  const [liquidationNewPrice, setLiquidationNewPrice] = useState("");
+  const [liquidationSaving, setLiquidationSaving] = useState(false);
 
   // ---- تبويب الدفع والتوصيل (Integration Layer State) ----
   const [integrationSubTab, setIntegrationSubTab] = useState("payments"); // "payments" | "delivery" | "logs"
@@ -2643,6 +2650,148 @@ export default function Admin() {
     setRoleLoading(false);
   }
 
+  // ─── محرك النمو والسيولة (Growth Engine Calculations) ───
+  const growthMetrics = useMemo(() => {
+    const deliveredOrders = orders.filter((o) => o.status === "تم التسليم");
+    const cancelledOrders = orders.filter((o) => o.status === "ملغي");
+    const pendingOrders = orders.filter((o) => o.status === "جديد");
+
+    // احتساب المبيعات الفعلية المسلّمة لكل منتج
+    const deliveredSalesByProduct = {};
+    deliveredOrders.forEach((o) => {
+      (o.items || []).forEach((it) => {
+        const pid = it.product_id;
+        deliveredSalesByProduct[pid] = (deliveredSalesByProduct[pid] || 0) + Number(it.qty || 1);
+      });
+    });
+
+    let totalTrappedCapital = 0;
+    let totalStockUnits = 0;
+    let deadStockCount = 0;
+
+    const inventoryAnalysis = products.map((p) => {
+      const soldQty = deliveredSalesByProduct[p.id] || 0;
+      const stock = Number(p.stock || 0);
+      const cost = p.cost_price ? Number(p.cost_price) : Number(p.price) * 0.7;
+      const hasRealCost = Boolean(p.cost_price && Number(p.cost_price) > 0);
+      const trappedCapital = stock * cost;
+      totalTrappedCapital += trappedCapital;
+      totalStockUnits += stock;
+
+      const ageDays = p.created_at
+        ? Math.max(1, Math.floor((Date.now() - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24)))
+        : 30;
+
+      let statusLabel = "نشط وطبيعي";
+      let statusColor = "#15803D";
+      let statusBg = "#DCFCE7";
+
+      if (soldQty === 0 && stock > 0 && ageDays > 20) {
+        statusLabel = "راكد حرج 🚨";
+        statusColor = "#B91C1C";
+        statusBg = "#FEE2E2";
+        deadStockCount++;
+      } else if (soldQty <= 1 && stock >= 5) {
+        statusLabel = "بطيء الحركة ⚠️";
+        statusColor = "#B45309";
+        statusBg = "#FEF3C7";
+      }
+
+      const safeLiquidationPrice = Math.ceil(cost * 1.05);
+
+      return {
+        ...p,
+        soldQty,
+        stock,
+        cost,
+        hasRealCost,
+        trappedCapital,
+        ageDays,
+        statusLabel,
+        statusColor,
+        statusBg,
+        safeLiquidationPrice,
+      };
+    });
+
+    inventoryAnalysis.sort((a, b) => b.trappedCapital - a.trappedCapital);
+
+    const totalOrdersCount = orders.length;
+    const closedOrdersCount = deliveredOrders.length + cancelledOrders.length;
+    const deliverySuccessRate =
+      closedOrdersCount > 0 ? Math.round((deliveredOrders.length / closedOrdersCount) * 100) : 0;
+    const pendingLeakageRate =
+      totalOrdersCount > 0 ? Math.round((pendingOrders.length / totalOrdersCount) * 100) : 0;
+    const estimatedLossShipping = cancelledOrders.length * 15;
+
+    return {
+      totalTrappedCapital,
+      totalStockUnits,
+      deadStockCount,
+      inventoryAnalysis,
+      deliveredOrdersCount: deliveredOrders.length,
+      cancelledOrdersCount: cancelledOrders.length,
+      pendingOrdersCount: pendingOrders.length,
+      totalOrdersCount,
+      deliverySuccessRate,
+      pendingLeakageRate,
+      estimatedLossShipping,
+      pendingOrdersList: pendingOrders.slice(0, 20),
+    };
+  }, [products, orders]);
+
+  async function handleApplyLiquidation(e) {
+    if (e) e.preventDefault();
+    if (!liquidationModalProduct || !liquidationNewPrice) return;
+    const priceNum = Number(liquidationNewPrice);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      alert("يرجى إدخال سعر صالح");
+      return;
+    }
+    const minSafe = liquidationModalProduct.cost_price ? Number(liquidationModalProduct.cost_price) : 0;
+    if (minSafe > 0 && priceNum < minSafe) {
+      if (
+        !confirm(
+          `⚠️ تنبيه حماية الأرباح: السعر المقترح (${priceNum} د.ل) أقل من سعر التكلفة (${minSafe} د.ل)، مما يعني بيعاً بخسارة. هل تريد المتابعة رغم ذلك؟`
+        )
+      ) {
+        return;
+      }
+    }
+    setLiquidationSaving(true);
+    const { error } = await supabase
+      .from("products")
+      .update({
+        price: priceNum,
+        old_price: liquidationModalProduct.price,
+        featured: true,
+      })
+      .eq("id", liquidationModalProduct.id);
+    setLiquidationSaving(false);
+    if (error) {
+      alert("فشل تحديث العرض: " + error.message);
+    } else {
+      alert("✅ تم تفعيل عرض التصفية بنجاح وتمت ترقية المنتج لقسم المميزة!");
+      setLiquidationModalProduct(null);
+      fetchProducts();
+    }
+  }
+
+  async function handleQuickConfirmOrder(orderId) {
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: "قيد التجهيز" })
+      .eq("id", orderId);
+    if (error) {
+      alert("فشل تحديث حالة الطلب: " + error.message);
+    } else {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: "قيد التجهيز" } : o))
+      );
+      alert("✅ تم تحويل الطلب إلى (قيد التجهيز) بنجاح!");
+    }
+  }
+
   async function fetchTeamMembers() {
     const { data, error } = await supabase
       .from("admin_users")
@@ -3245,6 +3394,455 @@ const result = {
 
       {/* المحتوى الرئيسي */}
       <div style={styles.page}>
+        {/* ========================================================
+            تبويب: محرك النمو والسيولة ومكافحة الخسائر (Growth Engine)
+           ======================================================== */}
+        {activeTab === "growth" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* رأس الصفحة والمفاتيح الفرعية */}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                padding: "20px 24px",
+                background: "linear-gradient(135deg, #0B2027 0%, #113640 100%)",
+                borderRadius: 18,
+                color: "#fff",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Zap size={24} color="#FBBF24" />
+                  <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "#fff" }}>
+                    محرك النمو والأرباح الذكي (Commerce Growth Engine)
+                  </h2>
+                </div>
+                <p style={{ margin: "6px 0 0", fontSize: 13, color: "#94A3B8" }}>
+                  تحويل المخزون الراكد إلى سيولة نقدية، حماية هامش الربح، ومكافحة خسائر التوصيل والإلغاء
+                </p>
+              </div>
+
+              {/* أزرار التبديل بين المحركين */}
+              <div style={{ display: "flex", gap: 8, background: "rgba(255,255,255,0.1)", padding: 4, borderRadius: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setGrowthSubTab("inventory")}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 10,
+                    border: "none",
+                    fontWeight: 800,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    background: growthSubTab === "inventory" ? "#0E7C86" : "transparent",
+                    color: "#fff",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  📦 من المخزون إلى النقد (Inventory-to-Cash)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGrowthSubTab("delivery")}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 10,
+                    border: "none",
+                    fontWeight: 800,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    background: growthSubTab === "delivery" ? "#0E7C86" : "transparent",
+                    color: "#fff",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  🚚 مكافحة خسائر التوصيل (Loss Prevention)
+                </button>
+              </div>
+            </div>
+
+            {/* ─── القسم 1: Inventory-to-Cash Engine ─── */}
+            {growthSubTab === "inventory" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* بطاقات المؤشرات النقدية */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #FEE2E2", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#B91C1C", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>رأس المال المحبوس بالبضاعة</span>
+                      <Wallet size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#991B1B" }}>
+                      {growthMetrics.totalTrappedCapital.toLocaleString()} <span style={{ fontSize: 14 }}>د.ل</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      مجموع قيمة {growthMetrics.totalStockUnits} قطعة مخزنة بالتكلفة
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #FEF3C7", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#B45309", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>منتجات راكدة حرجة</span>
+                      <AlertTriangle size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#92400E" }}>
+                      {growthMetrics.deadStockCount} <span style={{ fontSize: 14 }}>منتج راكد</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      بضاعة مر عليها أكثر من 20 يوماً دون أي تسليم
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #E2E8F0", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#0E7C86", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>مبيعات مسلّمة مؤكدة</span>
+                      <CheckCircle2 size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#0A5A61" }}>
+                      {growthMetrics.deliveredOrdersCount} <span style={{ fontSize: 14 }}>طلب ناجح</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      الطلبات المستلمة التي دخلت قيمتها نقدياً
+                    </div>
+                  </div>
+                </div>
+
+                {/* تنبيه شفافية التكلفة */}
+                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, color: "#1E40AF", fontSize: 13 }}>
+                  <TrendingUp size={18} />
+                  <span>
+                    <strong>ملاحظة دقة الأرباح:</strong> المنتجات التي لم يُدخل لها سعر تكلفة يتم تقديرها مؤقتاً عند 70% من سعر البيع. أدخل التكلفة الحقيقية في قسم المنتجات لدقة 100%.
+                  </span>
+                </div>
+
+                {/* جدول كاشف الركود وتحرير السيولة */}
+                <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #E2E8F0", padding: 20, boxShadow: "0 2px 12px rgba(0,0,0,0.03)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>كاشف الركود وتسريع دوران رأس المال</h3>
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748B" }}>
+                        مرتب تلقائياً حسب المنتجات الأكثر حبساً لأموالك لسرعة تصفيتها دون خسارة
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", textAlign: "right" }}>
+                          <th style={{ padding: "10px 12px" }}>المنتج</th>
+                          <th style={{ padding: "10px 12px" }}>المخزون الحالي</th>
+                          <th style={{ padding: "10px 12px" }}>المسلّم تاريخياً</th>
+                          <th style={{ padding: "10px 12px" }}>رأس المال المحبوس</th>
+                          <th style={{ padding: "10px 12px" }}>سعر التصفية الآمن (Break-Even)</th>
+                          <th style={{ padding: "10px 12px" }}>حالة الحركة</th>
+                          <th style={{ padding: "10px 12px", textAlign: "center" }}>إجراء التصفية</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {growthMetrics.inventoryAnalysis.map((item) => (
+                          <tr key={item.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                            <td style={{ padding: "12px", display: "flex", alignItems: "center", gap: 10 }}>
+                              {item.image && (
+                                <img src={item.image} alt={item.title} style={{ width: 38, height: 38, borderRadius: 8, objectFit: "cover" }} />
+                              )}
+                              <div>
+                                <div style={{ fontWeight: 800, color: "#0F172A" }}>{item.title}</div>
+                                <div style={{ fontSize: 11, color: "#64748B" }}>سعر البيع: {item.price} د.ل</div>
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px", fontWeight: 700 }}>{item.stock} قطعة</td>
+                            <td style={{ padding: "12px", fontWeight: 700, color: item.soldQty > 0 ? "#15803D" : "#64748B" }}>
+                              {item.soldQty} مباع
+                            </td>
+                            <td style={{ padding: "12px", fontWeight: 800, color: "#991B1B" }}>
+                              {item.trappedCapital.toLocaleString()} د.ل
+                            </td>
+                            <td style={{ padding: "12px", fontWeight: 700, color: "#0E7C86" }}>
+                              {item.safeLiquidationPrice} د.ل
+                              <span style={{ display: "block", fontSize: 10, color: "#64748B" }}>أقل سعر دون خسارة</span>
+                            </td>
+                            <td style={{ padding: "12px" }}>
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  padding: "4px 8px",
+                                  borderRadius: 999,
+                                  background: item.statusBg,
+                                  color: item.statusColor,
+                                }}
+                              >
+                                {item.statusLabel}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "center" }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLiquidationModalProduct(item);
+                                  setLiquidationNewPrice(String(item.safeLiquidationPrice));
+                                }}
+                                style={{
+                                  padding: "6px 12px",
+                                  borderRadius: 8,
+                                  background: "#0E7C86",
+                                  color: "#fff",
+                                  border: "none",
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                تفعيل تصفية ⚡
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ─── القسم 2: Loss & Delivery Intelligence ─── */}
+            {growthSubTab === "delivery" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* بطاقات أداء الشحن ومعدلات الرفض والتسريب */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #E2E8F0", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#0E7C86", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>معدل نجاح التسليم الفعلي</span>
+                      <Truck size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: growthMetrics.deliverySuccessRate >= 70 ? "#15803D" : "#B45309" }}>
+                      {growthMetrics.deliverySuccessRate}%
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      نسبة التسليم من الطلبات المنتهية (4 مسلّم / 4 ملغي)
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #FEE2E2", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#B91C1C", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>تسريب الطلبات المعلقة</span>
+                      <Clock size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#B91C1C" }}>
+                      {growthMetrics.pendingLeakageRate}%
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      {growthMetrics.pendingOrdersCount} طلب متوقف في خانة "جديد" بحاجة لتأكيد
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#fff", padding: 18, borderRadius: 16, border: "1.5px solid #FEF3C7", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#B45309", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>خسائر الشحن الراجع التقديرية</span>
+                      <XCircle size={18} />
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#92400E" }}>
+                      {growthMetrics.estimatedLossShipping} <span style={{ fontSize: 14 }}>د.ل</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>
+                      بسبب {growthMetrics.cancelledOrdersCount} طلب ملغي بعد خروج التوصيل
+                    </div>
+                  </div>
+                </div>
+
+                {/* غرفة الإنقاذ: تأكيد الطلبات المعلقة بنقرة واتساب */}
+                <div style={{ background: "#fff", borderRadius: 18, border: "1.5px solid #CBD5E1", padding: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>غرفة إنقاذ الطلبات المعلقة (التأكيد الفوري)</h3>
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748B" }}>
+                        تأكيد الطلبات عبر واتساب قبل تجهيز الشحن يرفع نسبة التسليم من 50% إلى 85%+ ويمنع الخسائر
+                      </p>
+                    </div>
+                  </div>
+
+                  {growthMetrics.pendingOrdersList.length === 0 ? (
+                    <div style={{ padding: 30, textAlign: "center", color: "#15803D", fontWeight: 700 }}>
+                      🎉 لا توجد طلبات معلقة حالياً، كل الطلبات تمت معالجتها!
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", textAlign: "right" }}>
+                            <th style={{ padding: "10px 12px" }}>رقم الطلب</th>
+                            <th style={{ padding: "10px 12px" }}>الزبون</th>
+                            <th style={{ padding: "10px 12px" }}>المدينة</th>
+                            <th style={{ padding: "10px 12px" }}>المبلغ</th>
+                            <th style={{ padding: "10px 12px", textAlign: "center" }}>التأكيد عبر واتساب</th>
+                            <th style={{ padding: "10px 12px", textAlign: "center" }}>إجراء فوري</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {growthMetrics.pendingOrdersList.map((ord) => {
+                            const waText = encodeURIComponent(
+                              `السلام عليكم أخي ${ord.customer_name || ""}، معك متجر ${settingsForm.store_name || "VELTRIX"} بخصوص طلبك رقم #${ord.id} بقيمة ${ord.total_price} د.ل لمدينة ${ord.delivery_city || ""} 🇱🇾.\n\nهل تؤكد لنا اعتماد الشحن اليوم حتى نجهزه لك؟`
+                            );
+                            const cleanPhone = (ord.customer_phone || "").replace(/[^0-9]/g, "");
+                            const fullPhone = cleanPhone.startsWith("218") ? cleanPhone : cleanPhone.startsWith("0") ? "218" + cleanPhone.slice(1) : "218" + cleanPhone;
+                            const waUrl = `https://wa.me/${fullPhone}?text=${waText}`;
+
+                            return (
+                              <tr key={ord.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                                <td style={{ padding: "12px", fontWeight: 800 }}>#{ord.id}</td>
+                                <td style={{ padding: "12px" }}>
+                                  <div style={{ fontWeight: 700 }}>{ord.customer_name || "بدون اسم"}</div>
+                                  <div style={{ fontSize: 11, color: "#64748B" }}>{ord.customer_phone}</div>
+                                </td>
+                                <td style={{ padding: "12px" }}>{ord.delivery_city || "غير محدد"}</td>
+                                <td style={{ padding: "12px", fontWeight: 800, color: "#0E7C86" }}>
+                                  {ord.total_price} د.ل
+                                </td>
+                                <td style={{ padding: "12px", textAlign: "center" }}>
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 6,
+                                      padding: "6px 12px",
+                                      borderRadius: 8,
+                                      background: "#25D366",
+                                      color: "#fff",
+                                      fontWeight: 700,
+                                      fontSize: 12,
+                                      textDecoration: "none",
+                                    }}
+                                  >
+                                    <MessageCircle size={14} /> إرسال رسالة تأكيد
+                                  </a>
+                                </td>
+                                <td style={{ padding: "12px", textAlign: "center" }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickConfirmOrder(ord.id)}
+                                    style={{
+                                      padding: "6px 12px",
+                                      borderRadius: 8,
+                                      background: "#F1F5F9",
+                                      color: "#0F172A",
+                                      border: "1px solid #CBD5E1",
+                                      fontWeight: 700,
+                                      fontSize: 12,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    تم التأكيد ⬅️ قيد التجهيز
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* نافذة عرض التصفية السريعة مع حماية هامش الربح */}
+            {liquidationModalProduct && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(0,0,0,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 9999,
+                  padding: 16,
+                }}
+              >
+                <div style={{ background: "#fff", borderRadius: 18, maxWidth: 440, width: "100%", padding: 24, boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>تفعيل عرض تصفية المخزون ⚡</h3>
+                    <button type="button" onClick={() => setLiquidationModalProduct(null)} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer" }}>×</button>
+                  </div>
+                  <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 16px" }}>
+                    منتج: <strong>{liquidationModalProduct.title}</strong>
+                    <br />
+                    المخزون الحالي: {liquidationModalProduct.stock} قطعة | سعر البيع الحالي: {liquidationModalProduct.price} د.ل
+                  </p>
+
+                  <div style={{ background: "#FEF3C7", padding: 12, borderRadius: 10, fontSize: 12, color: "#92400E", marginBottom: 16 }}>
+                    🛡️ <strong>حماية الربح:</strong> سعر التكلفة هو ({liquidationModalProduct.cost || "غير محدد"} د.ل). نوصي بعدم البيع بأقل منه لحماية رأس مالك.
+                  </div>
+
+                  <form onSubmit={handleApplyLiquidation}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+                      سعر التصفية الجديد المقترح (د.ل):
+                    </label>
+                    <input
+                      type="number"
+                      value={liquidationNewPrice}
+                      onChange={(e) => setLiquidationNewPrice(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "10px 14px",
+                        borderRadius: 10,
+                        border: "1.5px solid #CBD5E1",
+                        fontSize: 15,
+                        fontWeight: 800,
+                        boxSizing: "border-box",
+                        marginBottom: 16,
+                      }}
+                      required
+                    />
+
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button
+                        type="submit"
+                        disabled={liquidationSaving}
+                        style={{
+                          flex: 1,
+                          padding: "12px",
+                          borderRadius: 10,
+                          background: "#0E7C86",
+                          color: "#fff",
+                          border: "none",
+                          fontWeight: 800,
+                          fontSize: 14,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {liquidationSaving ? "جاري التفعيل..." : "تطبيق العرض وترقية للمميزة ✅"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLiquidationModalProduct(null)}
+                        style={{
+                          padding: "12px 18px",
+                          borderRadius: 10,
+                          background: "#F1F5F9",
+                          color: "#475569",
+                          border: "none",
+                          fontWeight: 700,
+                          fontSize: 14,
+                          cursor: "pointer",
+                        }}
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ========================================================
             تبويب: لوحة الإحصائيات الشاملة
            ======================================================== */}
