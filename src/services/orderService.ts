@@ -23,6 +23,8 @@ interface SubmitOrderParams {
   shippingCost: number;
   couponCode?: string | null;
   discountAmount?: number;
+  couponId?: string | null;
+  deviceFingerprint?: string | null;
 }
 
 interface SubmitOrderResult {
@@ -62,6 +64,8 @@ export async function submitOrder({
   shippingCost,
   couponCode,
   discountAmount,
+  couponId,
+  deviceFingerprint,
 }: SubmitOrderParams): Promise<SubmitOrderResult> {
   const requestBody = {
     store_id: CURRENT_STORE_ID,
@@ -75,6 +79,8 @@ export async function submitOrder({
     shipping_cost: shippingCost,
     coupon_code: couponCode || null,
     discount_amount: discountAmount || 0,
+    coupon_id: couponId || null,
+    device_fingerprint: deviceFingerprint || null,
   };
 
   const res = await fetch("/api/create-order", {

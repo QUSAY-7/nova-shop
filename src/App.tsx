@@ -102,6 +102,11 @@ export default function App() {
   const [lastOrder, setLastOrder] = useState(null);
   const [showInvoicePrompt, setShowInvoicePrompt] = useState(false);
 
+  // ─── Upsell ما بعد الشراء ───
+  const [upsellProduct, setUpsellProduct] = useState<any>(null);
+  const [upsellTimer, setUpsellTimer] = useState(0);
+  const upsellTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // ---- بيانات المنتجات من Supabase ----
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -334,33 +339,50 @@ export default function App() {
   );
 
   // ─── نظام الكوبونات وأكواد الخصم الترويجية ───
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; percent: number } | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; percent: number; coupon_id?: string } | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
 
   const discountAmount = useMemo(() => {
     if (!appliedCoupon) return 0;
     return Math.round((itemsSubtotal * appliedCoupon.percent) / 100);
   }, [itemsSubtotal, appliedCoupon]);
 
-  const handleApplyCoupon = (inputCode: string) => {
+  // helper: device fingerprint مرتبط بالجهاز (UUID مخزّن في localStorage)
+  const getDeviceFingerprint = (): string => {
+    let fp = localStorage.getItem("_nova_dfp");
+    if (!fp) {
+      fp = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      localStorage.setItem("_nova_dfp", fp);
+    }
+    return fp;
+  };
+
+  const handleApplyCoupon = async (inputCode: string): Promise<{ success: boolean; message?: string }> => {
     const code = (inputCode || "").trim().toUpperCase();
-    if (code === "VIP15") {
-      setAppliedCoupon({ code: "VIP15", percent: 15 });
-      return { success: true };
+    if (!code) return { success: false, message: "يرجى إدخال كود الخصم" };
+    setCouponLoading(true);
+    try {
+      const res = await fetch("/api/validate-coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          customer_phone: customerPhone.trim() || null,
+          device_fingerprint: getDeviceFingerprint(),
+          store_id: CURRENT_STORE_ID,
+        }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setAppliedCoupon({ code, percent: data.percent, coupon_id: data.coupon_id });
+        return { success: true };
+      }
+      return { success: false, message: data.message || "كود الخصم غير صالح أو منتهي الصلاحية" };
+    } catch (err) {
+      return { success: false, message: "تعذر التحقق من الكوبون، يرجى المحاولة مرة أخرى" };
+    } finally {
+      setCouponLoading(false);
     }
-    if (code === "COMEBACK") {
-      setAppliedCoupon({ code: "COMEBACK", percent: 10 });
-      return { success: true };
-    }
-    if (code === "VELTRIX") {
-      setAppliedCoupon({ code: "VELTRIX", percent: 10 });
-      return { success: true };
-    }
-    if (code.startsWith("VIP") && !isNaN(Number(code.replace("VIP", "")))) {
-      const pct = Math.min(50, Math.max(5, Number(code.replace("VIP", ""))));
-      setAppliedCoupon({ code, percent: pct });
-      return { success: true };
-    }
-    return { success: false, message: "عذراً، كود الخصم غير صالح أو انتهت صلاحيته" };
   };
 
   const handleRemoveCoupon = () => {
@@ -420,6 +442,32 @@ export default function App() {
       .catch(() => alert("تعذر نسخ الرابط، حاول مرة أخرى"));
   };
 
+  // ─── عداد Upsell التنازلي ───
+  useEffect(() => {
+    if (upsellProduct && upsellTimer > 0) {
+      upsellTimerRef.current = setInterval(() => {
+        setUpsellTimer((t) => {
+          if (t <= 1) {
+            clearInterval(upsellTimerRef.current!);
+            setUpsellProduct(null);
+            return 0;
+          }
+          return t - 1;
+        });
+      }, 1000);
+    }
+    return () => { if (upsellTimerRef.current) clearInterval(upsellTimerRef.current); };
+  }, [upsellProduct]);
+
+  const handleUpsellAdd = (product) => {
+    const key = cartKey(product.id, null);
+    setQty(key, 1, { productId: product.id, variantId: null, size: null, color: null });
+    setUpsellProduct(null);
+    clearInterval(upsellTimerRef.current!);
+    setCartOpen(true);
+    alert(`✅ تمت إضافة "${product.title}" بخصم 35% إلى سلتك! أتمم الطلب الجديد.`);
+  };
+
   const saveOrder = async () => {
     if (!customerName.trim() || !customerPhone.trim() || !deliveryCity) {
       alert("من فضلك أكمل بياناتك (الاسم، الهاتف، واختيار المدينة) قبل إتمام الطلب");
@@ -436,7 +484,10 @@ export default function App() {
     try {
       const result = await submitOrder({
         customerName, customerPhone, customerAddress, deliveryCity, deliveryArea,
-        formattedFullAddress, items, paymentMethod: payment, shippingCost: deliveryCost, couponCode: appliedCoupon?.code, discountAmount,
+        formattedFullAddress, items, paymentMethod: payment, shippingCost: deliveryCost,
+        couponCode: appliedCoupon?.code, discountAmount,
+        couponId: appliedCoupon?.coupon_id,
+        deviceFingerprint: getDeviceFingerprint(),
       });
       insertedOrder = result.order;
       verifiedTotal = result.verifiedTotal;
@@ -455,6 +506,14 @@ export default function App() {
         alert(`⚠️ خطأ في الدفع الإلكتروني: ${e.message}\nتم حفظ طلبك وسيتم التواصل معك.`);
         return true;
       }
+    }
+    // ─── Upsell ما بعد الشراء ───
+    const orderedIds = new Set(cartItems.map((l) => l.product.id));
+    const upsellCandidates = products.filter((p) => !orderedIds.has(p.id) && (p.stock > 0 || p.stock == null));
+    if (upsellCandidates.length > 0) {
+      const pick = upsellCandidates[Math.floor(Math.random() * upsellCandidates.length)];
+      setUpsellProduct(pick);
+      setUpsellTimer(15 * 60); // 15 دقيقة
     }
     setLastOrder(insertedOrder);
     setShowInvoicePrompt(true);
@@ -573,7 +632,11 @@ export default function App() {
         </div>
         <table>
           <thead><tr><th>المنتج</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
-          <tbody>${itemsRows}<tr class="total-row"><td colspan="3">الإجمالي الكلي</td><td>${order.total_price} د.ل</td></tr></tbody>
+          <tbody>${itemsRows}
+            ${order.discount_amount > 0 ? `<tr><td colspan="3" style="color:#15803D">🎁 خصم الكوبون (${order.coupon_code || ""})</td><td style="color:#15803D;font-weight:700">-${order.discount_amount} د.ل</td></tr>` : ""}
+            ${order.shipping_cost != null ? `<tr><td colspan="3">رسوم التوصيل</td><td>${order.shipping_cost} د.ل</td></tr>` : ""}
+            <tr class="total-row"><td colspan="3">الإجمالي النهائي</td><td>${order.total_price} د.ل</td></tr>
+          </tbody>
         </table>
         <div class="footer">شكراً لتسوقك من ${settings?.store_name||"متجرنا"}</div>
         <center><button class="print-btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button></center>
@@ -1349,6 +1412,7 @@ export default function App() {
         discountAmount={discountAmount}
         onApplyCoupon={handleApplyCoupon}
         onRemoveCoupon={handleRemoveCoupon}
+        couponLoading={couponLoading}
         onCheckout={async () => {
           const ok = await saveOrder();
           if (ok && payment !== "ezone") window.open(waLink, "_blank", "noopener,noreferrer");
@@ -1732,6 +1796,48 @@ export default function App() {
               onClick={() => setShowInvoicePrompt(false)}
             >
               إغلاق
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ===== عرض Upsell ما بعد الشراء ===== */}
+      {upsellProduct && (
+        <div className="gallery-overlay" style={{ zIndex: 9999 }}>
+          <div className="gallery-backdrop" onClick={() => { setUpsellProduct(null); clearInterval(upsellTimerRef.current!); }} />
+          <div className="gallery-box" style={{ padding:"24px 20px", maxWidth:"340px" }}>
+            <div style={{ background:"#FEF9C3", borderRadius:10, padding:"8px 12px", fontSize:12, fontWeight:700, color:"#92400E", marginBottom:14, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>⏳ العرض ينتهي خلال:</span>
+              <span style={{ fontFamily:"monospace", fontSize:14 }}>
+                {String(Math.floor(upsellTimer / 60)).padStart(2,"0")}:{String(upsellTimer % 60).padStart(2,"0")}
+              </span>
+            </div>
+            <div style={{ textAlign:"center", marginBottom:14 }}>
+              <Sparkles size={28} style={{ color:"var(--teal)", margin:"0 auto 8px" }} />
+              <h3 style={{ fontSize:15, marginBottom:4, color:"var(--teal-dark)" }}>عرض خاص لك بعد شرائك! 🎁</h3>
+              <p style={{ fontSize:12, color:"var(--muted)" }}>أضف هذا المنتج لطلبك القادم بخصم 35% بدون رسوم شحن إضافية</p>
+            </div>
+            {upsellProduct.image && (
+              <img src={upsellProduct.image} alt={upsellProduct.title} style={{ width:"100%", height:140, objectFit:"cover", borderRadius:10, marginBottom:10 }} />
+            )}
+            <div style={{ fontWeight:800, fontSize:14, color:"var(--ink)", marginBottom:4 }}>{upsellProduct.title}</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+              <span style={{ fontSize:16, fontWeight:800, color:"var(--teal)" }}>{Math.round(Number(upsellProduct.price) * 0.65)} د.ل</span>
+              <span style={{ fontSize:12, color:"var(--muted)", textDecoration:"line-through" }}>{upsellProduct.price} د.ل</span>
+              <span style={{ fontSize:11, background:"#DCFCE7", color:"#15803D", padding:"2px 8px", borderRadius:6, fontWeight:700 }}>خصم 35%</span>
+            </div>
+            <button
+              className="cta-button"
+              style={{ marginBottom:8, background:"#15803D" }}
+              onClick={() => handleUpsellAdd(upsellProduct)}
+            >
+              <ShoppingCart size={16} /> أضف للطلب القادم بالخصم
+            </button>
+            <button
+              style={{ width:"100%", padding:"10px", borderRadius:12, background:"var(--teal-light)", color:"var(--teal-dark)", fontWeight:700, border:"none", cursor:"pointer", fontFamily:"inherit", fontSize:13 }}
+              onClick={() => { setUpsellProduct(null); clearInterval(upsellTimerRef.current!); }}
+            >
+              لا شكراً، تخطي
             </button>
           </div>
         </div>

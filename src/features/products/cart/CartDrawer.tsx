@@ -13,6 +13,7 @@ import {
   Copy,
   Check,
   MessageCircle,
+  Loader2,
 } from "lucide-react";
 import { LIBYA_CITIES, getAreasForCity } from "../../../libyaDeliveryData";
 
@@ -79,7 +80,7 @@ interface CartDrawerProps {
   getEffectivePrice: (product: ProductData, variant?: VariantData | null) => number;
   appliedCoupon?: { code: string; percent: number } | null;
   discountAmount?: number;
-  onApplyCoupon?: (code: string) => { success: boolean; message?: string };
+  onApplyCoupon?: (code: string) => Promise<{ success: boolean; message?: string }> | { success: boolean; message?: string };
   onRemoveCoupon?: () => void;
   onCheckout: () => void;
   cartThumb?: React.ComponentType<{ product: ProductData }>;
@@ -123,14 +124,24 @@ export default function CartDrawer({
 }: CartDrawerProps) {
   const [couponInput, setCouponInput] = useState("");
   const [couponError, setCouponError] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
 
-  const handleApply = () => {
+  const handleApply = async () => {
     if (!couponInput.trim()) return;
     setCouponError("");
     if (onApplyCoupon) {
-      const res = onApplyCoupon(couponInput.trim().toUpperCase());
-      if (!res.success) {
-        setCouponError(res.message || "كود الخصم غير صالح أو منتهي الصلاحية");
+      setCouponLoading(true);
+      try {
+        const res = await Promise.resolve(onApplyCoupon(couponInput.trim().toUpperCase()));
+        if (!res.success) {
+          setCouponError(res.message || "كود الخصم غير صالح أو منتهي الصلاحية");
+        } else {
+          setCouponInput("");
+        }
+      } catch {
+        setCouponError("تعذر التحقق من الكوبون، حاول مرة أخرى");
+      } finally {
+        setCouponLoading(false);
       }
     }
   };
@@ -306,23 +317,24 @@ export default function CartDrawer({
               </div>
             </div>
 
-                        {/* حقل كود الخصم */}
+            {/* حقل كود الخصم */}
             <div style={{ marginBottom: "12px", padding: "10px 12px", background: "#F8FAFC", borderRadius: "12px", border: "1px dashed #CBD5E1" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", fontSize: "12px", fontWeight: 700, color: "var(--teal-dark)" }}>
                 <Tag size={14} />
-                <span>لديك كود خصم أو قسيمة شراء؟</span>
+                <span>لديك قسيمة شراء أو رمز خصم خاص؟</span>
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
                 <input
                   type="text"
-                  placeholder="أدخل الكود (مثل VIP15 أو COMEBACK)"
+                  placeholder="أدخل رمز القسيمة..."
                   value={couponInput}
                   onChange={(e) => {
                     setCouponInput(e.target.value);
                     setCouponError("");
                   }}
-                  disabled={Boolean(appliedCoupon)}
-                  style={{ flex: 1, height: "38px", padding: "0 10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", fontWeight: 800, textTransform: "uppercase" }}
+                  disabled={Boolean(appliedCoupon) || couponLoading}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleApply(); }}
+                  style={{ flex: 1, height: "38px", padding: "0 10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "1px" }}
                 />
                 {appliedCoupon ? (
                   <button
@@ -330,6 +342,7 @@ export default function CartDrawer({
                     onClick={() => {
                       if (onRemoveCoupon) onRemoveCoupon();
                       setCouponInput("");
+                      setCouponError("");
                     }}
                     style={{ padding: "0 14px", height: "38px", borderRadius: "8px", background: "#FEE2E2", color: "#DC2626", border: "none", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
                   >
@@ -339,16 +352,18 @@ export default function CartDrawer({
                   <button
                     type="button"
                     onClick={handleApply}
-                    style={{ padding: "0 16px", height: "38px", borderRadius: "8px", background: "#0E7C86", color: "#fff", border: "none", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                    disabled={couponLoading || !couponInput.trim()}
+                    style={{ padding: "0 16px", height: "38px", borderRadius: "8px", background: couponLoading ? "#94a3b8" : "#0E7C86", color: "#fff", border: "none", fontWeight: 700, fontSize: "12px", cursor: couponLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "4px" }}
                   >
-                    تطبيق
+                    {couponLoading ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : null}
+                    {couponLoading ? "جاري..." : "تطبيق"}
                   </button>
                 )}
               </div>
               {couponError && <div style={{ fontSize: "11px", color: "#DC2626", marginTop: "4px", fontWeight: 600 }}>{couponError}</div>}
               {appliedCoupon && (
                 <div style={{ fontSize: "11.5px", color: "#15803D", marginTop: "6px", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
-                  <Check size={14} /> تم تطبيق كود ({appliedCoupon.code}) بنجاح! خصم {appliedCoupon.percent}% (-{discountAmount} د.ل)
+                  <Check size={14} /> تم تطبيق الكوبون بنجاح! خصم {appliedCoupon.percent}% (-{discountAmount} د.ل)
                 </div>
               )}
             </div>
@@ -359,7 +374,7 @@ export default function CartDrawer({
                   <span>سعر المنتجات:</span>
                   <span>{itemsSubtotal} د.ل</span>
                 </div>
-                                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>رسوم التوصيل ({deliveryCity}):</span>
                   <span>{deliveryCost} د.ل</span>
                 </div>

@@ -43,7 +43,7 @@ import {
   Receipt,
   PieChart,
 } from "lucide-react";
-import { supabase } from "./supabaseClient";
+import { supabase, CURRENT_STORE_ID } from "./supabaseClient";
 import ExcelJS from "exceljs";
 import {
   LIBYA_CITIES,
@@ -51,6 +51,9 @@ import {
   getAreasForCity,
   getDeliveryInfoForCity,
 } from "./libyaDeliveryData";
+
+// معرّف المتجر الحالي للاستخدام في Admin
+const currentStoreId = CURRENT_STORE_ID;
 
 // ============================================================================
 // 1. INTEGRATION LAYER: NORMALIZED INTERNAL MODELS (النماذج الموحدة)
@@ -1828,6 +1831,44 @@ export default function Admin() {
   const [broadcastCustomMessage, setBroadcastCustomMessage] = useState("");
   const [broadcastCurrentIndex, setBroadcastCurrentIndex] = useState(0);
   const [broadcastSentSet, setBroadcastSentSet] = useState(() => new Set());
+
+  // ---- سلال مهجورة ----
+  const [abandonedCarts, setAbandonedCarts] = useState([]);
+  const [abandonedLoading, setAbandonedLoading] = useState(false);
+  const [abandonedLoaded, setAbandonedLoaded] = useState(false);
+
+  // ---- تسوية كاش الشحن (COD) ----
+  const [codOrders, setCodOrders] = useState([]);
+  const [codLoading, setCodLoading] = useState(false);
+  const [codLoaded, setCodLoaded] = useState(false);
+  const [codSelectedIds, setCodSelectedIds] = useState(new Set());
+  const [codReconciling, setCodReconciling] = useState(false);
+
+  // ---- مولّد الكوبونات الديناميكية ----
+  const [couponGenPhone, setCouponGenPhone] = useState("");
+  const [couponGenPercent, setCouponGenPercent] = useState("15");
+  const [couponGenExpiry, setCouponGenExpiry] = useState("");
+  const [couponGenLoading, setCouponGenLoading] = useState(false);
+  const [couponGenResult, setCouponGenResult] = useState(null); // { code, percent }
+  const [couponsList, setCouponsList] = useState([]);
+  const [couponsLoaded, setCouponsLoaded] = useState(false);
+
+  // ─── دالة جلب قائمة الكوبونات ───
+  const loadCouponsList = async () => {
+    try {
+      const { createClient } = await import("@supabase/supabase-js");
+      const sb = createClient(
+        "https://ugeekzmtavxcfrhtfrjq.supabase.co",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZWVrem10YXZ4Y2ZyaHRmcmpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NDU4NDAsImV4cCI6MjEwMDEyMTg0MH0.mEqNG6W_cGLF2tCSpMPfcP8gc7lhSiTxnf9nH-aZmiw"
+      );
+      const { data } = await sb.from("coupons").select("*").eq("store_id", currentStoreId).order("created_at", { ascending: false }).limit(100);
+      setCouponsList(data || []);
+      setCouponsLoaded(true);
+    } catch (e) {
+      console.warn("loadCouponsList error:", e);
+      setCouponsLoaded(true);
+    }
+  };
 
   // ---- تبويب الدفع والتوصيل (Integration Layer State) ----
   const [integrationSubTab, setIntegrationSubTab] = useState("payments"); // "payments" | "delivery" | "logs"
@@ -3628,6 +3669,60 @@ const result = {
                 >
                   💰 الأرباح الصافية الحقيقية
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setGrowthSubTab("abandoned")}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "none",
+                    fontWeight: 800,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    background: growthSubTab === "abandoned" ? "#0E7C86" : "transparent",
+                    color: "#fff",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  🛒 سلال مهجورة
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGrowthSubTab("cod")}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "none",
+                    fontWeight: 800,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    background: growthSubTab === "cod" ? "#0E7C86" : "transparent",
+                    color: "#fff",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  💵 تسوية كاش الشحن
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGrowthSubTab("coupons");
+                    if (!couponsLoaded) loadCouponsList();
+                  }}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "none",
+                    fontWeight: 800,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    background: growthSubTab === "coupons" ? "#0E7C86" : "transparent",
+                    color: "#fff",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  🎟️ أكواد الخصم
+                </button>
               </div>
             </div>
 
@@ -4267,9 +4362,433 @@ const result = {
               </div>
             )}
 
-            {/* ─── القسم 4: True Net Profit Ledger ─── */}
-            {growthSubTab === "profit" && (
+            {/* ─── القسم 5: السلال المهجورة ─── */}
+            {growthSubTab === "abandoned" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "18px 20px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: "#0B2027" }}>🛒 استعادة السلال المهجورة</div>
+                      <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>زبائن أدخلوا بياناتهم ولم يكملوا الطلب — تواصل معهم قبل أن يشتروا من مكان آخر</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setAbandonedLoading(true);
+                        try {
+                          const { createClient } = await import("@supabase/supabase-js");
+                          const sb = createClient(
+                            "https://ugeekzmtavxcfrhtfrjq.supabase.co",
+                            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZWVrem10YXZ4Y2ZyaHRmcmpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NDU4NDAsImV4cCI6MjEwMDEyMTg0MH0.mEqNG6W_cGLF2tCSpMPfcP8gc7lhSiTxnf9nH-aZmiw"
+                          );
+                          const { data } = await sb.from("abandoned_carts").select("*").eq("store_id", currentStoreId).eq("recovered", false).order("created_at", { ascending: false }).limit(100);
+                          setAbandonedCarts(data || []);
+                          setAbandonedLoaded(true);
+                        } catch (e) {
+                          alert("تعذر جلب السلال المهجورة: " + e.message);
+                        } finally {
+                          setAbandonedLoading(false);
+                        }
+                      }}
+                      style={{ padding: "8px 18px", borderRadius: 10, background: "#0E7C86", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                    >
+                      {abandonedLoading ? "⏳ جاري التحميل..." : "🔄 تحديث القائمة"}
+                    </button>
+                  </div>
+
+                  {!abandonedLoaded ? (
+                    <div style={{ textAlign: "center", padding: "32px 0", color: "#94A3B8", fontSize: 13 }}>
+                      اضغط "تحديث القائمة" لجلب السلال المهجورة
+                    </div>
+                  ) : abandonedCarts.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "32px 0", color: "#15803D", fontSize: 14, fontWeight: 700 }}>
+                      ✅ لا توجد سلال مهجورة حالياً — ممتاز!
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: "#F1F5F9" }}>
+                            <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700 }}>الاسم</th>
+                            <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700 }}>الهاتف</th>
+                            <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700 }}>المدينة</th>
+                            <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700 }}>إجمالي السلة</th>
+                            <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700 }}>التاريخ</th>
+                            <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700 }}>الإجراء</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {abandonedCarts.map((ac) => {
+                            const phone = ac.customer_phone || "";
+                            const intlPhone = phone.startsWith("0") ? "218" + phone.slice(1) : phone.startsWith("218") ? phone : "218" + phone;
+                            const msg = encodeURIComponent(`أهلاً ${ac.customer_name || ""}،\nلاحظنا أنك أضفت منتجات لسلتك ولم تكمل طلبك 🛒\nسلتك بقيمة ${ac.cart_total || ""} د.ل لا تزال محفوظة!\nأتمم طلبك الآن وسنوصله لك بأسرع وقت 🚀`);
+                            return (
+                              <tr key={ac.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                                <td style={{ padding: "10px 12px" }}>{ac.customer_name || "—"}</td>
+                                <td style={{ padding: "10px 12px", direction: "ltr" }}>{phone}</td>
+                                <td style={{ padding: "10px 12px" }}>{ac.customer_city || "—"}</td>
+                                <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0E7C86" }}>{ac.cart_total ? `${ac.cart_total} د.ل` : "—"}</td>
+                                <td style={{ padding: "10px 12px", fontSize: 11, color: "#94A3B8" }}>{ac.created_at ? new Date(ac.created_at).toLocaleString("ar-LY") : "—"}</td>
+                                <td style={{ padding: "10px 12px" }}>
+                                  <a
+                                    href={`https://wa.me/${intlPhone}?text=${msg}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 12, textDecoration: "none" }}
+                                  >
+                                    <MessageCircle size={13} /> واتساب
+                                  </a>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ─── القسم 6: تسوية كاش الشحن (COD Reconciliation) ─── */}
+            {growthSubTab === "cod" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "18px 20px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: "#0B2027" }}>💵 تسوية كاش الشحن (COD)</div>
+                      <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>طلبات الكاش عند الاستلام التي تم شحنها — تتبع استلام الكاش من شركات التوصيل</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setCodLoading(true);
+                        try {
+                          const { createClient } = await import("@supabase/supabase-js");
+                          const sb = createClient(
+                            "https://ugeekzmtavxcfrhtfrjq.supabase.co",
+                            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZWVrem10YXZ4Y2ZyaHRmcmpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NDU4NDAsImV4cCI6MjEwMDEyMTg0MH0.mEqNG6W_cGLF2tCSpMPfcP8gc7lhSiTxnf9nH-aZmiw"
+                          );
+                          const { data } = await sb.from("orders")
+                            .select("id, customer_name, customer_phone, delivery_city, total_price, tracking_number, status, created_at")
+                            .eq("store_id", currentStoreId)
+                            .eq("payment_method", "كاش")
+                            .in("status", ["تم الشحن", "shipped", "جاري التوصيل"])
+                            .order("created_at", { ascending: false })
+                            .limit(200);
+                          setCodOrders(data || []);
+                          setCodLoaded(true);
+                          setCodSelectedIds(new Set());
+                        } catch (e) {
+                          alert("تعذر جلب طلبات الكاش: " + e.message);
+                        } finally {
+                          setCodLoading(false);
+                        }
+                      }}
+                      style={{ padding: "8px 18px", borderRadius: 10, background: "#0E7C86", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                    >
+                      {codLoading ? "⏳ جاري التحميل..." : "🔄 جلب طلبات الكاش"}
+                    </button>
+                  </div>
+
+                  {/* ملخص إجمالي */}
+                  {codLoaded && codOrders.length > 0 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
+                      <div style={{ background: "#FEF9C3", borderRadius: 10, padding: "12px 16px" }}>
+                        <div style={{ fontSize: 11, color: "#92400E", fontWeight: 700 }}>إجمالي الكاش في الطريق</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#B45309" }}>
+                          {codOrders.reduce((s, o) => s + Number(o.total_price || 0), 0).toLocaleString()} د.ل
+                        </div>
+                      </div>
+                      <div style={{ background: "#DCFCE7", borderRadius: 10, padding: "12px 16px" }}>
+                        <div style={{ fontSize: 11, color: "#166534", fontWeight: 700 }}>الكاش المحدد للتسوية</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#15803D" }}>
+                          {codOrders.filter(o => codSelectedIds.has(o.id)).reduce((s, o) => s + Number(o.total_price || 0), 0).toLocaleString()} د.ل
+                        </div>
+                      </div>
+                      <div style={{ background: "#EFF6FF", borderRadius: 10, padding: "12px 16px" }}>
+                        <div style={{ fontSize: 11, color: "#1D4ED8", fontWeight: 700 }}>عدد الطلبات المعلقة</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#2563EB" }}>{codOrders.length}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!codLoaded ? (
+                    <div style={{ textAlign: "center", padding: "32px 0", color: "#94A3B8", fontSize: 13 }}>
+                      اضغط "جلب طلبات الكاش" لعرض الطلبات المشحونة
+                    </div>
+                  ) : codOrders.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "32px 0", color: "#15803D", fontSize: 14, fontWeight: 700 }}>
+                      ✅ لا توجد طلبات كاش مشحونة في انتظار التسوية
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => setCodSelectedIds(new Set(codOrders.map(o => o.id)))}
+                          style={{ padding: "6px 14px", borderRadius: 8, background: "#E2E8F0", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                        >
+                          ✅ تحديد الكل
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCodSelectedIds(new Set())}
+                          style={{ padding: "6px 14px", borderRadius: 8, background: "#FEE2E2", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer", color: "#DC2626" }}
+                        >
+                          ❌ إلغاء التحديد
+                        </button>
+                        {codSelectedIds.size > 0 && (
+                          <button
+                            type="button"
+                            disabled={codReconciling}
+                            onClick={async () => {
+                              if (!window.confirm(`هل تأكد استلام الكاش من ${codSelectedIds.size} طلب؟`)) return;
+                              setCodReconciling(true);
+                              try {
+                                const { createClient } = await import("@supabase/supabase-js");
+                                const sb = createClient(
+                                  "https://ugeekzmtavxcfrhtfrjq.supabase.co",
+                                  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZWVrem10YXZ4Y2ZyaHRmcmpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NDU4NDAsImV4cCI6MjEwMDEyMTg0MH0.mEqNG6W_cGLF2tCSpMPfcP8gc7lhSiTxnf9nH-aZmiw"
+                                );
+                                const batchId = `BATCH-${Date.now()}`;
+                                const records = codOrders.filter(o => codSelectedIds.has(o.id)).map(o => ({
+                                  store_id: currentStoreId,
+                                  order_id: String(o.id),
+                                  tracking_number: o.tracking_number || null,
+                                  cod_amount: Number(o.total_price || 0),
+                                  delivery_company: "—",
+                                  status: "received",
+                                  received_at: new Date().toISOString(),
+                                  batch_id: batchId,
+                                }));
+                                await sb.from("delivery_reconciliation").insert(records);
+                                await sb.from("orders").update({ status: "تم التسليم" }).in("id", [...codSelectedIds]);
+                                alert(`✅ تم تسجيل استلام الكاش لـ ${codSelectedIds.size} طلب في الدُفعة ${batchId}`);
+                                setCodOrders(prev => prev.filter(o => !codSelectedIds.has(o.id)));
+                                setCodSelectedIds(new Set());
+                              } catch (e) {
+                                alert("خطأ: " + e.message);
+                              } finally {
+                                setCodReconciling(false);
+                              }
+                            }}
+                            style={{ padding: "6px 18px", borderRadius: 8, background: "#15803D", color: "#fff", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                          >
+                            {codReconciling ? "⏳ جاري..." : `💰 تسوية واستلام الكاش (${codSelectedIds.size})`}
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                          <thead>
+                            <tr style={{ background: "#F8FAFC" }}>
+                              <th style={{ padding: "8px 10px" }}></th>
+                              <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>رقم الطلب</th>
+                              <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>الزبون</th>
+                              <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>المدينة</th>
+                              <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>المبلغ</th>
+                              <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>رقم التتبع</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {codOrders.map(o => (
+                              <tr key={o.id} style={{ borderBottom: "1px solid #F1F5F9", background: codSelectedIds.has(o.id) ? "#F0FDF4" : "transparent" }}>
+                                <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={codSelectedIds.has(o.id)}
+                                    onChange={e => {
+                                      setCodSelectedIds(prev => {
+                                        const next = new Set(prev);
+                                        e.target.checked ? next.add(o.id) : next.delete(o.id);
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ padding: "8px 10px", fontWeight: 700, color: "#0E7C86" }}>#{o.id}</td>
+                                <td style={{ padding: "8px 10px" }}>{o.customer_name}</td>
+                                <td style={{ padding: "8px 10px" }}>{o.delivery_city || "—"}</td>
+                                <td style={{ padding: "8px 10px", fontWeight: 800 }}>{o.total_price} د.ل</td>
+                                <td style={{ padding: "8px 10px", fontSize: 11, color: "#64748B" }}>{o.tracking_number || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ─── القسم 7: مولّد أكواد الخصم الديناميكية ─── */}
+            {growthSubTab === "coupons" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* بطاقة توليد كود جديد */}
+                <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "20px 22px" }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: "#0B2027", marginBottom: 4 }}>🎟️ توليد كود خصم شخصي</div>
+                  <div style={{ fontSize: 12, color: "#64748B", marginBottom: 16 }}>الأكواد المولدة مشفرة وأحادية الاستخدام ومرتبطة بالهاتف — لن يظهر أي كود ثابت للزبائن</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 4 }}>رقم هاتف الزبون (اختياري)</label>
+                      <input
+                        type="tel"
+                        placeholder="09XXXXXXXX"
+                        value={couponGenPhone}
+                        onChange={e => setCouponGenPhone(e.target.value)}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 13 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 4 }}>نسبة الخصم %</label>
+                      <select
+                        value={couponGenPercent}
+                        onChange={e => setCouponGenPercent(e.target.value)}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 13 }}
+                      >
+                        {[5,10,15,20,25,30,35,40,50].map(p => <option key={p} value={p}>{p}%</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 4 }}>تنتهي في (اختياري)</label>
+                      <input
+                        type="date"
+                        value={couponGenExpiry}
+                        onChange={e => setCouponGenExpiry(e.target.value)}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 13 }}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={couponGenLoading}
+                    onClick={async () => {
+                      setCouponGenLoading(true);
+                      setCouponGenResult(null);
+                      try {
+                        const phone = couponGenPhone.trim();
+                        const phoneLast4 = phone ? phone.slice(-4) : Math.random().toString(36).slice(2,6).toUpperCase();
+                        const rand = Math.random().toString(36).slice(2,6).toUpperCase();
+                        const code = `VX-${phoneLast4}-${rand}`;
+                        const { createClient } = await import("@supabase/supabase-js");
+                        const sb = createClient(
+                          "https://ugeekzmtavxcfrhtfrjq.supabase.co",
+                          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZWVrem10YXZ4Y2ZyaHRmcmpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NDU4NDAsImV4cCI6MjEwMDEyMTg0MH0.mEqNG6W_cGLF2tCSpMPfcP8gc7lhSiTxnf9nH-aZmiw"
+                        );
+                        const { error } = await sb.from("coupons").insert([{
+                          store_id: currentStoreId,
+                          code,
+                          percent: Number(couponGenPercent),
+                          max_uses: 1,
+                          used_count: 0,
+                          is_active: true,
+                          created_for_phone: phone || null,
+                          expires_at: couponGenExpiry ? new Date(couponGenExpiry).toISOString() : null,
+                        }]);
+                        if (error) throw error;
+                        setCouponGenResult({ code, percent: Number(couponGenPercent) });
+                        setCouponsLoaded(false); // force reload list
+                        loadCouponsList();
+                      } catch (e) {
+                        alert("خطأ في توليد الكوبون: " + e.message);
+                      } finally {
+                        setCouponGenLoading(false);
+                      }
+                    }}
+                    style={{ padding: "10px 24px", borderRadius: 10, background: "#0E7C86", color: "#fff", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
+                  >
+                    {couponGenLoading ? "⏳ جاري التوليد..." : "✨ توليد كود الخصم"}
+                  </button>
+
+                  {couponGenResult && (
+                    <div style={{ marginTop: 16, padding: "14px 18px", background: "#F0FDF4", borderRadius: 12, border: "1px solid #86EFAC", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: "#166534", fontWeight: 700 }}>✅ تم توليد الكود بنجاح!</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 2, color: "#15803D", fontFamily: "monospace", marginTop: 4 }}>{couponGenResult.code}</div>
+                        <div style={{ fontSize: 12, color: "#166534" }}>خصم {couponGenResult.percent}% — استخدام واحد فقط</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => { navigator.clipboard.writeText(couponGenResult.code); alert("✅ تم نسخ الكود"); }}
+                          style={{ padding: "8px 14px", borderRadius: 8, background: "#0E7C86", color: "#fff", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                        >
+                          📋 نسخ الكود
+                        </button>
+                        {couponGenPhone && (
+                          <a
+                            href={`https://wa.me/${couponGenPhone.startsWith("0") ? "218" + couponGenPhone.slice(1) : couponGenPhone}?text=${encodeURIComponent(`🎁 هديتك من متجرنا!\nكود خصم خاص لك: ${couponGenResult.code}\nخصم ${couponGenResult.percent}% على طلبك القادم — صالح لاستخدام واحد فقط ⏳`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ padding: "8px 14px", borderRadius: 8, background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 12, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}
+                          >
+                            <MessageCircle size={13} /> إرسال واتساب
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* قائمة الكوبونات الموجودة */}
+                <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "18px 20px" }}>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: "#0B2027", marginBottom: 12 }}>📋 جميع أكواد الخصم</div>
+                  {!couponsLoaded ? (
+                    <div style={{ textAlign: "center", padding: "20px", color: "#94A3B8", fontSize: 13 }}>جاري التحميل...</div>
+                  ) : couponsList.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "20px", color: "#94A3B8", fontSize: 13 }}>لا توجد أكواد خصم بعد. أنشئ أول كود أعلاه!</div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                        <thead>
+                          <tr style={{ background: "#F8FAFC" }}>
+                            <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>الكود</th>
+                            <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>الخصم</th>
+                            <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>الاستخدام</th>
+                            <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>الهاتف</th>
+                            <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>الحالة</th>
+                            <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>الإجراء</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {couponsList.map(cp => {
+                            const isUsed = cp.used_count >= cp.max_uses;
+                            const isExpired = cp.expires_at && new Date(cp.expires_at) < new Date();
+                            const statusLabel = !cp.is_active ? "معطّل" : isUsed ? "مستخدم" : isExpired ? "منتهي" : "فعّال";
+                            const statusColor = !cp.is_active ? "#6B7280" : isUsed ? "#DC2626" : isExpired ? "#D97706" : "#15803D";
+                            return (
+                              <tr key={cp.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                                <td style={{ padding: "8px 10px", fontFamily: "monospace", fontWeight: 700, letterSpacing: 1 }}>{cp.code}</td>
+                                <td style={{ padding: "8px 10px", fontWeight: 700, color: "#0E7C86" }}>{cp.percent}%</td>
+                                <td style={{ padding: "8px 10px" }}>{cp.used_count} / {cp.max_uses}</td>
+                                <td style={{ padding: "8px 10px", fontSize: 11, color: "#64748B" }}>{cp.created_for_phone || "—"}</td>
+                                <td style={{ padding: "8px 10px" }}>
+                                  <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: statusColor + "20", color: statusColor }}>{statusLabel}</span>
+                                </td>
+                                <td style={{ padding: "8px 10px" }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => { navigator.clipboard.writeText(cp.code); alert("✅ تم نسخ الكود: " + cp.code); }}
+                                    style={{ padding: "4px 10px", borderRadius: 6, background: "#F1F5F9", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                                  >
+                                    نسخ
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ─── القسم 4: True Net Profit Ledger ─── */}
+            {growthSubTab === "profit" && (              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {/* بطاقة صافي الكاش الكبرى (Hero Card) */}
                 <div
                   style={{

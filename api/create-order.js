@@ -42,6 +42,8 @@ export default async function handler(req, res) {
       shipping_cost,
       coupon_code,
       discount_amount,
+      coupon_id,
+      device_fingerprint,
     } = body;
 
     // Validation
@@ -161,7 +163,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: insertErr?.message || "تعذر حفظ الطلب في قاعدة البيانات" });
     }
 
-    // Fire-and-forget inventory deduction
+    // Fire-and-forget inventory deduction + coupon recording
     (async () => {
       try {
         for (const item of verifiedItems) {
@@ -191,8 +193,30 @@ export default async function handler(req, res) {
             }
           }
         }
+        // تسجيل استخدام الكوبون إذا كان موجوداً
+        if (coupon_id && coupon_code) {
+          await supabase.from("coupon_uses").insert([{
+            coupon_id,
+            store_id: insertedOrder.store_id || store_id,
+            order_id: String(insertedOrder.id),
+            customer_phone: customer_phone || null,
+            device_fingerprint: device_fingerprint || null,
+          }]);
+          // تحديث عداد الاستخدامات
+          const { data: couponData } = await supabase
+            .from("coupons")
+            .select("used_count")
+            .eq("id", coupon_id)
+            .single();
+          if (couponData) {
+            await supabase
+              .from("coupons")
+              .update({ used_count: (couponData.used_count || 0) + 1 })
+              .eq("id", coupon_id);
+          }
+        }
       } catch (stockErr) {
-        console.warn("Background stock deduction error:", stockErr);
+        console.warn("Background stock/coupon error:", stockErr);
       }
     })();
 

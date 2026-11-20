@@ -14,6 +14,10 @@ interface InvoiceOrder {
   id: string;
   items: InvoiceItem[];
   total_price: number;
+  subtotal?: number;
+  shipping_cost?: number;
+  discount_amount?: number;
+  coupon_code?: string;
   customer_name: string;
   customer_phone: string;
   customer_address: string;
@@ -35,6 +39,10 @@ export default function InvoiceModal({
   onPrint,
 }: InvoiceModalProps) {
   if (!order) return null;
+
+  const subtotal = order.subtotal ?? (order.items || []).reduce((s, it) => s + it.price * it.qty, 0);
+  const shipping = order.shipping_cost ?? 0;
+  const discount = order.discount_amount ?? 0;
 
   return (
     <div className="gallery-overlay">
@@ -69,8 +77,27 @@ export default function InvoiceModal({
           ))}
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "15px", color: "var(--teal-dark)", marginBottom: "12px" }}>
-          <span>الإجمالي</span>
+        <div style={{ fontSize: "13px", color: "var(--muted)", marginBottom: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>المنتجات:</span>
+            <span>{subtotal} د.ل</span>
+          </div>
+          {shipping > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>رسوم التوصيل:</span>
+              <span>{shipping} د.ل</span>
+            </div>
+          )}
+          {discount > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", color: "#15803D", fontWeight: 700 }}>
+              <span>🎁 خصم الكوبون {order.coupon_code ? `(${order.coupon_code})` : ""}:</span>
+              <span>-{discount} د.ل</span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "15px", color: "var(--teal-dark)", marginBottom: "12px", borderTop: "2px solid var(--teal)", paddingTop: "8px" }}>
+          <span>الإجمالي النهائي</span>
           <span>{order.total_price} د.ل</span>
         </div>
 
