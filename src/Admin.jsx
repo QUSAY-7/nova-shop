@@ -4811,76 +4811,168 @@ const result = {
                           </div>
                         </div>
 
-                        {/* أزرار الإجراءات الفورية */}
-                        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-                          <a
-                            href={waUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={() => {
-                              if (activeCustomer?.phone) {
-                                setBroadcastSentSet((prev) => new Set(prev).add(activeCustomer.phone));
-                              }
-                              if (broadcastCurrentIndex < targetAudienceList.length - 1) {
-                                setBroadcastCurrentIndex((prev) => prev + 1);
-                              }
-                            }}
-                            style={{
-                              flex: 2,
-                              padding: "12px",
-                              borderRadius: 10,
-                              background: "#25D366",
-                              color: "#fff",
-                              fontWeight: 800,
-                              fontSize: 13,
-                              textAlign: "center",
-                              textDecoration: "none",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              gap: 6,
-                              boxShadow: "0 4px 12px rgba(37,211,102,0.3)",
-                            }}
-                          >
-                            <MessageCircle size={16} /> فتح وإرسال عبر واتساب ➡️
-                          </a>
+                        {/* ─── الخيار 1: إرسال للجميع دفعة واحدة (مرة واحدة) ─── */}
+                        <div style={{ background: "#F0FDF4", border: "2px solid #22C55E", borderRadius: 14, padding: "16px", marginBottom: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <strong style={{ color: "#15803D", fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+                              <Zap size={18} color="#16A34A" />
+                              <span>إرسال للجميع دفعة واحدة بنقرة واحدة (الرسائل الجماعية)</span>
+                            </strong>
+                            <span style={{ fontSize: 11, background: "#DCFCE7", color: "#166534", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>
+                              مرة واحدة
+                            </span>
+                          </div>
+                          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#166534", lineHeight: 1.6 }}>
+                            يفتح واتساب مباشرة ومعه الرسالة مكتوبة مسبقاً، لتحديد جميع الزبائن أو قائمة البث الخاصة بك وإرسالها لهم جميعاً في نفس اللحظة!
+                          </p>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (broadcastCurrentIndex < targetAudienceList.length - 1) {
-                                setBroadcastCurrentIndex((prev) => prev + 1);
-                              } else {
-                                setBroadcastCurrentIndex(0);
-                              }
-                            }}
-                            style={{
-                              flex: 1,
-                              padding: "12px",
-                              borderRadius: 10,
-                              background: "#F1F5F9",
-                              color: "#334155",
-                              border: "1px solid #CBD5E1",
-                              fontWeight: 700,
-                              fontSize: 12,
-                              cursor: "pointer",
-                            }}
-                          >
-                            تخطي ⏭️
-                          </button>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <a
+                              href={`https://api.whatsapp.com/send?text=${encodeURIComponent(broadcastCustomMessage)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                flex: 2,
+                                minWidth: 220,
+                                padding: "12px 16px",
+                                borderRadius: 10,
+                                background: "#16A34A",
+                                color: "#fff",
+                                fontWeight: 800,
+                                fontSize: 13.5,
+                                textAlign: "center",
+                                textDecoration: "none",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 8,
+                                boxShadow: "0 4px 14px rgba(22,163,74,0.35)",
+                              }}
+                            >
+                              <MessageCircle size={18} /> فتح واتساب والإرسال للجميع دفعة واحدة 🚀
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                let vcf = "";
+                                targetAudienceList.forEach((c, i) => {
+                                  const cp = (c.phone || "").replace(/[^0-9]/g, "");
+                                  const full = cp.startsWith("218") ? "+" + cp : cp.startsWith("0") ? "+218" + cp.slice(1) : "+218" + cp;
+                                  const name = c.name && c.name !== "زبون المتجر" ? c.name : `زبون متجر ${i + 1}`;
+                                  vcf += `BEGIN:VCARD\r\nVERSION:3.0\r\nFN:${name} (متجر)\r\nTEL;TYPE=CELL:${full}\r\nEND:VCARD\r\n`;
+                                });
+                                const blob = new Blob([vcf], { type: "text/vcard;charset=utf-8" });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement("a");
+                                a.href = url;
+                                a.download = `store_customers_${broadcastAudience}.vcf`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                                alert(`✅ تم تنزيل ملف جهات الاتصال (${targetAudienceList.length} رقم)! افتح الملف بهاتفك لحفظهم في ثانية، ثم افتح واتساب > رسالة جماعية > تحديد الكل > إرسال مرة واحدة.`);
+                              }}
+                              style={{
+                                flex: 1,
+                                minWidth: 180,
+                                padding: "12px 14px",
+                                borderRadius: 10,
+                                background: "#EFF6FF",
+                                color: "#1E40AF",
+                                border: "1.5px solid #BFDBFE",
+                                fontWeight: 700,
+                                fontSize: 12.5,
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 6,
+                              }}
+                            >
+                              📲 حفظ الأرقام بالهاتف (ملف VCF)
+                            </button>
+                          </div>
                         </div>
 
-                        {/* خيار النسخ الجماعي لقوائم البث (Broadcast List) */}
-                        <div style={{ borderTop: "1px dashed #E2E8F0", paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        {/* ─── الخيار 2: الإرسال المباشر الفردي (المتتابع) ─── */}
+                        <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "#64748B" }}>
+                              أو إرسال فردي متتابع (محادثة خاصة لكل زبون):
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "#0E7C86" }}>
+                              {progressPct}% مكتمل
+                            </span>
+                          </div>
+
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={() => {
+                                if (activeCustomer?.phone) {
+                                  setBroadcastSentSet((prev) => new Set(prev).add(activeCustomer.phone));
+                                }
+                                if (broadcastCurrentIndex < targetAudienceList.length - 1) {
+                                  setBroadcastCurrentIndex((prev) => prev + 1);
+                                }
+                              }}
+                              style={{
+                                flex: 2,
+                                padding: "10px 14px",
+                                borderRadius: 10,
+                                background: "#0E7C86",
+                                color: "#fff",
+                                fontWeight: 700,
+                                fontSize: 12.5,
+                                textAlign: "center",
+                                textDecoration: "none",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <MessageCircle size={15} /> إرسال للزبون الحالي (#{broadcastCurrentIndex + 1}) ➡️
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (broadcastCurrentIndex < targetAudienceList.length - 1) {
+                                  setBroadcastCurrentIndex((prev) => prev + 1);
+                                } else {
+                                  setBroadcastCurrentIndex(0);
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "10px 12px",
+                                borderRadius: 10,
+                                background: "#fff",
+                                color: "#475569",
+                                border: "1px solid #CBD5E1",
+                                fontWeight: 700,
+                                fontSize: 12,
+                                cursor: "pointer",
+                              }}
+                            >
+                              تخطي ⏭️
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* أسفل النافذة: نسخ الأرقام والإغلاق */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                           <button
                             type="button"
                             onClick={copyAllNumbers}
                             style={{
                               padding: "8px 14px",
                               borderRadius: 8,
-                              background: "#EFF6FF",
-                              color: "#1E40AF",
-                              border: "1px solid #BFDBFE",
+                              background: "#F1F5F9",
+                              color: "#334155",
+                              border: "1px solid #CBD5E1",
                               fontWeight: 700,
                               fontSize: 12,
                               cursor: "pointer",
@@ -4889,12 +4981,12 @@ const result = {
                               gap: 6,
                             }}
                           >
-                            <Copy size={14} /> نسخ جميع الأرقام ({targetAudienceList.length}) لقائمة واتساب الجماعية
+                            <Copy size={14} /> نسخ الأرقام نصياً ({targetAudienceList.length})
                           </button>
                           <button
                             type="button"
                             onClick={() => setBroadcastModalOpen(false)}
-                            style={{ padding: "8px 14px", borderRadius: 8, background: "#F1F5F9", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer", color: "#64748B" }}
+                            style={{ padding: "8px 16px", borderRadius: 8, background: "#F1F5F9", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer", color: "#64748B" }}
                           >
                             إغلاق
                           </button>
