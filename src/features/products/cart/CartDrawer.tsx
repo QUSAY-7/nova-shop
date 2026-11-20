@@ -121,6 +121,20 @@ export default function CartDrawer({
   onCheckout,
   cartThumb: CartThumb,
 }: CartDrawerProps) {
+  const [couponInput, setCouponInput] = useState("");
+  const [couponError, setCouponError] = useState("");
+
+  const handleApply = () => {
+    if (!couponInput.trim()) return;
+    setCouponError("");
+    if (onApplyCoupon) {
+      const res = onApplyCoupon(couponInput.trim().toUpperCase());
+      if (!res.success) {
+        setCouponError(res.message || "كود الخصم غير صالح أو منتهي الصلاحية");
+      }
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
