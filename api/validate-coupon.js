@@ -27,12 +27,16 @@ export default async function handler(req, res) {
     if (!code) return res.status(400).json({ valid: false, message: "يرجى إدخال كود الخصم" });
 
     // جلب الكوبون من قاعدة البيانات
-    const { data: coupon, error } = await supabase
+    let query = supabase
       .from("coupons")
       .select("*")
-      .eq("code", code.trim().toUpperCase())
-      .eq("store_id", store_id)
-      .maybeSingle();
+      .eq("code", code.trim().toUpperCase());
+
+    if (store_id) {
+      query = query.or(`store_id.eq.${store_id},store_id.is.null`);
+    }
+
+    const { data: coupon, error } = await query.maybeSingle();
 
     if (error) {
       console.error("Coupon fetch error:", error);

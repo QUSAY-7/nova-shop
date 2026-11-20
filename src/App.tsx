@@ -104,6 +104,8 @@ export default function App() {
 
   // ─── Upsell ما بعد الشراء ───
   const [upsellProduct, setUpsellProduct] = useState<any>(null);
+  const [upsellCouponCode, setUpsellCouponCode] = useState<string>("");
+  const [upsellCopied, setUpsellCopied] = useState<boolean>(false);
   const [upsellTimer, setUpsellTimer] = useState(0);
   const upsellTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -497,10 +499,15 @@ export default function App() {
   const handleUpsellAdd = (product) => {
     const key = cartKey(product.id, null);
     setQty(key, 1, { productId: product.id, variantId: null, size: null, color: null });
+    if (upsellCouponCode) {
+      setAppliedCoupon({
+        code: upsellCouponCode,
+        percent: 35,
+      });
+    }
     setUpsellProduct(null);
     clearInterval(upsellTimerRef.current!);
     setCartOpen(true);
-    alert(`✅ تمت إضافة "${product.title}" بخصم 35% إلى سلتك! أتمم الطلب الجديد.`);
   };
 
   const saveOrder = async () => {
@@ -547,19 +554,32 @@ export default function App() {
     const upsellCandidates = products.filter((p) => !orderedIds.has(p.id) && (p.stock > 0 || p.stock == null));
     if (upsellCandidates.length > 0) {
       const pick = upsellCandidates[Math.floor(Math.random() * upsellCandidates.length)];
+      const rand4 = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const code = `VIP35-${rand4}`;
+      setUpsellCouponCode(code);
       setUpsellProduct(pick);
       setUpsellTimer(15 * 60); // 15 دقيقة
+
+      // حفظ الكوبون فوراً في قاعدة البيانات عبر API
+      fetch("/api/create-coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          store_id: CURRENT_STORE_ID,
+          code,
+          percent: 35,
+          max_uses: 1,
+          created_for_phone: customerPhone.trim() || null,
+          expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        }),
+      }).catch((e) => console.warn("Failed to create upsell coupon:", e));
     }
     setLastOrder(insertedOrder);
     setShowInvoicePrompt(true);
     setAppliedCoupon(null);
     setCart({});
     setSelectedVariants({});
-    setCustomerName("");
-    setCustomerPhone("");
-    setCustomerAddress("");
-    setDeliveryCity("طرابلس");
-    setDeliveryArea("سوق الجمعة");
+    // نحتفظ ببيانات العميل (الاسم، الهاتف، العنوان) ليسهل عليه إتمام طلب عرض الـ Upsell بضغطة واحدة دون عناء إعادة الكتابة
     return true;
   };
 
@@ -1868,6 +1888,42 @@ export default function App() {
               <span style={{ fontSize:12, color:"var(--muted)", textDecoration:"line-through" }}>{upsellProduct.price} د.ل</span>
               <span style={{ fontSize:11, background:"#DCFCE7", color:"#15803D", padding:"2px 8px", borderRadius:6, fontWeight:700 }}>خصم 35%</span>
             </div>
+
+            {/* كود الخصم الحصري مع زر النسخ */}
+            {upsellCouponCode && (
+              <div style={{ background: "#F0FDF4", border: "1.5px dashed #16A34A", borderRadius: 10, padding: "10px 12px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "#166534", fontWeight: 700 }}>كود خصمك المخصص:</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: "#15803D", fontFamily: "monospace", letterSpacing: "1px" }}>{upsellCouponCode}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(upsellCouponCode);
+                    setUpsellCopied(true);
+                    setTimeout(() => setUpsellCopied(false), 2000);
+                  }}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    background: upsellCopied ? "#15803D" : "#DCFCE7",
+                    color: upsellCopied ? "#fff" : "#15803D",
+                    border: "none",
+                    fontWeight: 700,
+                    fontSize: 12,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    transition: "all 0.2s ease"
+                  }}
+                >
+                  <Copy size={13} />
+                  {upsellCopied ? "تم النسخ ✓" : "نسخ الكود"}
+                </button>
+              </div>
+            )}
+
             <button
               className="cta-button"
               style={{ marginBottom:8, background:"#15803D" }}

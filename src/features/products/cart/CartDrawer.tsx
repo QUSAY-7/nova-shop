@@ -327,14 +327,14 @@ export default function CartDrawer({
                 <input
                   type="text"
                   placeholder="أدخل رمز القسيمة..."
-                  value={couponInput}
+                  value={appliedCoupon ? appliedCoupon.code : couponInput}
                   onChange={(e) => {
                     setCouponInput(e.target.value);
                     setCouponError("");
                   }}
                   disabled={Boolean(appliedCoupon) || couponLoading}
                   onKeyDown={(e) => { if (e.key === "Enter") handleApply(); }}
-                  style={{ flex: 1, height: "38px", padding: "0 10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "1px" }}
+                  style={{ flex: 1, height: "38px", padding: "0 10px", borderRadius: "8px", border: appliedCoupon ? "1.5px solid #16A34A" : "1px solid #CBD5E1", background: appliedCoupon ? "#F0FDF4" : "#fff", color: appliedCoupon ? "#15803D" : "inherit", fontSize: "13px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "1px" }}
                 />
                 {appliedCoupon ? (
                   <button
