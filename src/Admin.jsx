@@ -1856,13 +1856,10 @@ export default function Admin() {
   // ─── دالة جلب قائمة الكوبونات ───
   const loadCouponsList = async () => {
     try {
-      const { createClient } = await import("@supabase/supabase-js");
-      const sb = createClient(
-        "https://ugeekzmtavxcfrhtfrjq.supabase.co",
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZWVrem10YXZ4Y2ZyaHRmcmpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NDU4NDAsImV4cCI6MjEwMDEyMTg0MH0.mEqNG6W_cGLF2tCSpMPfcP8gc7lhSiTxnf9nH-aZmiw"
-      );
-      const { data } = await sb.from("coupons").select("*").eq("store_id", currentStoreId).order("created_at", { ascending: false }).limit(100);
-      setCouponsList(data || []);
+      const res = await fetch(`/api/create-coupon?store_id=${currentStoreId}`);
+      if (!res.ok) throw new Error("فشل جلب الكوبونات");
+      const json = await res.json();
+      setCouponsList(json.coupons || []);
       setCouponsLoaded(true);
     } catch (e) {
       console.warn("loadCouponsList error:", e);
@@ -4672,24 +4669,23 @@ const result = {
                         const phoneLast4 = phone ? phone.slice(-4) : Math.random().toString(36).slice(2,6).toUpperCase();
                         const rand = Math.random().toString(36).slice(2,6).toUpperCase();
                         const code = `VX-${phoneLast4}-${rand}`;
-                        const { createClient } = await import("@supabase/supabase-js");
-                        const sb = createClient(
-                          "https://ugeekzmtavxcfrhtfrjq.supabase.co",
-                          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZWVrem10YXZ4Y2ZyaHRmcmpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NDU4NDAsImV4cCI6MjEwMDEyMTg0MH0.mEqNG6W_cGLF2tCSpMPfcP8gc7lhSiTxnf9nH-aZmiw"
-                        );
-                        const { error } = await sb.from("coupons").insert([{
-                          store_id: currentStoreId,
-                          code,
-                          percent: Number(couponGenPercent),
-                          max_uses: 1,
-                          used_count: 0,
-                          is_active: true,
-                          created_for_phone: phone || null,
-                          expires_at: couponGenExpiry ? new Date(couponGenExpiry).toISOString() : null,
-                        }]);
-                        if (error) throw error;
+                        // ─── استخدام API endpoint بدل direct Supabase لتجاوز RLS ───
+                        const res = await fetch("/api/create-coupon", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            store_id: currentStoreId,
+                            code,
+                            percent: Number(couponGenPercent),
+                            max_uses: 1,
+                            created_for_phone: phone || null,
+                            expires_at: couponGenExpiry || null,
+                          }),
+                        });
+                        const json = await res.json();
+                        if (!res.ok) throw new Error(json.error || "فشل التوليد");
                         setCouponGenResult({ code, percent: Number(couponGenPercent) });
-                        setCouponsLoaded(false); // force reload list
+                        setCouponsLoaded(false);
                         loadCouponsList();
                       } catch (e) {
                         alert("خطأ في توليد الكوبون: " + e.message);

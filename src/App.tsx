@@ -107,6 +107,41 @@ export default function App() {
   const [upsellTimer, setUpsellTimer] = useState(0);
   const upsellTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ─── تتبع السلة المهجورة — يُرسل عند إغلاق الدرج مع وجود منتجات + هاتف ───
+  const abandonedCartSentRef = useRef(false);
+  useEffect(() => {
+    if (cartOpen) {
+      abandonedCartSentRef.current = false; // إعادة ضبط عند فتح الدرج
+      return;
+    }
+    // عند الإغلاق: إن كانت السلة بها منتجات وهاتف مُدخل ولم يكتمل طلب
+    if (
+      !cartOpen &&
+      cartItems.length > 0 &&
+      customerPhone.trim().length >= 8 &&
+      !showInvoicePrompt &&
+      !abandonedCartSentRef.current
+    ) {
+      abandonedCartSentRef.current = true;
+      fetch("/api/track-cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          store_id: CURRENT_STORE_ID,
+          customer_name: customerName.trim() || null,
+          customer_phone: customerPhone.trim(),
+          customer_city: deliveryCity || null,
+          cart_items: cartItems.map((l) => ({
+            title: l.product.title,
+            qty: l.qty,
+            price: getEffectivePrice(l.product, l.variant),
+          })),
+          cart_total: itemsSubtotal,
+        }),
+      }).catch(() => {});
+    }
+  }, [cartOpen]);
+
   // ---- بيانات المنتجات من Supabase ----
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -591,17 +626,20 @@ export default function App() {
 
   const printCustomerInvoice = (order) => {
     if (!order) return;
+    const itemsSubtotalCalc = (order.items || []).reduce((s, it) => s + (it.price * it.qty), 0);
+    const shippingCost = order.shipping_cost != null ? Number(order.shipping_cost) : null;
+    const discountAmt = Number(order.discount_amount || 0);
     const itemsRows = (order.items || []).map((it) => `
       <tr>
         <td>${it.title}${it.size || it.color ? ` (${[it.size, it.color].filter(Boolean).join(" / ")})` : ""}</td>
         <td style="text-align:center">${it.qty}</td>
-        <td style="text-align:center">${it.price} د.ل</td>
-        <td style="text-align:center">${it.price * it.qty} د.ل</td>
+        <td style="text-align:center">${it.price} \u062f.\u0644</td>
+        <td style="text-align:center">${it.price * it.qty} \u062f.\u0644</td>
       </tr>`).join("");
     const invoiceWindow = window.open("", "_blank");
     invoiceWindow.document.write(`
       <!DOCTYPE html><html dir="rtl" lang="ar">
-      <head><meta charset="UTF-8"/><title>فاتورة طلب #${order.id}</title>
+      <head><meta charset="UTF-8"/><title>\u0641\u0627\u062a\u0648\u0631\u0629 \u0637\u0644\u0628 #${order.id}</title>
       <style>
         body{font-family:Tajawal,Arial,sans-serif;padding:32px;color:#0B2027;}
         .header{border-bottom:2px solid #0E7C86;padding-bottom:16px;margin-bottom:24px;}
@@ -610,7 +648,9 @@ export default function App() {
         table{width:100%;border-collapse:collapse;margin-top:16px;}
         th,td{padding:10px;border-bottom:1px solid #E3ECED;text-align:right;}
         th{background:#E7F3F3;color:#0A5A61;}
-        .total-row td{font-weight:bold;font-size:16px;border-top:2px solid #0E7C86;}
+        .subtotal-row td{font-size:13px;color:#5B7278;}
+        .discount-row td{color:#15803D;font-weight:700;}
+        .total-row td{font-weight:bold;font-size:17px;border-top:2px solid #0E7C86;color:#0B2027;}
         .customer-box{margin-top:20px;padding:14px;background:#F3F7F8;border-radius:8px;font-size:13px;}
         .footer{margin-top:32px;text-align:center;font-size:12px;color:#5B7278;}
         @media print{button{display:none;}}
@@ -618,28 +658,30 @@ export default function App() {
       </style></head>
       <body>
         <div class="header" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
-          <div><h1>${settings?.store_name || "المتجر"}</h1>
-          <div class="meta">فاتورة رقم INV-${order.id}<br/>
+          <div><h1>${settings?.store_name || "\u0627\u0644\u0645\u062a\u062c\u0631"}</h1>
+          <div class="meta">\u0641\u0627\u062a\u0648\u0631\u0629 \u0631\u0642\u0645 INV-${order.id}<br/>
             ${new Date(order.created_at||Date.now()).toLocaleDateString("ar-LY",{year:"numeric",month:"long",day:"numeric"})}
-            — ${new Date(order.created_at||Date.now()).toLocaleTimeString("ar-LY",{hour:"2-digit",minute:"2-digit"})}</div></div>
-          ${settings?.logo_url?`<img src="${settings.logo_url}" alt="شعار" style="width:64px;height:64px;object-fit:contain;"/>`:""}
+            \u2014 ${new Date(order.created_at||Date.now()).toLocaleTimeString("ar-LY",{hour:"2-digit",minute:"2-digit"})}</div></div>
+          ${settings?.logo_url?`<img src="${settings.logo_url}" alt="\u0634\u0639\u0627\u0631" style="width:64px;height:64px;object-fit:contain;"/>`:""}
         </div>
         <div class="customer-box">
-          <div>الاسم: ${order.customer_name||"-"}</div>
-          <div>الهاتف: ${order.customer_phone||"-"}</div>
-          <div>العنوان: ${order.customer_address||"-"}</div>
-          <div>طريقة الدفع: ${order.payment_method||"-"}</div>
+          <div>\u0627\u0644\u0627\u0633\u0645: ${order.customer_name||"\u2014"}</div>
+          <div>\u0627\u0644\u0647\u0627\u062a\u0641: ${order.customer_phone||"\u2014"}</div>
+          <div>\u0627\u0644\u0639\u0646\u0648\u0627\u0646: ${order.customer_address||"\u2014"}</div>
+          <div>\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u062f\u0641\u0639: ${order.payment_method||"\u2014"}</div>
         </div>
         <table>
-          <thead><tr><th>المنتج</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
-          <tbody>${itemsRows}
-            ${order.discount_amount > 0 ? `<tr><td colspan="3" style="color:#15803D">🎁 خصم الكوبون (${order.coupon_code || ""})</td><td style="color:#15803D;font-weight:700">-${order.discount_amount} د.ل</td></tr>` : ""}
-            ${order.shipping_cost != null ? `<tr><td colspan="3">رسوم التوصيل</td><td>${order.shipping_cost} د.ل</td></tr>` : ""}
-            <tr class="total-row"><td colspan="3">الإجمالي النهائي</td><td>${order.total_price} د.ل</td></tr>
+          <thead><tr><th>\u0627\u0644\u0645\u0646\u062a\u062c</th><th>\u0627\u0644\u0643\u0645\u064a\u0629</th><th>\u0627\u0644\u0633\u0639\u0631</th><th>\u0627\u0644\u0625\u062c\u0645\u0627\u0644\u064a</th></tr></thead>
+          <tbody>
+            ${itemsRows}
+            <tr class="subtotal-row"><td colspan="3">\u0645\u062c\u0645\u0648\u0639 \u0627\u0644\u0645\u0646\u062a\u062c\u0627\u062a</td><td>${itemsSubtotalCalc} \u062f.\u0644</td></tr>
+            ${shippingCost != null ? `<tr class="subtotal-row"><td colspan="3">\u0631\u0633\u0648\u0645 \u0627\u0644\u062a\u0648\u0635\u064a\u0644</td><td>${shippingCost} \u062f.\u0644</td></tr>` : ""}
+            ${discountAmt > 0 ? `<tr class="discount-row"><td colspan="3">\uD83C\uDF81 \u062e\u0635\u0645 \u0627\u0644\u0643\u0648\u0628\u0648\u0646${order.coupon_code ? ` (${order.coupon_code})` : ""}</td><td>-${discountAmt} \u062f.\u0644</td></tr>` : ""}
+            <tr class="total-row"><td colspan="3">\u0627\u0644\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0646\u0647\u0627\u0626\u064a</td><td>${order.total_price} \u062f.\u0644</td></tr>
           </tbody>
         </table>
-        <div class="footer">شكراً لتسوقك من ${settings?.store_name||"متجرنا"}</div>
-        <center><button class="print-btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button></center>
+        <div class="footer">\u0634\u0643\u0631\u0627\u064b \u0644\u062a\u0633\u0648\u0642\u0643 \u0645\u0646 ${settings?.store_name||"\u0645\u062a\u062c\u0631\u0646\u0627"} \uD83D\uDE4F</div>
+        <center><button class="print-btn" onclick="window.print()">\uD83D\uDDA8\uFE0F \u0637\u0628\u0627\u0639\u0629 / \u062d\u0641\u0638 PDF</button></center>
       </body></html>`);
     invoiceWindow.document.close();
   };
