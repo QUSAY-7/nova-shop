@@ -105,6 +105,7 @@ export default function App() {
   // ─── Upsell ما بعد الشراء ───
   const [upsellProduct, setUpsellProduct] = useState<any>(null);
   const [upsellCouponCode, setUpsellCouponCode] = useState<string>("");
+  const [upsellDiscountPercent, setUpsellDiscountPercent] = useState<number>(35);
   const [upsellCopied, setUpsellCopied] = useState<boolean>(false);
   const [upsellTimer, setUpsellTimer] = useState(0);
   const upsellTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1877,16 +1878,16 @@ export default function App() {
             <div style={{ textAlign:"center", marginBottom:14 }}>
               <Sparkles size={28} style={{ color:"var(--teal)", margin:"0 auto 8px" }} />
               <h3 style={{ fontSize:15, marginBottom:4, color:"var(--teal-dark)" }}>عرض خاص لك بعد شرائك! 🎁</h3>
-              <p style={{ fontSize:12, color:"var(--muted)" }}>أضف هذا المنتج لطلبك القادم بخصم 35% بدون رسوم شحن إضافية</p>
+              <p style={{ fontSize:12, color:"var(--muted)" }}>أضف هذا المنتج لطلبك القادم بخصم {upsellDiscountPercent}% تصفية حصرية بدون رسوم شحن إضافية</p>
             </div>
             {upsellProduct.image && (
               <img src={upsellProduct.image} alt={upsellProduct.title} style={{ width:"100%", height:140, objectFit:"cover", borderRadius:10, marginBottom:10 }} />
             )}
             <div style={{ fontWeight:800, fontSize:14, color:"var(--ink)", marginBottom:4 }}>{upsellProduct.title}</div>
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-              <span style={{ fontSize:16, fontWeight:800, color:"var(--teal)" }}>{Math.round(Number(upsellProduct.price) * 0.65)} د.ل</span>
+              <span style={{ fontSize:16, fontWeight:800, color:"var(--teal)" }}>{Math.round(Number(upsellProduct.price) * (1 - upsellDiscountPercent / 100))} د.ل</span>
               <span style={{ fontSize:12, color:"var(--muted)", textDecoration:"line-through" }}>{upsellProduct.price} د.ل</span>
-              <span style={{ fontSize:11, background:"#DCFCE7", color:"#15803D", padding:"2px 8px", borderRadius:6, fontWeight:700 }}>خصم 35%</span>
+              <span style={{ fontSize:11, background:"#DCFCE7", color:"#15803D", padding:"2px 8px", borderRadius:6, fontWeight:700 }}>خصم {upsellDiscountPercent}%</span>
             </div>
 
             {/* كود الخصم الحصري مع زر النسخ */}

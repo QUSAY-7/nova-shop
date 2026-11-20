@@ -2050,9 +2050,11 @@ export default function Admin() {
   const [editingId, setEditingId] = useState(null);
   const [isNewCategory, setIsNewCategory] = useState(false);
   const [variants, setVariants] = useState([]);
+  const [hasVariantsEnabled, setHasVariantsEnabled] = useState(false);
 
-  function addVariantRow() {
-    setVariants([...variants, { size: "", color: "", price: "", quantity: "" }]);
+  function addVariantRow(initial = {}) {
+    setVariants([...variants, { size: initial.size || "", color: initial.color || "", price: initial.price || "", quantity: initial.quantity || "" }]);
+    setHasVariantsEnabled(true);
   }
 
   function updateVariantRow(index, field, value) {
@@ -2062,7 +2064,41 @@ export default function Admin() {
   }
 
   function removeVariantRow(index) {
-    setVariants(variants.filter((_, i) => i !== index));
+    const updated = variants.filter((_, i) => i !== index);
+    setVariants(updated);
+    if (updated.length === 0) {
+      setHasVariantsEnabled(false);
+    }
+  }
+
+  function applyPresetClothing() {
+    setVariants([
+      { size: "S", color: "", price: "", quantity: "" },
+      { size: "M", color: "", price: "", quantity: "" },
+      { size: "L", color: "", price: "", quantity: "" },
+      { size: "XL", color: "", price: "", quantity: "" },
+      { size: "XXL", color: "", price: "", quantity: "" },
+    ]);
+    setHasVariantsEnabled(true);
+  }
+
+  function applyPresetShoes() {
+    setVariants([
+      { size: "39", color: "", price: "", quantity: "" },
+      { size: "40", color: "", price: "", quantity: "" },
+      { size: "41", color: "", price: "", quantity: "" },
+      { size: "42", color: "", price: "", quantity: "" },
+      { size: "43", color: "", price: "", quantity: "" },
+      { size: "44", color: "", price: "", quantity: "" },
+    ]);
+    setHasVariantsEnabled(true);
+  }
+
+  function applyPresetStandard() {
+    setVariants([
+      { size: "Standard (موحّد)", color: "", price: "", quantity: "" },
+    ]);
+    setHasVariantsEnabled(true);
   }
 
   const emptySettingsForm = {
@@ -3388,24 +3424,27 @@ const result = {
     if (productId) {
       await supabase.from("product_variants").delete().eq("product_id", productId);
 
-      const validVariants = variants
-        .filter((v) => v.size || v.color)
-        .map((v) => ({
-          product_id: productId,
-          size: v.size || null,
-          color: v.color || null,
-          price: v.price !== "" ? Number(v.price) : null,
-          quantity: v.quantity !== "" ? Number(v.quantity) : 0,
-        }));
+      if (hasVariantsEnabled) {
+        const validVariants = variants
+          .filter((v) => v.size || v.color)
+          .map((v) => ({
+            product_id: productId,
+            size: v.size || null,
+            color: v.color || null,
+            price: v.price !== "" ? Number(v.price) : null,
+            quantity: v.quantity !== "" ? Number(v.quantity) : 0,
+          }));
 
-      if (validVariants.length > 0) {
-        await supabase.from("product_variants").insert(validVariants);
+        if (validVariants.length > 0) {
+          await supabase.from("product_variants").insert(validVariants);
+        }
       }
     }
 
     setSaving(false);
     setForm(emptyForm);
     setVariants([]);
+    setHasVariantsEnabled(false);
     setImageFiles([]);
     setExistingImages([]);
     setEditingId(null);
@@ -3437,6 +3476,8 @@ const result = {
       .select("*")
       .eq("product_id", product.id);
 
+    const hasVars = Boolean(variantData && variantData.length > 0);
+    setHasVariantsEnabled(hasVars);
     setVariants(
       (variantData || []).map((v) => ({
         size: v.size || "",
@@ -3456,6 +3497,8 @@ const result = {
     setImageFiles([]);
     setExistingImages([]);
     setIsNewCategory(false);
+    setVariants([]);
+    setHasVariantsEnabled(false);
   }
 
   async function handleDelete(id) {
@@ -7755,6 +7798,152 @@ const result = {
                   value={form.stock}
                   onChange={(e) => setForm({ ...form, stock: e.target.value })}
                 />
+              </div>
+
+              {/* قسم خيارات المنتج (المقاسات والألوان) */}
+              <div style={{ background: hasVariantsEnabled ? "#F0FDF4" : "#F8FAFC", border: `1.5px solid ${hasVariantsEnabled ? "#86EFAC" : "#E2E8F0"}`, borderRadius: 14, padding: "16px 18px", transition: "all 0.2s ease" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 10, background: hasVariantsEnabled ? "#DCFCE7" : "#E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+                      👕
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: "#0F172A" }}>
+                        خيارات ومقاسات المنتج (Variants)
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "#64748B" }}>
+                        فعّل هذا الخيار إذا كان المنتج ملابس أو أحذية، وأوقفه إذا كان المنتج هاتف، إلكترونيات، عطور أو مقاس موحد
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* مفتاح التشغيل والإيقاف (Toggle Switch) */}
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                    <input
+                      type="checkbox"
+                      checked={hasVariantsEnabled}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setHasVariantsEnabled(checked);
+                        if (!checked) {
+                          setVariants([]);
+                        } else if (variants.length === 0) {
+                          addVariantRow();
+                        }
+                      }}
+                      style={{ width: 18, height: 18, accentColor: "#0E7C86", cursor: "pointer" }}
+                    />
+                    <span style={{ fontWeight: 800, fontSize: 13, color: hasVariantsEnabled ? "#15803D" : "#64748B" }}>
+                      {hasVariantsEnabled ? "مُفعّل (يحتوي مقاسات/ألوان)" : "معطّل (منتج عادي بدون مقاسات)"}
+                    </span>
+                  </label>
+                </div>
+
+                {hasVariantsEnabled && (
+                  <div style={{ marginTop: 14, borderTop: "1px dashed #CBD5E1", paddingTop: 14 }}>
+                    {/* شريط الإضافة السريعة بنقرة واحدة (Presets) */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>⚡ قوالب سريعة بنقرة واحدة:</span>
+                      <button
+                        type="button"
+                        onClick={applyPresetClothing}
+                        style={{ padding: "5px 10px", borderRadius: 8, background: "#fff", border: "1px solid #CBD5E1", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "#0E7C86" }}
+                      >
+                        👕 مقاسات ملابس (S, M, L, XL, XXL)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={applyPresetShoes}
+                        style={{ padding: "5px 10px", borderRadius: 8, background: "#fff", border: "1px solid #CBD5E1", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "#0E7C86" }}
+                      >
+                        👟 مقاسات أحذية (39 إلى 44)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={applyPresetStandard}
+                        style={{ padding: "5px 10px", borderRadius: 8, background: "#fff", border: "1px solid #CBD5E1", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "#0E7C86" }}
+                      >
+                        🏷️ مقاس موحّد (Standard)
+                      </button>
+                    </div>
+
+                    {/* قائمة صفوف المقاسات والألوان */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {variants.map((v, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr auto",
+                            gap: 8,
+                            alignItems: "center",
+                            background: "#fff",
+                            padding: "8px 12px",
+                            borderRadius: 10,
+                            border: "1px solid #E2E8F0"
+                          }}
+                        >
+                          <input
+                            type="text"
+                            placeholder="المقاس (مثال: L أو 42 أو موحد)"
+                            value={v.size}
+                            onChange={(e) => updateVariantRow(idx, "size", e.target.value)}
+                            style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontWeight: 600 }}
+                          />
+                          <input
+                            type="text"
+                            placeholder="اللون (مثال: أسود، أبيض، كحلي...)"
+                            value={v.color}
+                            onChange={(e) => updateVariantRow(idx, "color", e.target.value)}
+                            style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontWeight: 600 }}
+                          />
+                          <input
+                            type="number"
+                            placeholder="سعر خاص (اختياري)"
+                            value={v.price}
+                            onChange={(e) => updateVariantRow(idx, "price", e.target.value)}
+                            style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12 }}
+                          />
+                          <input
+                            type="number"
+                            placeholder="الكمية (اختياري)"
+                            value={v.quantity}
+                            onChange={(e) => updateVariantRow(idx, "quantity", e.target.value)}
+                            style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeVariantRow(idx)}
+                            style={{ padding: "8px 10px", borderRadius: 6, background: "#FEE2E2", color: "#DC2626", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12 }}
+                            title="حذف هذا الخيار"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => addVariantRow()}
+                        style={{ padding: "7px 14px", borderRadius: 8, background: "#0E7C86", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                      >
+                        ➕ إضافة خيار آخر
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVariants([]);
+                          setHasVariantsEnabled(false);
+                        }}
+                        style={{ padding: "7px 14px", borderRadius: 8, background: "#FEE2E2", color: "#DC2626", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                      >
+                        مسح كافة الخيارات وتعطيل المقاسات ❌
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* رفع الصور */}

@@ -120,30 +120,66 @@ export default function ProductCard({
       )}
 
       {hasVariants && (
-        <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+        <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
           {sizeOptions.length > 0 && (
-            <select
-              value={selectedVariants[product.id]?.size || ""}
-              onChange={(e) => onSelectVariant(product.id, "size", e.target.value)}
-              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
-            >
-              <option value="">المقاس</option>
-              {sizeOptions.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            <div>
+              <div style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--muted)", marginBottom: "3px" }}>المقاس:</div>
+              <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                {sizeOptions.map((s) => {
+                  const isSel = selectedVariants[product.id]?.size === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => onSelectVariant(product.id, "size", s)}
+                      style={{
+                        padding: "3px 8px",
+                        borderRadius: "6px",
+                        border: isSel ? "1.5px solid #0E7C86" : "1px solid var(--line)",
+                        background: isSel ? "#0E7C86" : "#fff",
+                        color: isSel ? "#fff" : "var(--ink)",
+                        fontWeight: 700,
+                        fontSize: "11px",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
           {colorOptions.length > 0 && (
-            <select
-              value={selectedVariants[product.id]?.color || ""}
-              onChange={(e) => onSelectVariant(product.id, "color", e.target.value)}
-              style={{ flex: 1, minWidth: "70px", padding: "6px", borderRadius: "8px", border: "1px solid var(--line)", fontSize: "12px" }}
-            >
-              <option value="">اللون</option>
-              {colorOptions.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+            <div>
+              <div style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--muted)", marginBottom: "3px" }}>اللون:</div>
+              <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                {colorOptions.map((c) => {
+                  const isSel = selectedVariants[product.id]?.color === c;
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => onSelectVariant(product.id, "color", c)}
+                      style={{
+                        padding: "3px 8px",
+                        borderRadius: "6px",
+                        border: isSel ? "1.5px solid #0E7C86" : "1px solid var(--line)",
+                        background: isSel ? "#0E7C86" : "#fff",
+                        color: isSel ? "#fff" : "var(--ink)",
+                        fontWeight: 700,
+                        fontSize: "11px",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {c}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       )}
